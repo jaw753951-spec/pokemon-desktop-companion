@@ -613,6 +613,30 @@ test('a Liechi Berry waits for a quarter, and raises a stage', options, () => {
   assert.equal(battle.player.stages.atk, 1);
 });
 
+test('an item that moves a stage is named before the stage moves', options, () => {
+  const player = makeFixed(CHARIZARD, 50, ['tackle']);
+  const battle = new Battle({
+    rng: new Rng(14),
+    player,
+    foes: [makeFixed(BLASTOISE, 60, ['tackle'])],
+    policy: defaultAutoBattle(),
+  });
+  const order = (log) => log.filter((entry) => ['berry', 'heldFired', 'stat'].includes(entry.kind)).map((entry) => entry.kind);
+
+  // A pinch berry: eaten, and then the Attack it raised.
+  player.heldItem = 'liechi-berry';
+  player.hp = Math.floor(maxHp(player) / 4);
+  const eaten = [];
+  battle.eatOneBerry(battle.player, eaten);
+  assert.deepEqual(order(eaten), ['berry', 'stat']);
+
+  // A Weakness Policy: set off by the hit, and then both stats it raised.
+  player.heldItem = 'weakness-policy';
+  const hit = [];
+  battle.answerWithItem(/** @type {any} */ (battle.foe), battle.player, moveOf('surf'), 2, hit);
+  assert.deepEqual(order(hit), ['berry', 'stat', 'stat']);
+});
+
 test('Leftovers pays a sixteenth at the end of each turn', options, () => {
   // Both sides have to last the turn out: the upkeep is paid at the end of
   // one, and a battle that ends first never reaches it.
