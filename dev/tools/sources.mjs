@@ -229,7 +229,14 @@ export const VERSION_GROUP_PRIORITY = [
  * map a few blocks to show more of what stands under the lane (`bandDrop`):
  * Route 10's Power Plant was only the top of its dome.
  *
- * @type {Array<{id: string, dir: string, location: string, tags: string[], game?: 'emerald'|'firered', region?: string, ko?: string, backdrop?: string, bandDrop?: number}>}
+ * The strip loops by mirroring the walked run at both ends, so whatever
+ * reaches into the run's end column from just outside it comes back as half
+ * of something, doubled. A run can be shortened at both ends to leave it out
+ * (`bandTrim`): Route 17's street lamps stand just outside its run and hang
+ * their heads over it, and mirrored, a lamp's head with nothing under it read
+ * as two Poké Balls stuck together in the grass.
+ *
+ * @type {Array<{id: string, dir: string, location: string, tags: string[], game?: 'emerald'|'firered', region?: string, ko?: string, backdrop?: string, bandDrop?: number, bandTrim?: number}>}
  */
 export const AREAS = [
   { id: 'route101', dir: 'Route101', location: 'hoenn-route-101', tags: ['grass', 'plain'] },
@@ -282,7 +289,7 @@ export const AREAS = [
   { id: 'kanto-route-14', dir: 'Route14', location: 'kanto-route-14', tags: ['grass', 'meadow'], game: 'firered', region: 'kanto', ko: '14번도로' },
   { id: 'kanto-route-15', dir: 'Route15', location: 'kanto-route-15', tags: ['grass', 'meadow'], game: 'firered', region: 'kanto', ko: '15번도로' },
   { id: 'kanto-route-16', dir: 'Route16', location: 'kanto-route-16', tags: ['grass', 'plain'], game: 'firered', region: 'kanto', ko: '16번도로' },
-  { id: 'kanto-route-17', dir: 'Route17', location: 'kanto-route-17', tags: ['beach', 'plain'], game: 'firered', region: 'kanto', ko: '17번도로' },
+  { id: 'kanto-route-17', dir: 'Route17', location: 'kanto-route-17', tags: ['beach', 'plain'], game: 'firered', region: 'kanto', bandTrim: 1, ko: '17번도로' },
   { id: 'kanto-route-18', dir: 'Route18', location: 'kanto-route-18', tags: ['beach', 'grass'], game: 'firered', region: 'kanto', ko: '18번도로' },
   { id: 'kanto-route-22', dir: 'Route22', location: 'kanto-route-22', tags: ['grass', 'plain'], game: 'firered', region: 'kanto', ko: '22번도로' },
   { id: 'kanto-route-23', dir: 'Route23', location: 'kanto-route-23', tags: ['mountain', 'rough'], game: 'firered', region: 'kanto', backdrop: 'grass', ko: '23번도로' },

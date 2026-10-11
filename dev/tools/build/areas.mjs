@@ -65,6 +65,12 @@ export async function buildAreas({ assetDir, dataDir, log, pool }) {
     if (area.bandDrop) {
       path.bandRow = Math.max(0, Math.min(layout.height - bandBlocks, path.laneRow, path.bandRow + area.bandDrop));
     }
+    // And shortened at both ends where something outside it hangs over them.
+    if (area.bandTrim) {
+      const trim = Math.min(area.bandTrim, Math.floor((path.columns - 1) / 2));
+      path.column += trim;
+      path.columns -= 2 * trim;
+    }
     const band = crop(
       rendered,
       path.column * METATILE_SIZE,
