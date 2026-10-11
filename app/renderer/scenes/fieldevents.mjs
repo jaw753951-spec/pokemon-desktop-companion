@@ -204,7 +204,7 @@ export function createEventRunner({ session, onBattle }) {
       return active === null || active.phase === 'approach' || active.phase === 'passing';
     },
 
-    /** Whether the companion is out of sight — inside the Pokémon Center. */
+    /** Whether the companion is out of sight — inside a Pokémon Center or a gym. */
     get hidesActor() {
       return Boolean(active?.hidesActor);
     },
@@ -306,6 +306,10 @@ export function createEventRunner({ session, onBattle }) {
         }
         active.phase = next.phase ?? active.phase;
         active.timer = next.duration;
+        // A battle fought in the middle of a script — the leader inside the
+        // gym — leaves the event where it is: the field holds still while the
+        // fight is on, and the script picks up again after it.
+        if (next.battle) onBattle(active.setup);
         return;
       }
 
@@ -703,8 +707,32 @@ export function closingDoorFrame(sinceMs) {
 }
 
 /**
- * The next beat of a Center visit: a door frame, the walk past afterwards, or
- * nothing left to do.
+ * A gym visit, beat by beat, on the same door as {@link CENTER_STEPS}.
+ *
+ * The leader does not wait in the road: the companion walks up to their gym,
+ * the door opens, and the battle begins the moment it is through it. Whatever
+ * the outcome, it comes back out of the same door afterwards and walks on,
+ * the door shutting behind it.
+ *
+ * The beat the battle opens on shows the door already shut: the battle screen
+ * is over the road by then, and coming back from it finds the building as it
+ * would be after a while indoors — closed, and opening to let it out.
+ */
+export const GYM_STEPS = [
+  { frame: 1, ms: 90 },
+  { frame: 2, ms: 90 },
+  { frame: 3, ms: 120 },
+  { frame: 3, ms: DOOR_STEP_MS, step: 'in' },
+  { frame: 0, ms: 400, inside: true, battle: true },
+  { frame: 1, ms: 90, inside: true },
+  { frame: 2, ms: 90, inside: true },
+  { frame: 3, ms: 120, inside: true },
+  { frame: 3, ms: DOOR_STEP_MS, step: 'out' },
+];
+
+/**
+ * The next beat of a visit to a building: a door frame, the walk past
+ * afterwards, or nothing left to do.
  *
  * Pulled out of the event so the end of the visit can be checked without a
  * window: the walk-past used to be returned for every beat after the door
@@ -712,17 +740,25 @@ export function closingDoorFrame(sinceMs) {
  * busy for the rest of the session, and no event — or area change — could
  * ever happen again after a rest stop.
  *
+ * @param {ReadonlyArray<any>} steps the building's script: {@link CENTER_STEPS} or {@link GYM_STEPS}
  * @param {number} step how many beats have been asked for, from zero
- * @param {boolean} passing whether the walk past the Center has already begun
+ * @param {boolean} passing whether the walk past the building has already begun
  * @returns {{phase: string, duration: number, beat?: any}|null}
  */
-export function centerBeat(step, passing) {
-  const beat = CENTER_STEPS[step];
+export function visitBeat(steps, step, passing) {
+  const beat = steps[step];
   if (beat) return { phase: 'visit', duration: beat.ms, beat };
   // One walk past the building, and then the event is over.
   if (!passing) return { phase: 'passing', duration: CENTER_PASS_MS };
   return null;
 }
+
+/**
+ * The next beat of a Center visit.
+ * @param {number} step
+ * @param {boolean} passing
+ */
+export const centerBeat = (step, passing) => visitBeat(CENTER_STEPS, step, passing);
 
 /**
  * A Pokémon Center on the road ahead.
@@ -863,19 +899,20 @@ function startWild(session, spawnAt) {
 /**
  * A trainer blocks the path. Once eight badges are in hand leaders stop
  * appearing; before that a leader can turn up by chance, or be summoned by a
- * long enough winning streak.
+ * long enough winning streak — and is met in their gym rather than on the
+ * path ({@link startGym}).
  */
 function startTrainer(session, spawnAt) {
   const classes = gameData().trainerClasses ?? [];
   const leader = shouldSummonLeader(session) ? pickLeader(session) : null;
+  if (leader) return startGym(session, spawnAt, leader);
   // A Swimmer is only met where there is water beside the lane, and swims
   // in it rather than standing on the road.
   const drop = waterDrop(session.area, COMPANION_X + spawnAt, SWIMMER_HALF_WIDTH);
   const { trainerClass, party } = rollTrainer(session.rng, session.area, session.active, classes, { onWater: drop !== null });
-  const swimming = !leader && Boolean(trainerClass?.water) && drop !== null;
+  const swimming = Boolean(trainerClass?.water) && drop !== null;
 
-  const roster = leader ? leaderParty(session, leader) : party;
-  for (const member of roster) session.markSeen(member.speciesId);
+  for (const member of party) session.markSeen(member.speciesId);
 
   const state = {
     kind: 'trainer',
@@ -886,17 +923,79 @@ function startTrainer(session, spawnAt) {
     phaseDuration: 800,
     prop: { kind: 'trainer', sprite: null, frame: 'ripe', drop: swimming ? drop : 0 },
     carried: null,
-    setup: { foes: roster, trainer: leader ?? trainerClass, leader },
+    setup: { foes: party, trainer: trainerClass, leader: null },
     onArrive: () => 'battle',
   };
 
-  const fieldSprite = leader ? leaderField(leader, classes) : trainerClass?.field;
+  const fieldSprite = trainerClass?.field;
   const meta = fieldSprite ? gameData().actors?.overworld?.[fieldSprite] : null;
   if (meta) {
     loadSprite(`trainers/field/${fieldSprite}.png`, { ...meta, delay: 240 }).then((sprite) => {
       state.prop.sprite = sprite;
     });
   }
+  return state;
+}
+
+/**
+ * A gym on the road ahead, its leader waiting inside.
+ *
+ * The companion walks up to the door, which opens for it, and the battle
+ * starts as soon as it is through. Afterwards it comes back out and walks on
+ * past the building, as it does past a Pokémon Center.
+ *
+ * @param {import('../engine/session.mjs').Session} session
+ * @param {number} spawnAt
+ * @param {any} leader
+ */
+function startGym(session, spawnAt, leader) {
+  const roster = leaderParty(session, leader);
+  for (const member of roster) session.markSeen(member.speciesId);
+  let step = -1;
+
+  const state = {
+    kind: 'gym',
+    worldX: spawnAt,
+    phase: 'approach',
+    timer: 0,
+    flash: 0,
+    // Square in front of the door, as at a Pokémon Center.
+    meetGap: 0,
+    hidesActor: false,
+    /** The beat of the visit playing now, for the step through the door. */
+    beat: null,
+    prop: { kind: 'gym', sprite: null, door: null, frame: 0, closingFrom: null },
+    carried: null,
+    setup: { foes: roster, trainer: leader, leader },
+
+    onArrive: () => 'visit',
+
+    /** One beat of the visit; null once there are none left. */
+    onTimer: () => {
+      step += 1;
+      const next = visitBeat(GYM_STEPS, step, state.phase === 'passing');
+      if (!next) return null;
+
+      state.beat = next.beat ?? null;
+      if (next.beat) {
+        state.prop.frame = next.beat.frame;
+        state.hidesActor = Boolean(next.beat.inside);
+      } else {
+        state.hidesActor = false;
+        state.prop.closingFrom = state.elapsed ?? 0;
+      }
+      state.phase = next.phase;
+      return { phase: next.phase, duration: next.duration, battle: Boolean(next.beat?.battle) };
+    },
+  };
+
+  loadImage('props/gym.png').then((image) => {
+    state.prop.sprite = { image, meta: gameData().actors?.props?.gym };
+  });
+  loadImage('props/gym-door.png').then((image) => {
+    state.prop.door = image;
+  });
+
   return state;
 }
 
@@ -1024,9 +1123,9 @@ function drawProp(context, state, screenX) {
     drawBall(context, prop, screenX, (state.elapsed ?? 0) - (prop.openedAt ?? 0));
     return;
   }
-  if (prop.kind === 'center') {
+  if (prop.kind === 'center' || prop.kind === 'gym') {
     const frame = prop.closingFrom === null ? prop.frame : closingDoorFrame((state.elapsed ?? 0) - prop.closingFrom);
-    drawCenter(context, { ...prop, frame }, screenX);
+    drawBuilding(context, { ...prop, frame }, screenX);
     return;
   }
 
@@ -1128,18 +1227,19 @@ function drawBerryTree(context, prop, screenX, elapsed = 0) {
 }
 
 /**
- * The Pokémon Center, standing on the road with its door on the ground line.
+ * A Pokémon Center or a gym, standing on the road with its door on the ground
+ * line.
  *
  * The building is drawn at the map's own scale — it is a piece of map — and
  * the door frames are laid over the doorway it already has, so opening it is
  * one blit rather than a second copy of the building.
  */
-function drawCenter(context, prop, screenX) {
+function drawBuilding(context, prop, screenX) {
   const { image, meta } = prop.sprite;
   const door = meta?.door;
 
   // Lined up so the doorway is where the companion stopped, not the middle of
-  // the wall: a Pokémon Center is wider on one side than the other.
+  // the wall: neither building has its door in the middle.
   const left = Math.round(screenX - (door ? door.x + door.width / 2 : image.naturalWidth / 2));
   const top = Math.round(groundY() - image.naturalHeight);
   context.drawImage(image, left, top);

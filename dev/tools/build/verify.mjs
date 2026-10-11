@@ -234,6 +234,9 @@ export async function verifyAssets({ assetDir, dataDir, log }) {
   note(Boolean(actors.props.center?.door), 'the Pokémon Center was not cut out of its town');
   note(await fileExists(join(assetDir, 'props', 'poke-center.png')), 'Pokémon Center: no building');
   note(await fileExists(join(assetDir, 'props', 'poke-center-door.png')), 'Pokémon Center: no door animation');
+  note(Boolean(actors.props.gym?.door), 'the gym was not cut out of its town');
+  note(await fileExists(join(assetDir, 'props', 'gym.png')), 'Gym: no building');
+  note(await fileExists(join(assetDir, 'props', 'gym-door.png')), 'Gym: no door animation');
 
   if (problems.length === 0) {
     log(`ok — ${Object.keys(species).length} species, ${areas.length} areas, ${Object.keys(bgm.tracks).length} tracks`);

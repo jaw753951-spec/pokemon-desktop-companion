@@ -295,8 +295,8 @@ async function buildProps(assetDir, pool, log) {
     ),
   ].filter((name) => !STAGE_SHEETS.has(name));
 
-  /** @type {{berryTrees: Record<string, any>, stages: Record<string, any>, ball: any, center: any}} */
-  const out = { berryTrees: {}, stages: {}, ball: null, center: null };
+  /** @type {{berryTrees: Record<string, any>, stages: Record<string, any>, ball: any, center: any, gym: any}} */
+  const out = { berryTrees: {}, stages: {}, ball: null, center: null, gym: null };
 
   await Promise.all([
     ...berries.map((name) =>
@@ -350,14 +350,15 @@ async function buildProps(assetDir, pool, log) {
     }),
   ]);
 
-  out.center = await buildPokemonCenter(assetDir, pool);
+  out.center = await buildBuilding(assetDir, pool, CENTER);
+  out.gym = await buildBuilding(assetDir, pool, GYM);
 
   const bare = Object.entries(out.berryTrees)
     .filter(([, tree]) => !tree.fruit)
     .map(([name]) => name);
   log(
     `props: ${Object.keys(out.berryTrees).length} berry trees, ${Object.keys(out.stages).length} growth stages` +
-      `${out.center ? ', a Pokémon Center' : ''}`,
+      `${out.center ? ', a Pokémon Center' : ''}${out.gym ? ', a gym' : ''}`,
   );
   if (bare.length) log(`  berry trees with nothing on them: ${bare.join(', ')}`);
   return out;
@@ -460,9 +461,6 @@ function cropFrame(sheet, layout, index) {
   return crop(sheet, column * layout.frameWidth, row * layout.frameHeight, layout.frameWidth, layout.frameHeight);
 }
 
-/** How many blocks square the Center is cut out as. */
-const CENTER_BLOCKS = 5;
-
 /**
  * How many times a metatile has to appear outside the crop before its colours
  * are taken to be the ground's.
@@ -493,10 +491,11 @@ const GROUND_REPEATS = 4;
  * nothing of the building, because a building is not the colour of a lawn.
  *
  * @param {import('../lib/image.mjs').Raster} building the cropped picture
- * @param {{blockdata: Buffer, widthInBlocks: number, fromX: number, fromY: number, blocks: number}} where
+ * @param {{blockdata: Buffer, widthInBlocks: number, fromX: number, fromY: number, blocks: number, rows?: number}} where
+ *   `blocks` across, and `rows` down — as many as across unless it says
  * @returns {number} how many whole blocks were cleared
  */
-export function clearScenery(building, { blockdata, widthInBlocks, fromX, fromY, blocks }) {
+export function clearScenery(building, { blockdata, widthInBlocks, fromX, fromY, blocks, rows = blocks }) {
   /** The metatile at a place on the town's own grid. */
   const at = (bx, by) => {
     const offset = (by * widthInBlocks + bx) * 2;
@@ -509,7 +508,7 @@ export function clearScenery(building, { blockdata, widthInBlocks, fromX, fromY,
   const height = Math.floor(blockdata.length / 2 / widthInBlocks);
   for (let by = 0; by < height; by++) {
     for (let bx = 0; bx < widthInBlocks; bx++) {
-      const inside = bx >= fromX && bx < fromX + blocks && by >= fromY && by < fromY + blocks;
+      const inside = bx >= fromX && bx < fromX + blocks && by >= fromY && by < fromY + rows;
       if (inside) continue;
       const id = at(bx, by);
       if (id !== null) outside.set(id, (outside.get(id) ?? 0) + 1);
@@ -528,12 +527,11 @@ export function clearScenery(building, { blockdata, widthInBlocks, fromX, fromY,
   const seen = new Set();
   /** @type {Array<[number, number]>} */
   const queue = [];
-  for (let i = 0; i < blocks; i++) {
-    queue.push([i, 0], [i, blocks - 1], [0, i], [blocks - 1, i]);
-  }
+  for (let i = 0; i < blocks; i++) queue.push([i, 0], [i, rows - 1]);
+  for (let i = 0; i < rows; i++) queue.push([0, i], [blocks - 1, i]);
   while (queue.length) {
     const [bx, by] = queue.pop();
-    if (bx < 0 || by < 0 || bx >= blocks || by >= blocks) continue;
+    if (bx < 0 || by < 0 || bx >= blocks || by >= rows) continue;
     const key = by * blocks + bx;
     if (seen.has(key)) continue;
     if (!isGround(bx, by)) continue;
@@ -631,58 +629,66 @@ function clearBlock(raster, left, top) {
 }
 
 /**
- * The Pokémon Center the rest stop plays out at, cut out of a real town.
+ * A building an event plays out at, cut out of a real town.
  *
- * There is no standalone sprite of one: a Center is part of the town it stands
- * in, drawn from the same metatiles as the road outside it. So a town is
- * rendered and the building cut out of it — located by the warp that leads
- * inside, which is the door, rather than by coordinates copied off a map.
+ * There is no standalone sprite of one: a Pokémon Center or a gym is part of
+ * the town it stands in, drawn from the same metatiles as the road outside
+ * it. So a town is rendered and the building cut out of it — located by the
+ * warp that leads inside, which is the door, rather than by coordinates
+ * copied off a map.
  *
  * The door is a sprite, though: the games animate it over the map, three
  * frames from shut to open, which is exactly what a Pokémon walking in needs.
  *
  * @param {string} assetDir
  * @param {<T>(task: () => Promise<T>) => Promise<T>} pool
+ * @param {typeof CENTER} building which building, and where to find it
  */
-async function buildPokemonCenter(assetDir, pool) {
+async function buildBuilding(assetDir, pool, { town, leadsTo, left, blocks, rows, name, doorAnim }) {
   const maps = await openMaps(pool);
-  const { map, layout: townLayout, blockdata, image } = await maps.render(CENTER_TOWN);
+  const { map, layout: townLayout, blockdata, image } = await maps.render(town);
 
-  const warp = (map.warp_events ?? []).find((event) => String(event.dest_map).includes('POKEMON_CENTER'));
+  const warp = (map.warp_events ?? []).find((event) => String(event.dest_map).includes(leadsTo));
   if (!warp) return null;
 
-  // The building around its door: two blocks either side, and four above.
-  const fromX = Number(warp.x) - 2;
-  const fromY = Number(warp.y) - 4;
-  const building = crop(image, fromX * METATILE_SIZE, fromY * METATILE_SIZE, CENTER_BLOCKS * METATILE_SIZE, CENTER_BLOCKS * METATILE_SIZE);
+  // The building around its door: `left` blocks to its left, and the rest
+  // of its rows above it — with a block of the town all round, to be cut
+  // away again below.
+  const fromX = Number(warp.x) - left - MARGIN;
+  const fromY = Number(warp.y) - (rows - 1) - MARGIN;
+  const across = blocks + 2 * MARGIN;
+  const down = rows + 2 * MARGIN;
+  const surroundings = crop(image, fromX * METATILE_SIZE, fromY * METATILE_SIZE, across * METATILE_SIZE, down * METATILE_SIZE);
   // …and then the town rubbed off it, so it stands on the companion's road
-  // rather than on a square of the lawn it was cut from.
-  clearScenery(building, {
+  // rather than on a square of the lawn it was cut from. The margin is what
+  // the lawn's colours are learnt from: a gym fills every block it is cut
+  // as, so without it there is no lawn in the picture to learn them from,
+  // and the strip of it the walls stand on stays.
+  clearScenery(surroundings, {
     blockdata,
     widthInBlocks: townLayout.width,
     fromX,
     fromY,
-    blocks: CENTER_BLOCKS,
+    blocks: across,
+    rows: down,
   });
-  await writeOut(
-    join(assetDir, 'props', 'poke-center.png'),
-    encodePng(building.width, building.height, building.data),
-  );
+  const picture = crop(surroundings, MARGIN * METATILE_SIZE, MARGIN * METATILE_SIZE, blocks * METATILE_SIZE, rows * METATILE_SIZE);
+  await writeOut(join(assetDir, 'props', `${name}.png`), encodePng(picture.width, picture.height, picture.data));
 
   // The door's frames, laid out along a strip like every other animation here.
-  const sheet = keyed(decodePng(await fetchBuffer(`${EMERALD}/graphics/door_anims/poke_center.png`)));
+  const sheet = keyed(decodePng(await fetchBuffer(`${EMERALD}/graphics/door_anims/${doorAnim}.png`)));
   const layout = frameLayout(sheet, DOOR_FRAME.width, DOOR_FRAME.height);
   const frames = Array.from({ length: layout.count }, (_, index) => cropFrame(sheet, layout, index));
   const strip = concatX(frames);
-  await writeOut(join(assetDir, 'props', 'poke-center-door.png'), encodePng(strip.width, strip.height, strip.data));
+  await writeOut(join(assetDir, 'props', `${name}-door.png`), encodePng(strip.width, strip.height, strip.data));
 
   return {
-    width: building.width,
-    height: building.height,
+    width: picture.width,
+    height: picture.height,
     door: {
       // Where the door sits inside the building, so the frames land on it.
-      x: 2 * METATILE_SIZE,
-      y: building.height - DOOR_FRAME.height,
+      x: left * METATILE_SIZE,
+      y: picture.height - DOOR_FRAME.height,
       width: DOOR_FRAME.width,
       height: DOOR_FRAME.height,
       frames: frames.length,
@@ -690,8 +696,37 @@ async function buildPokemonCenter(assetDir, pool) {
   };
 }
 
-/** The town the Pokémon Center is cut from: the first one the game shows you. */
-const CENTER_TOWN = 'OldaleTown';
+/**
+ * The Pokémon Center the rest stop plays out at, from the first town the game
+ * shows you: five blocks square, its door two in from the left.
+ */
+const CENTER = {
+  town: 'OldaleTown',
+  leadsTo: 'POKEMON_CENTER',
+  left: 2,
+  blocks: 5,
+  rows: 5,
+  name: 'poke-center',
+  doorAnim: 'poke_center',
+};
+
+/**
+ * The gym a leader is fought in, from the first town that has one —
+ * Petalburg's, which Rustboro's and Dewford's are the same building as. Six
+ * blocks across and five high, its door three in from the left.
+ */
+const GYM = {
+  town: 'PetalburgCity',
+  leadsTo: 'GYM',
+  left: 3,
+  blocks: 6,
+  rows: 5,
+  name: 'gym',
+  doorAnim: 'gym',
+};
+
+/** How many blocks of the town a building is cut out with, before they are trimmed. */
+const MARGIN = 1;
 
 /** A door animation frame: one tile wide, two tall, as every Gen-3 door is. */
 const DOOR_FRAME = { width: 16, height: 32 };

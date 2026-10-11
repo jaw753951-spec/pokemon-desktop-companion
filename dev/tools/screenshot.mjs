@@ -106,10 +106,14 @@ const STEPS = [
   // Last of the events, because it deliberately leaves one mid-approach:
   // `forceEvent` cannot preempt an event that is already running, so anything
   // after it would get this trainer's battle instead of what it asked for.
-  { name: '29-trainer-approach', script: 'closeAll() && summonLeader() && await forceEvent("trainer") && await wait(2200)' },
+  // A leader is met at their gym: walked up to like a Pokémon Center, and the
+  // battle opens as the companion goes through the door.
+  { name: '29-gym-door', script: 'closeAll() && summonLeader() && await forceEvent("trainer") && await waitFor(() => walkStopped(1), 25000, 100)', settle: 0 },
   // A gym leader battle, which the wild one does not show: a portrait, a name
   // plate and a party of more than one.
   { name: '30-battle-leader', script: 'await waitFor(() => inBattle(), 25000) && await wait(1800)' },
+  // And back out of the gym's door once it is over.
+  { name: '30b-gym-out', script: 'await waitFor(() => !inBattle(), 120000) && await wait(800)', settle: 0 },
   // The league opens on the eighth badge, so the case is filled the rest of
   // the way rather than played through.
   { name: '31-league', script: 'closeAll() && seedBadges(8) && useLeague("hoenn") && await wait(900) && clickText("button", ["포켓몬 리그로 간다", "To the League"]) && await wait(1200)' },

@@ -22,6 +22,8 @@ import {
   foundCount,
   CENTER_STEPS,
   centerBeat,
+  GYM_STEPS,
+  visitBeat,
   closingDoorFrame,
   doorStep,
   gatherBob,
@@ -147,6 +149,36 @@ test('the companion walks through the door rather than standing beside it', () =
   // the walk-past starts the moment it is out.
   const stood = CENTER_STEPS.filter((beat) => !beat.inside && !beat.step).reduce((sum, beat) => sum + beat.ms, 0);
   assert.ok(stood <= 400, `the companion waits ${stood}ms at the door`);
+});
+
+// ------------------------------------------------------------ the gym's own
+
+test('the gym visit walks in, fights once, walks out, and then ends', () => {
+  const beats = [];
+  let passing = false;
+  for (let step = 0; step < 100; step++) {
+    const next = visitBeat(GYM_STEPS, step, passing);
+    if (!next) break;
+    passing = next.phase === 'passing';
+    beats.push(next);
+  }
+  assert.equal(beats.filter((beat) => beat.phase === 'visit').length, GYM_STEPS.length);
+  assert.equal(beats[beats.length - 1].phase, 'passing');
+  assert.equal(visitBeat(GYM_STEPS, GYM_STEPS.length, true), null);
+
+  // One battle, opened the moment the companion is through the door.
+  const battles = GYM_STEPS.map((beat, index) => ({ beat, index })).filter(({ beat }) => beat.battle);
+  assert.equal(battles.length, 1);
+  const { beat, index } = battles[0];
+  assert.equal(beat.inside, true);
+  assert.equal(GYM_STEPS[index - 1].step, 'in', 'the battle starts as it steps in');
+  assert.equal(GYM_STEPS[index - 1].frame, 3, 'through an open door');
+
+  // And it comes back out the same door.
+  const last = GYM_STEPS[GYM_STEPS.length - 1];
+  assert.equal(last.step, 'out');
+  assert.equal(last.frame, 3);
+  assert.ok(!GYM_STEPS.some((step) => step.heal), 'a gym heals nobody');
 });
 
 test('a step through the door fades the companion in or out', () => {
