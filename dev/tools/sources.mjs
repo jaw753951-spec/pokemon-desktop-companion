@@ -231,12 +231,17 @@ export const VERSION_GROUP_PRIORITY = [
  *
  * The strip loops by mirroring the walked run at both ends, so whatever
  * reaches into the run's end column from just outside it comes back as half
- * of something, doubled. A run can be shortened at both ends to leave it out
- * (`bandTrim`): Route 17's street lamps stand just outside its run and hang
- * their heads over it, and mirrored, a lamp's head with nothing under it read
- * as two Poké Balls stuck together in the grass.
+ * of something, doubled. A run can be shortened to leave it out (`bandTrim`,
+ * blocks off both ends, or `[left, right]`): Route 17's street lamps stand
+ * just outside its run and hang their heads over it, and mirrored, a lamp's
+ * head with nothing under it read as two Poké Balls stuck together in the
+ * grass. Route 16's run ended on a fence corner and the edge of a gatehouse
+ * wall, and Route 18's on a fence post and the grass by its gatehouse. The
+ * end column has to land on plain ground, past the edge of any patch of sand
+ * as well: the one-pixel rim of grass round it, mirrored, is a dotted line
+ * down the sand.
  *
- * @type {Array<{id: string, dir: string, location: string, tags: string[], game?: 'emerald'|'firered', region?: string, ko?: string, backdrop?: string, bandDrop?: number, bandTrim?: number}>}
+ * @type {Array<{id: string, dir: string, location: string, tags: string[], game?: 'emerald'|'firered', region?: string, ko?: string, backdrop?: string, bandDrop?: number, bandTrim?: number|[number, number]}>}
  */
 export const AREAS = [
   { id: 'route101', dir: 'Route101', location: 'hoenn-route-101', tags: ['grass', 'plain'] },
@@ -288,9 +293,9 @@ export const AREAS = [
   { id: 'kanto-route-13', dir: 'Route13', location: 'kanto-route-13', tags: ['grass', 'meadow'], game: 'firered', region: 'kanto', ko: '13번도로' },
   { id: 'kanto-route-14', dir: 'Route14', location: 'kanto-route-14', tags: ['grass', 'meadow'], game: 'firered', region: 'kanto', ko: '14번도로' },
   { id: 'kanto-route-15', dir: 'Route15', location: 'kanto-route-15', tags: ['grass', 'meadow'], game: 'firered', region: 'kanto', ko: '15번도로' },
-  { id: 'kanto-route-16', dir: 'Route16', location: 'kanto-route-16', tags: ['grass', 'plain'], game: 'firered', region: 'kanto', ko: '16번도로' },
+  { id: 'kanto-route-16', dir: 'Route16', location: 'kanto-route-16', tags: ['grass', 'plain'], game: 'firered', region: 'kanto', bandTrim: [2, 1], ko: '16번도로' },
   { id: 'kanto-route-17', dir: 'Route17', location: 'kanto-route-17', tags: ['beach', 'plain'], game: 'firered', region: 'kanto', bandTrim: 1, ko: '17번도로' },
-  { id: 'kanto-route-18', dir: 'Route18', location: 'kanto-route-18', tags: ['beach', 'grass'], game: 'firered', region: 'kanto', ko: '18번도로' },
+  { id: 'kanto-route-18', dir: 'Route18', location: 'kanto-route-18', tags: ['beach', 'grass'], game: 'firered', region: 'kanto', bandTrim: [2, 1], ko: '18번도로' },
   { id: 'kanto-route-22', dir: 'Route22', location: 'kanto-route-22', tags: ['grass', 'plain'], game: 'firered', region: 'kanto', ko: '22번도로' },
   { id: 'kanto-route-23', dir: 'Route23', location: 'kanto-route-23', tags: ['mountain', 'rough'], game: 'firered', region: 'kanto', backdrop: 'grass', ko: '23번도로' },
   { id: 'kanto-route-24', dir: 'Route24', location: 'kanto-route-24', tags: ['grass', 'water'], game: 'firered', region: 'kanto', ko: '24번도로' },
