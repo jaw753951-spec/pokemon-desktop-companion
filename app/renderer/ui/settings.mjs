@@ -270,9 +270,9 @@ function creditRows() {
           el('p.credits-names', { text: custom.artists.join(', ') }),
         ]
       : []),
-    // The leaders and the league's people the games never drew in pixels,
-    // and the leaders a fan remake taught to walk: one entry for each place
-    // their pictures come from, saying whose and for whom.
+    // The leaders and the league's people the games never drew in pixels:
+    // one entry for each place their pictures come from, saying whose and
+    // for whom.
     ...(Array.isArray(trainers) && trainers.length
       ? [
           el('div.section-title', { text: t('credits.trainers') }),

@@ -9,7 +9,6 @@
 | `smogon-sprites/` | smogon/sprites 의 `src/_uncategorized/…/trainers` | `bad55c7b` | 성도·하나 관장, 석영리그의 일목·카렌, 하나 사천왕의 원작 도트, 칼로스·알로라 사람들의 팬 도트 |
 | `pokerogue/` | pagefaultgames/pokerogue-assets 의 `images/trainer` (CC BY-NC-SA 4.0) | `056a1f40` | 자크로·카르네와 가라르·팔데아·블루베리 사람들 — 도트와 아틀라스(JSON), 첫 프레임을 씀 |
 | `showdown-trainers/` | worlds-collide-showdown/sprites 의 `sprites/trainers` (포켓몬 쇼다운 트레이너 도트의 사본) | `908f9e57` | 세이버리·도정 |
-| `pokehns/` | PokemonHnS-Development/pokehns-expansion 의 `graphics/object_events/pics/people/gym_leaders` | `167aa6d5` | 성도·관동 관장이 길 위를 걷는 도트 |
 
 파일은 원본 저장소에서의 경로 그대로 들어 있습니다.
 

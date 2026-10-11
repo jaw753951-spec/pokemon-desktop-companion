@@ -177,65 +177,6 @@ export const NAMED_PORTRAITS = {
   klara: { source: 'showdown', path: 'sprites/trainers/klara.png' },
 };
 
-/**
- * The walking sprites of the gym leaders who were drawn for the road, from
- * the Game Boy Advance games and the one fan remake in the same engine.
- *
- * Emerald draws its own leaders, Fire Red Kanto's, and Pokémon Heart and
- * Soul — a remake of HeartGold and SoulSilver on Emerald's engine (`hns`,
- * kept under `data/vendor/pokehns`) — Johto's and Kanto's again, with the
- * walk the cartridges never gave them. A leader who only ever stood still in
- * a gym has three standing frames and no walk; the build makes one of the
- * west-facing pose and the same pose a pixel up. Tate and Liza are one
- * leader and walk side by side.
- *
- * Sinnoh's leaders come from Platinum (`platinum`), whose walking sprites are
- * the same kind HeartGold and SoulSilver drew — the ones Heart and Soul
- * brought down to the Game Boy Advance — in sixteen 32-pixel frames stacked
- * one above another. They are a little larger than the cartridges' people,
- * and are kept at their own size rather than squeezed. Nobody past Sinnoh
- * was drawn to walk in this style.
- *
- * @type {Record<string, {source: 'emerald'|'firered'|'hns'|'platinum', path: string, with?: string}>}
- */
-export const NAMED_WALKERS = {
-  leader_roxanne: { source: 'emerald', path: 'graphics/object_events/pics/people/gym_leaders/roxanne.png' },
-  leader_brawly: { source: 'emerald', path: 'graphics/object_events/pics/people/gym_leaders/brawly.png' },
-  leader_wattson: { source: 'emerald', path: 'graphics/object_events/pics/people/gym_leaders/wattson.png' },
-  leader_flannery: { source: 'emerald', path: 'graphics/object_events/pics/people/gym_leaders/flannery.png' },
-  leader_winona: { source: 'emerald', path: 'graphics/object_events/pics/people/gym_leaders/winona.png' },
-  leader_tate_and_liza: {
-    source: 'emerald',
-    path: 'graphics/object_events/pics/people/gym_leaders/tate.png',
-    with: 'graphics/object_events/pics/people/gym_leaders/liza.png',
-  },
-  leader_koga: { source: 'firered', path: 'graphics/object_events/pics/people/koga.png' },
-  leader_giovanni: { source: 'firered', path: 'graphics/object_events/pics/people/giovanni.png' },
-  leader_brock: { source: 'hns', path: 'graphics/object_events/pics/people/gym_leaders/brock_hns.png' },
-  leader_misty: { source: 'hns', path: 'graphics/object_events/pics/people/gym_leaders/misty_hns.png' },
-  leader_lt_surge: { source: 'hns', path: 'graphics/object_events/pics/people/gym_leaders/surge_hns.png' },
-  leader_erika: { source: 'hns', path: 'graphics/object_events/pics/people/gym_leaders/erika_hns.png' },
-  leader_sabrina: { source: 'hns', path: 'graphics/object_events/pics/people/gym_leaders/sabrina_hns.png' },
-  leader_blaine: { source: 'hns', path: 'graphics/object_events/pics/people/gym_leaders/blaine_hns.png' },
-  leader_falkner: { source: 'hns', path: 'graphics/object_events/pics/people/gym_leaders/falkner_hns.png' },
-  leader_bugsy: { source: 'hns', path: 'graphics/object_events/pics/people/gym_leaders/bugsy_hns.png' },
-  leader_whitney: { source: 'hns', path: 'graphics/object_events/pics/people/gym_leaders/whitney_hns.png' },
-  leader_morty: { source: 'hns', path: 'graphics/object_events/pics/people/gym_leaders/morty_hns.png' },
-  leader_chuck: { source: 'hns', path: 'graphics/object_events/pics/people/gym_leaders/chuck_hns.png' },
-  leader_jasmine: { source: 'hns', path: 'graphics/object_events/pics/people/gym_leaders/jasmine_hns.png' },
-  leader_pryce: { source: 'hns', path: 'graphics/object_events/pics/people/gym_leaders/pryce_hns.png' },
-  leader_clair: { source: 'hns', path: 'graphics/object_events/pics/people/gym_leaders/clair_hns.png' },
-  leader_janine: { source: 'hns', path: 'graphics/object_events/pics/people/gym_leaders/janine_hns.png' },
-  leader_roark: { source: 'platinum', path: 'res/graphics/field_sprites/npc/roark.png' },
-  leader_gardenia: { source: 'platinum', path: 'res/graphics/field_sprites/npc/gardenia.png' },
-  leader_maylene: { source: 'platinum', path: 'res/graphics/field_sprites/npc/maylene.png' },
-  leader_wake: { source: 'platinum', path: 'res/graphics/field_sprites/npc/crasher_wake.png' },
-  leader_fantina: { source: 'platinum', path: 'res/graphics/field_sprites/npc/fantina.png' },
-  leader_byron: { source: 'platinum', path: 'res/graphics/field_sprites/npc/byron.png' },
-  leader_candice: { source: 'platinum', path: 'res/graphics/field_sprites/npc/candice.png' },
-  leader_volkner: { source: 'platinum', path: 'res/graphics/field_sprites/npc/volkner.png' },
-};
-
 /** Highest National Dex number the game ships (Gen 9, Pecharunt). */
 export const MAX_SPECIES = 1025;
 

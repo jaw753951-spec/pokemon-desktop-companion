@@ -80,27 +80,3 @@ test('nobody drawn in the water or in a rubber ring walks the dry road', async (
   }
   assert.equal(raw.classes.find((entry) => entry.id === 'tuber-m').field, 'tuber_m_swimming', "the Tuber♂ swims in Emerald's own picture of it");
 });
-
-test('a gym leader without a walker of their own borrows one of their own sex, never a Swimmer', withData, async () => {
-  const { readFile } = await import('node:fs/promises');
-  const { leaderField } = await import('../../app/renderer/scenes/fieldevents.mjs');
-  const read = async (name) => JSON.parse(await readFile(new URL(`../../data/authored/${name}`, import.meta.url), 'utf8'));
-  const { classes } = await read('trainer-classes.json');
-  const { leaders } = await read('leaders.json');
-  const actors = gameData().actors;
-  const before = actors.overworld;
-  // Every class's own walker, and nothing drawn for a leader.
-  actors.overworld = Object.fromEntries(classes.map((entry) => [entry.field, { width: 16, height: 32, frames: 3 }]));
-  try {
-    for (const leader of leaders.filter((entry) => !entry.field)) {
-      assert.ok(leader.gender === 'm' || leader.gender === 'f', `${leader.id} has a sex`);
-      const field = leaderField(leader, classes);
-      // Byron is Steel, which no class carries, and still walks up.
-      assert.ok(field, `${leader.id} walks up as someone`);
-      const borrowed = classes.filter((entry) => entry.field === field);
-      assert.ok(borrowed.some((entry) => entry.gender === leader.gender && !entry.water), `${leader.id} walks as ${field}`);
-    }
-  } finally {
-    actors.overworld = before;
-  }
-});
