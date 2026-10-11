@@ -234,9 +234,11 @@ const MIN_RUN_BLOCKS = 12;
  * @param {(x: number, y: number) => boolean} [isWater] blocks the collision
  *   leaves open but a Pokémon could only cross by surfing — Route 103's lake
  *   among them, which the walk used to stroll across
+ * @param {number} [lane] the map row to walk along, where the area names one:
+ *   the run is then the longest on that row, with as much headroom as it has
  * @returns {{bandRow: number, laneRow: number, column: number, columns: number, clearance: number}}
  */
-export function pickWalkPath(blockdata, widthInBlocks, heightInBlocks, bandBlocks, isWater = () => false) {
+export function pickWalkPath(blockdata, widthInBlocks, heightInBlocks, bandBlocks, isWater = () => false, lane = undefined) {
   const passable = (x, y) => {
     const offset = (y * widthInBlocks + x) * 2;
     if (offset + 1 >= blockdata.length) return false;
@@ -286,14 +288,17 @@ export function pickWalkPath(blockdata, widthInBlocks, heightInBlocks, bandBlock
   // down by the window's bottom edge — Route 121's did, on its very last row.
   // Only a map with nothing in that middle settles for one nearer an edge.
   const lowest = heightInBlocks - bandBlocks + above;
-  for (const [minRow, maxRow] of [[above, lowest], [above, heightInBlocks - 1], [0, heightInBlocks - 1]]) {
+  const searches = lane === undefined ? [[above, lowest], [above, heightInBlocks - 1], [0, heightInBlocks - 1]] : [[lane, lane]];
+  for (const [minRow, maxRow] of searches) {
     for (let clearance = wanted; clearance >= 0; clearance--) {
       const found = longestRun(clearance, minRow, maxRow);
       if (!found) continue;
       // Keep the roomiest one seen so far, so dropping to no headroom at all
       // still cannot make the strip shorter than it already was.
       if (!chosen || found.columns > chosen.columns) chosen = { ...found, clearance };
-      if (chosen.columns >= MIN_RUN_BLOCKS) break;
+      // On a row the area names, the walk is the point rather than the
+      // headroom: the longest run on it wins, at whatever headroom it has.
+      if (lane === undefined && chosen.columns >= MIN_RUN_BLOCKS) break;
     }
     if (chosen) break;
   }

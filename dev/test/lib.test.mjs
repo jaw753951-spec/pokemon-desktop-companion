@@ -122,6 +122,31 @@ test('pickWalkPath crops to ground the companion can actually cross', () => {
   assert.ok(path.bandRow >= 0 && path.bandRow + 4 <= height);
 });
 
+test('pickWalkPath walks the row an area names, the longest run on it', () => {
+  // A road two rows wide under a fence, and grass below it: left alone, the
+  // lane is the grass, the only row with two clear rows over it. Named, the
+  // road's nearer row is walked, along its whole length rather than the
+  // stretch of it that happens to have the most headroom.
+  const rows = [
+    '##############',
+    '##########....',
+    '..............',
+    '..............',
+    '..............',
+    '..............',
+    '..............',
+    '##############',
+  ];
+  const { blocks, width, height } = blockMap(rows);
+  assert.equal(pickWalkPath(blocks, width, height, 5).laneRow, 4);
+
+  const named = pickWalkPath(blocks, width, height, 5, undefined, 3);
+  assert.equal(named.laneRow, 3);
+  assert.equal(named.column, 0);
+  assert.equal(named.columns, 14);
+  assert.equal(named.clearance, 1);
+});
+
 test('pickWalkPath gives up headroom before it gives up ground', () => {
   // Nothing has two clear rows above it, but the bottom row runs clear for
   // the width of the map — a cave corridor.

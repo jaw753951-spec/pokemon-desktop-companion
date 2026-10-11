@@ -59,7 +59,7 @@ export async function buildAreas({ assetDir, dataDir, log, pool }) {
     // Nor through a doorway: the band is looped by mirroring it, and a
     // gatehouse's mouth at the end of the lane came back as half a door frame
     // stood on its own in the road, which the companion walked through.
-    const path = pickWalkPath(blockdata, layout.width, layout.height, bandBlocks, (x, y) => isWater(x, y) || isWarp(x, y));
+    const path = pickWalkPath(blockdata, layout.width, layout.height, bandBlocks, (x, y) => isWater(x, y) || isWarp(x, y), area.lane);
     // Slid down the map where the area asks, to show what stands below the
     // lane; the lane itself stays where it was, higher in the strip.
     if (area.bandDrop) {
