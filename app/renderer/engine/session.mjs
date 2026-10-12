@@ -14,7 +14,7 @@ import { pocketOrder } from './bagorder.mjs';
 import { EventScheduler } from './events.mjs';
 import { ensureAttack, fullyHeal, shinyOddsFor } from './pokemon.mjs';
 import { settleForme } from './forms.mjs';
-import { STARTING_MONEY } from './shop.mjs';
+import { oneAtATime, STARTING_MONEY } from './shop.mjs';
 
 /** Items that have been folded into another since saves were written. */
 const LEGACY_ITEMS = Object.fromEntries(
@@ -67,7 +67,7 @@ export class Session {
     for (const [slug, count] of Object.entries(save.bag ?? {})) {
       // The seven Sweets are one item now.
       const kept = LEGACY_ITEMS[slug] ?? slug;
-      if (Number(count) > 0 && gameData().items[kept]) this.bag[kept] = (this.bag[kept] ?? 0) + Number(count);
+      if (Number(count) > 0 && gameData().items[kept]) this.addItem(kept, Number(count));
     }
 
     // Badges belong to the Pokémon that won them. A save from before that was
@@ -258,7 +258,10 @@ export class Session {
    * @param {number} [count]
    */
   addItem(item, count = 1) {
-    this.bag[item] = (this.bag[item] ?? 0) + count;
+    // One of anything the bag holds only one of, however it arrives — a
+    // find, a reward, a held item handed back, or a save from before the rule.
+    const most = oneAtATime(item) ? 1 : Infinity;
+    this.bag[item] = Math.min(most, (this.bag[item] ?? 0) + count);
   }
 
   /**

@@ -14,7 +14,7 @@ import { moveOf } from '../core/data.mjs';
 import { button, el, scrollable, setChildren } from '../core/dom.mjs';
 import { name as localized, t } from '../core/i18n.mjs';
 import { pocketOrder } from '../engine/bagorder.mjs';
-import { alreadyOwned, buy, formatMoney, isConsumable, shopStock } from '../engine/shop.mjs';
+import { alreadyOwned, buy, formatMoney, oneAtATime, shopStock } from '../engine/shop.mjs';
 import { moveSummary } from './movecard.mjs';
 
 /** The pockets in the order the bag shows them. */
@@ -208,7 +208,7 @@ function inspector(app, session, state, stock, rebuild) {
   const { slug, item, price } = entry;
   const move = item.pocket === 'machines' ? moveOf(item.move) : null;
   const owned = alreadyOwned(session, slug);
-  const many = isConsumable(slug);
+  const many = !oneAtATime(slug);
   const total = price * state.count;
 
   const setCount = (count) => {

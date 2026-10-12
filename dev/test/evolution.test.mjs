@@ -129,7 +129,7 @@ test('a Linking Cord is a trade, and the item held says which one', options, () 
   const session = fakeSession({ [TRADE_ITEM]: 1 }, kadabra);
   assert.ok(useItem(session, TRADE_ITEM).ok);
   assert.equal(kadabra.speciesId, id('alakazam'));
-  assert.equal(session.bag[TRADE_ITEM], 0, 'the cord is used up');
+  assert.equal(session.bag[TRADE_ITEM], 1, 'the cord is kept, as every evolution item is');
 
   const clamperl = make('clamperl', 30);
   clamperl.heldItem = 'deep-sea-scale';

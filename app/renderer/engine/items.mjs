@@ -165,10 +165,10 @@ export function useItem(session, slug, choice = {}) {
     }
   }
 
-  // An evolution stone, if this Pokémon is waiting on one.
+  // An evolution stone, if this Pokémon is waiting on one. It goes back in
+  // the bag afterwards: an evolution item is kept, not spent.
   const evolution = pendingEvolution(pokemon, { item: slug });
   if (evolution) {
-    session.removeItem(slug);
     const from = nameOf(pokemon);
     evolveInto(pokemon, evolution.to, session.rng);
     session.markCaught(evolution.to);
