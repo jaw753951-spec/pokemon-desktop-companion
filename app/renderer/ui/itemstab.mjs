@@ -164,7 +164,10 @@ export function itemsTab(app, session, refresh, state) {
 function optionsPane(app, session, refresh) {
   const policy = session.itemPolicy;
 
-  return el('div.item-options', {}, [
+  // A scroller the bag knows about, so a press on any setting further down
+  // leaves the pane where it was rather than back at the top: every press
+  // rebuilds the tab, and only a `.scroll` keeps its place across that.
+  return scrollable(el('div.item-options', {}, [
     el('div.item-options-heading', {}, [
       el('div.section-title', { text: t('items.berryRestock') }),
       el('span.spacer'),
@@ -189,7 +192,7 @@ function optionsPane(app, session, refresh) {
     el('div.section-title', { text: t('items.afterBattle') }),
     el('p.meta', { text: t('items.afterBattleNote') }),
     afterBattleRow(app, policy, refresh),
-  ]);
+  ]));
 }
 
 /**
