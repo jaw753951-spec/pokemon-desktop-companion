@@ -137,11 +137,14 @@ export const NAMED_PORTRAITS = {
   olivia: { source: 'smogon', path: 'src/_uncategorized/noncanonical/trainers/gen7/sun-moon/Olivia.png' },
   acerola: { source: 'smogon', path: 'src/_uncategorized/noncanonical/trainers/gen7/sun-moon/Acerola.png' },
   kahili: { source: 'smogon', path: 'src/_uncategorized/noncanonical/trainers/gen7/sun-moon/Kahili.png' },
-  hau: { source: 'smogon', path: 'src/_uncategorized/noncanonical/trainers/gen7/sun-moon/Hau.png' },
   hala: { source: 'smogon', path: 'src/_uncategorized/noncanonical/trainers/gen7/sun-moon/Hala.png' },
   molayne: { source: 'smogon', path: 'src/_uncategorized/noncanonical/trainers/gen7/sun-moon/Molayne.png' },
-  // Kalos's champion and its rock leader, Galar's leaders, and Paldea's and
-  // Blueberry Academy's leaders, Elite Four and champions, from PokéRogue.
+  // Kalos's champion and its rock leader, Alola's champion, Galar's leaders,
+  // and Paldea's and Blueberry Academy's leaders, Elite Four and champions,
+  // from PokéRogue. Hau is here rather than with the rest of Alola: Smogon's
+  // drawing of him has his skin grey-olive and his hair olive, where the games
+  // have him tanned with dark green hair.
+  hau: { source: 'pokerogue', path: 'images/trainer/hau' },
   diantha: { source: 'pokerogue', path: 'images/trainer/diantha' },
   grant: { source: 'pokerogue', path: 'images/trainer/grant' },
   allister: { source: 'pokerogue', path: 'images/trainer/allister' },
