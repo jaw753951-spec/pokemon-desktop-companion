@@ -182,10 +182,11 @@ test('the seven Sweets are one, and an Alcremie is one of seven at random', opti
   stale.look = 'ruby-swirl-berry-sweet';
   assert.ok(ALCREMIE_LOOKS.includes(sessionOf(stale).active.look));
 
-  // A save that still holds the old Sweets gets the one.
+  // A save that still holds the old Sweets gets the one — one, as the bag
+  // holds one of anything an evolution is made by.
   const session = sessionOf(fixed(4, 5));
   const old = new Session({ slot: 0, save: { seed: 1, party: { active: fixed(4, 5), box: [] }, bag: { 'love-sweet': 2, 'star-sweet': 1 } } });
-  assert.equal(old.bag.sweet, 3);
+  assert.equal(old.bag.sweet, 1);
   assert.equal(session.bag.sweet, undefined);
 });
 

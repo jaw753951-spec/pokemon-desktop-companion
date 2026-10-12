@@ -852,6 +852,8 @@ export class Battle {
     const slug = given ?? combatant.pokemon.heldItem;
     const held = slug ? itemOf(slug)?.held : null;
     if (!slug || !held || itemOf(slug)?.pocket !== 'berries' || combatant.pokemon.hp <= 0) return false;
+    // Eaten first and then felt: the berry's line goes ahead of whatever it did.
+    const mark = log.length;
     if (held.on === 'hp' && held.stat) {
       const stat = held.stat === 'random' ? this.rng.pick(STAT_KEYS) : held.stat;
       this.applyStage(combatant, stat, held.stages ?? 1, log, { source: 'self' });
@@ -872,7 +874,7 @@ export class Battle {
       combatant.pokemon.heldItem = null;
       combatant.marks.ateBerry = slug;
       combatant.marks.consumed = slug;
-      log.push({ kind: 'berry', side: combatant.side, data: { item: slug } });
+      log.splice(mark, 0, { kind: 'berry', side: combatant.side, data: { item: slug } });
     }
     return true;
   }
@@ -1561,12 +1563,15 @@ export class Battle {
       const seed = heldPassive(combatant.pokemon, 'terrain');
       if (!seed || seed.terrain !== this.field.terrain) continue;
 
+      // The seed's line goes ahead of the stage it raised, as every held
+      // item's does: what was used, and then what it did.
+      const mark = log.length;
       let used = false;
       for (const stat of seed.stats) {
         if (this.applyStage(combatant, stat, seed.stages ?? 1, log, { quiet: true })) used = true;
       }
       if (!used) continue;
-      log.push({ kind: 'berry', side: combatant.side, data: { item: combatant.pokemon.heldItem } });
+      log.splice(mark, 0, { kind: 'berry', side: combatant.side, data: { item: combatant.pokemon.heldItem } });
       combatant.pokemon.heldItem = null;
     }
   }
@@ -3271,12 +3276,13 @@ export class Battle {
     const policy = heldPassive(attacker.pokemon, 'miss');
     if (!policy) return;
 
+    const mark = log.length;
     let used = false;
     for (const stat of policy.stats) {
       if (this.applyStage(attacker, stat, policy.stages ?? 1, log, { quiet: true })) used = true;
     }
     if (!used) return;
-    log.push({ kind: 'berry', side: attacker.side, data: { item: attacker.pokemon.heldItem } });
+    log.splice(mark, 0, { kind: 'berry', side: attacker.side, data: { item: attacker.pokemon.heldItem } });
     attacker.pokemon.heldItem = null;
   }
 
@@ -3299,12 +3305,13 @@ export class Battle {
     const spray = heldPassive(attacker.pokemon, 'used');
     if (!spray || !spray.flags?.some((flag) => hasFlag(move, flag))) return;
 
+    const mark = log.length;
     let used = false;
     for (const stat of spray.stats) {
       if (this.applyStage(attacker, stat, spray.stages ?? 1, log, { quiet: true })) used = true;
     }
     if (!used) return;
-    log.push({ kind: 'berry', side: attacker.side, data: { item: attacker.pokemon.heldItem } });
+    log.splice(mark, 0, { kind: 'berry', side: attacker.side, data: { item: attacker.pokemon.heldItem } });
     attacker.pokemon.heldItem = null;
   }
 
@@ -3448,6 +3455,8 @@ export class Battle {
     const { slug, held } = trigger;
     // A Ripen makes the berry worth twice what it says.
     const ripe = ability?.berryDouble ? { ...held, ...doubled(held) } : held;
+    // Where the berry's line goes: ahead of the stage it raised.
+    const mark = log.length;
     if (held.stat) {
       // A stat berry raises a stage, which lives on the combatant rather than
       // on the Pokémon, so the battle applies that one itself.
@@ -3467,7 +3476,7 @@ export class Battle {
 
     combatant.pokemon.heldItem = null;
     combatant.marks.ateBerry = slug;
-    log.push({ kind: 'berry', side: combatant.side, data: { item: slug } });
+    log.splice(mark, 0, { kind: 'berry', side: combatant.side, data: { item: slug } });
 
     // A Figy and its kin taste of one stat; a nature that lowers that stat
     // cannot stand the flavour, and the Pokémon is left confused.
@@ -4131,6 +4140,7 @@ export class Battle {
     if (held.damageClass && move.damageClass !== held.damageClass) return;
 
     const slug = defender.pokemon.heldItem;
+    const mark = log.length;
     let used = false;
 
     for (const stat of held.stats ?? []) {
@@ -4153,7 +4163,7 @@ export class Battle {
     }
 
     if (!used) return;
-    log.push({ kind: 'berry', side: defender.side, data: { item: slug } });
+    log.splice(mark, 0, { kind: 'berry', side: defender.side, data: { item: slug } });
     if (held.consumed) defender.pokemon.heldItem = null;
   }
 
@@ -4580,8 +4590,9 @@ export class Battle {
     for (const combatant of [this.player, this.foe]) {
       const held = combatant ? heldPassive(combatant.pokemon, 'room') : null;
       if (!held) continue;
+      const mark = log.length;
       if (!this.applyStage(combatant, 'spe', held.stages ?? -1, log, { source: 'self', quiet: true })) continue;
-      log.push({ kind: 'heldFired', side: combatant.side, data: { item: combatant.pokemon.heldItem } });
+      log.splice(mark, 0, { kind: 'heldFired', side: combatant.side, data: { item: combatant.pokemon.heldItem } });
       this.consumeItem(combatant);
     }
   }
@@ -5463,7 +5474,8 @@ export function categoryOf(move) {
  *
  * `never` takes a move out of the fight altogether, `always` lets it be used
  * whenever the mode picks it, and the rest name the moment it is used ahead
- * of everything else — the companion's own health, or the foe's.
+ * of everything else — the companion's own health or stat ranks, or the
+ * foe's.
  *
  * @param {string} condition
  * @param {Battle} battle
@@ -5487,6 +5499,16 @@ function conditionHolds(condition, battle, attacker, defender) {
       // Now that there is weather and terrain, this asks what it always read
       // as: reach for a field move when there is no field effect already.
       return battle.field ? battle.field.quiet : true;
+    // A rank is any stat stage, accuracy and evasion among them: up when one
+    // sits above zero, down when one sits below. Both can hold at once.
+    case 'rankUp':
+      return Object.values(attacker.stages).some((stage) => stage > 0);
+    case 'rankDown':
+      return Object.values(attacker.stages).some((stage) => stage < 0);
+    case 'foeRankUp':
+      return Object.values(defender.stages).some((stage) => stage > 0);
+    case 'foeRankDown':
+      return Object.values(defender.stages).some((stage) => stage < 0);
     case 'hpTwoThirds':
       return health() <= 2 / 3;
     // `lowHp` is what half health was called before the fractions were named.

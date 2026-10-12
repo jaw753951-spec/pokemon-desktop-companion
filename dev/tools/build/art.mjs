@@ -167,13 +167,11 @@ export async function buildArt({ assetDir, dataDir, sample, log, pool }) {
         license: 'fan art, with credit',
         artists: COMMUNITY_ARTISTS,
       },
-      // The people the 3D games never drew in pixels (see NAMED_PORTRAITS),
-      // and the leaders a fan remake taught to walk (see NAMED_WALKERS).
+      // The people the 3D games never drew in pixels (see NAMED_PORTRAITS).
       trainers: [
         { key: 'smogon', source: 'Smogon / Pokémon Showdown', url: 'https://github.com/smogon/sprites', license: 'fan art, with credit' },
         { key: 'pokerogue', source: 'PokéRogue', url: 'https://github.com/pagefaultgames/pokerogue-assets', license: 'CC BY-NC-SA 4.0' },
         { key: 'showdown', source: 'Pokémon Showdown', artist: 'Brumirage', url: 'https://play.pokemonshowdown.com/sprites/trainers/', license: 'fan art, with credit, unedited' },
-        { key: 'hns', source: 'Pokémon Heart and Soul', url: 'https://github.com/PokemonHnS-Development/pokehns-expansion', license: 'fan work, with credit' },
       ],
     }),
   );

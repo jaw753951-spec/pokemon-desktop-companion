@@ -30,12 +30,29 @@ let current = null;
 let dragFrom = null;
 
 /**
+ * The size the window is meant to be, in the display-independent pixels the
+ * scale setting works in.
+ *
+ * Nothing but the scale setting changes it. Dragged between two monitors
+ * scaled differently — a laptop at 150% beside a desk monitor at 100% —
+ * Windows converts the window's place by one display's scale and its size by
+ * the other's, and every move along the way rounded the size a little larger:
+ * the companion grew as it was carried across, and went on growing for as
+ * long as it was dragged. So the size goes with every move, and anything that
+ * changes it anyway is undone (`holdSize`).
+ *
+ * @type {{width: number, height: number}|null}
+ */
+let intended = null;
+
+/**
  * @param {import('./settings.mjs').Settings} settings
  * @returns {BrowserWindow}
  */
 export function createWindow(settings) {
   const { width, height } = windowSize(settings.scale);
   const position = clampToDisplay(settings.windowX, settings.windowY, width, height);
+  intended = { width, height };
 
   current = new BrowserWindow({
     width,
@@ -76,6 +93,8 @@ export function createWindow(settings) {
   current.on('minimize', () => current?.restore());
   current.on('maximize', () => current?.unmaximize());
   current.on('enter-full-screen', () => current?.setFullScreen(false));
+  // Nor is it ever resized but by the scale setting.
+  current.on('resize', holdSize);
 
   current.loadFile(join(RENDERER_DIR, 'index.html'));
   current.on('closed', () => {
@@ -108,10 +127,24 @@ export function beginDrag() {
 export function dragTo(dx, dy) {
   const window = getWindow();
   if (!window || !dragFrom) return false;
-  const x = dragFrom.x + (Number.isFinite(dx) ? dx : 0);
-  const y = dragFrom.y + (Number.isFinite(dy) ? dy : 0);
-  window.setPosition(Math.round(x), Math.round(y));
+  const x = Math.round(dragFrom.x + (Number.isFinite(dx) ? dx : 0));
+  const y = Math.round(dragFrom.y + (Number.isFinite(dy) ? dy : 0));
+  // Place and size together, so crossing onto a display scaled differently
+  // cannot leave the size to be worked out again — and rounded up — each step.
+  if (intended) window.setContentBounds({ x, y, width: intended.width, height: intended.height });
+  else window.setPosition(x, y);
   return true;
+}
+
+/**
+ * Put the window back to the size it is meant to be, if anything — a move
+ * across displays, a window manager — has changed it.
+ */
+function holdSize() {
+  const window = getWindow();
+  if (!window || !intended) return;
+  const [width, height] = window.getContentSize();
+  if (width !== intended.width || height !== intended.height) window.setContentSize(intended.width, intended.height);
 }
 
 /** Let go, and report where the window ended up so the setting can keep it. */
@@ -145,6 +178,7 @@ export function applyScale(scale) {
   const centreY = y + currentHeight / 2;
 
   const position = keepOnDisplay(Math.round(centreX - width / 2), Math.round(centreY - height / 2), width, height);
+  intended = { width, height };
   window.setContentSize(width, height);
   window.setPosition(position.x, position.y);
   return { width, height, ...position };

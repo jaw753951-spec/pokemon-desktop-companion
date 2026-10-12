@@ -234,6 +234,9 @@ export async function verifyAssets({ assetDir, dataDir, log }) {
   note(Boolean(actors.props.center?.door), 'the Pokémon Center was not cut out of its town');
   note(await fileExists(join(assetDir, 'props', 'poke-center.png')), 'Pokémon Center: no building');
   note(await fileExists(join(assetDir, 'props', 'poke-center-door.png')), 'Pokémon Center: no door animation');
+  note(Boolean(actors.props.gym?.door), 'the gym was not cut out of its town');
+  note(await fileExists(join(assetDir, 'props', 'gym.png')), 'Gym: no building');
+  note(await fileExists(join(assetDir, 'props', 'gym-door.png')), 'Gym: no door animation');
 
   if (problems.length === 0) {
     log(`ok — ${Object.keys(species).length} species, ${areas.length} areas, ${Object.keys(bgm.tracks).length} tracks`);
@@ -280,12 +283,6 @@ async function verifyAuthored({ readAuthored, species, types, actors, note, log 
     note(Boolean(leader.name?.[base.code]), `leader ${leader.id}: no ${base.code} name`);
     if (leader.portrait) {
       note(Boolean(actors.portraits[leader.portrait]), `leader ${leader.id}: no portrait ${leader.portrait}`);
-    }
-    if (leader.field) {
-      note(Boolean(actors.overworld?.[leader.field]), `leader ${leader.id}: no field sprite ${leader.field}`);
-    } else {
-      // Walks as a trainer class of their own sex, so it has to be known.
-      note(leader.gender === 'm' || leader.gender === 'f', `leader ${leader.id}: no gender to borrow a walker by`);
     }
   }
   // Names for the other languages are authored by hand, so a gap is worth

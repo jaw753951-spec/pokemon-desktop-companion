@@ -137,11 +137,14 @@ export const NAMED_PORTRAITS = {
   olivia: { source: 'smogon', path: 'src/_uncategorized/noncanonical/trainers/gen7/sun-moon/Olivia.png' },
   acerola: { source: 'smogon', path: 'src/_uncategorized/noncanonical/trainers/gen7/sun-moon/Acerola.png' },
   kahili: { source: 'smogon', path: 'src/_uncategorized/noncanonical/trainers/gen7/sun-moon/Kahili.png' },
-  hau: { source: 'smogon', path: 'src/_uncategorized/noncanonical/trainers/gen7/sun-moon/Hau.png' },
   hala: { source: 'smogon', path: 'src/_uncategorized/noncanonical/trainers/gen7/sun-moon/Hala.png' },
   molayne: { source: 'smogon', path: 'src/_uncategorized/noncanonical/trainers/gen7/sun-moon/Molayne.png' },
-  // Kalos's champion and its rock leader, Galar's leaders, and Paldea's and
-  // Blueberry Academy's leaders, Elite Four and champions, from PokéRogue.
+  // Kalos's champion and its rock leader, Alola's champion, Galar's leaders,
+  // and Paldea's and Blueberry Academy's leaders, Elite Four and champions,
+  // from PokéRogue. Hau is here rather than with the rest of Alola: Smogon's
+  // drawing of him has his skin grey-olive and his hair olive, where the games
+  // have him tanned with dark green hair.
+  hau: { source: 'pokerogue', path: 'images/trainer/hau' },
   diantha: { source: 'pokerogue', path: 'images/trainer/diantha' },
   grant: { source: 'pokerogue', path: 'images/trainer/grant' },
   allister: { source: 'pokerogue', path: 'images/trainer/allister' },
@@ -175,65 +178,6 @@ export const NAMED_PORTRAITS = {
   kieran: { source: 'pokerogue', path: 'images/trainer/kieran' },
   avery: { source: 'showdown', path: 'sprites/trainers/avery.png' },
   klara: { source: 'showdown', path: 'sprites/trainers/klara.png' },
-};
-
-/**
- * The walking sprites of the gym leaders who were drawn for the road, from
- * the Game Boy Advance games and the one fan remake in the same engine.
- *
- * Emerald draws its own leaders, Fire Red Kanto's, and Pokémon Heart and
- * Soul — a remake of HeartGold and SoulSilver on Emerald's engine (`hns`,
- * kept under `data/vendor/pokehns`) — Johto's and Kanto's again, with the
- * walk the cartridges never gave them. A leader who only ever stood still in
- * a gym has three standing frames and no walk; the build makes one of the
- * west-facing pose and the same pose a pixel up. Tate and Liza are one
- * leader and walk side by side.
- *
- * Sinnoh's leaders come from Platinum (`platinum`), whose walking sprites are
- * the same kind HeartGold and SoulSilver drew — the ones Heart and Soul
- * brought down to the Game Boy Advance — in sixteen 32-pixel frames stacked
- * one above another. They are a little larger than the cartridges' people,
- * and are kept at their own size rather than squeezed. Nobody past Sinnoh
- * was drawn to walk in this style.
- *
- * @type {Record<string, {source: 'emerald'|'firered'|'hns'|'platinum', path: string, with?: string}>}
- */
-export const NAMED_WALKERS = {
-  leader_roxanne: { source: 'emerald', path: 'graphics/object_events/pics/people/gym_leaders/roxanne.png' },
-  leader_brawly: { source: 'emerald', path: 'graphics/object_events/pics/people/gym_leaders/brawly.png' },
-  leader_wattson: { source: 'emerald', path: 'graphics/object_events/pics/people/gym_leaders/wattson.png' },
-  leader_flannery: { source: 'emerald', path: 'graphics/object_events/pics/people/gym_leaders/flannery.png' },
-  leader_winona: { source: 'emerald', path: 'graphics/object_events/pics/people/gym_leaders/winona.png' },
-  leader_tate_and_liza: {
-    source: 'emerald',
-    path: 'graphics/object_events/pics/people/gym_leaders/tate.png',
-    with: 'graphics/object_events/pics/people/gym_leaders/liza.png',
-  },
-  leader_koga: { source: 'firered', path: 'graphics/object_events/pics/people/koga.png' },
-  leader_giovanni: { source: 'firered', path: 'graphics/object_events/pics/people/giovanni.png' },
-  leader_brock: { source: 'hns', path: 'graphics/object_events/pics/people/gym_leaders/brock_hns.png' },
-  leader_misty: { source: 'hns', path: 'graphics/object_events/pics/people/gym_leaders/misty_hns.png' },
-  leader_lt_surge: { source: 'hns', path: 'graphics/object_events/pics/people/gym_leaders/surge_hns.png' },
-  leader_erika: { source: 'hns', path: 'graphics/object_events/pics/people/gym_leaders/erika_hns.png' },
-  leader_sabrina: { source: 'hns', path: 'graphics/object_events/pics/people/gym_leaders/sabrina_hns.png' },
-  leader_blaine: { source: 'hns', path: 'graphics/object_events/pics/people/gym_leaders/blaine_hns.png' },
-  leader_falkner: { source: 'hns', path: 'graphics/object_events/pics/people/gym_leaders/falkner_hns.png' },
-  leader_bugsy: { source: 'hns', path: 'graphics/object_events/pics/people/gym_leaders/bugsy_hns.png' },
-  leader_whitney: { source: 'hns', path: 'graphics/object_events/pics/people/gym_leaders/whitney_hns.png' },
-  leader_morty: { source: 'hns', path: 'graphics/object_events/pics/people/gym_leaders/morty_hns.png' },
-  leader_chuck: { source: 'hns', path: 'graphics/object_events/pics/people/gym_leaders/chuck_hns.png' },
-  leader_jasmine: { source: 'hns', path: 'graphics/object_events/pics/people/gym_leaders/jasmine_hns.png' },
-  leader_pryce: { source: 'hns', path: 'graphics/object_events/pics/people/gym_leaders/pryce_hns.png' },
-  leader_clair: { source: 'hns', path: 'graphics/object_events/pics/people/gym_leaders/clair_hns.png' },
-  leader_janine: { source: 'hns', path: 'graphics/object_events/pics/people/gym_leaders/janine_hns.png' },
-  leader_roark: { source: 'platinum', path: 'res/graphics/field_sprites/npc/roark.png' },
-  leader_gardenia: { source: 'platinum', path: 'res/graphics/field_sprites/npc/gardenia.png' },
-  leader_maylene: { source: 'platinum', path: 'res/graphics/field_sprites/npc/maylene.png' },
-  leader_wake: { source: 'platinum', path: 'res/graphics/field_sprites/npc/crasher_wake.png' },
-  leader_fantina: { source: 'platinum', path: 'res/graphics/field_sprites/npc/fantina.png' },
-  leader_byron: { source: 'platinum', path: 'res/graphics/field_sprites/npc/byron.png' },
-  leader_candice: { source: 'platinum', path: 'res/graphics/field_sprites/npc/candice.png' },
-  leader_volkner: { source: 'platinum', path: 'res/graphics/field_sprites/npc/volkner.png' },
 };
 
 /** Highest National Dex number the game ships (Gen 9, Pecharunt). */
@@ -288,16 +232,34 @@ export const VERSION_GROUP_PRIORITY = [
  * map a few blocks to show more of what stands under the lane (`bandDrop`):
  * Route 10's Power Plant was only the top of its dome.
  *
- * @type {Array<{id: string, dir: string, location: string, tags: string[], game?: 'emerald'|'firered', region?: string, ko?: string, backdrop?: string, bandDrop?: number}>}
+ * The lane is found as the longest run with two rows of headroom over it, which
+ * on a road two blocks wide with trees or a fence along its far side is the
+ * grass along its near side: the companion walked beside the road rather than
+ * on it. An area can name the map row to walk along instead (`lane`), the
+ * road's own nearer row.
+ *
+ * The strip loops by mirroring the walked run at both ends, so whatever
+ * reaches into the run's end column from just outside it comes back as half
+ * of something, doubled. A run can be shortened to leave it out (`bandTrim`,
+ * blocks off both ends, or `[left, right]`): Route 17's street lamps stand
+ * just outside its run and hang their heads over it, and mirrored, a lamp's
+ * head with nothing under it read as two Poké Balls stuck together in the
+ * grass. Route 16's run ended on a fence corner and the edge of a gatehouse
+ * wall, and Route 18's on a fence post and the grass by its gatehouse. The
+ * end column has to land on plain ground, past the edge of any patch of sand
+ * as well: the one-pixel rim of grass round it, mirrored, is a dotted line
+ * down the sand.
+ *
+ * @type {Array<{id: string, dir: string, location: string, tags: string[], game?: 'emerald'|'firered', region?: string, ko?: string, backdrop?: string, bandDrop?: number, bandTrim?: number|[number, number], lane?: number}>}
  */
 export const AREAS = [
   { id: 'route101', dir: 'Route101', location: 'hoenn-route-101', tags: ['grass', 'plain'] },
   { id: 'route102', dir: 'Route102', location: 'hoenn-route-102', tags: ['grass', 'water'] },
-  { id: 'route103', dir: 'Route103', location: 'hoenn-route-103', tags: ['grass', 'beach'] },
-  { id: 'route104', dir: 'Route104', location: 'hoenn-route-104', tags: ['beach', 'forest'] },
-  { id: 'route110', dir: 'Route110', location: 'hoenn-route-110', tags: ['grass', 'urban'] },
-  { id: 'route111', dir: 'Route111', location: 'hoenn-route-111', tags: ['desert', 'sand'] },
-  { id: 'route112', dir: 'Route112', location: 'hoenn-route-112', tags: ['mountain', 'volcano'] },
+  { id: 'route103', dir: 'Route103', location: 'hoenn-route-103', tags: ['grass', 'beach'], lane: 13, bandTrim: [0, 1] },
+  { id: 'route104', dir: 'Route104', location: 'hoenn-route-104', tags: ['beach', 'forest'], lane: 25, bandTrim: [2, 1] },
+  { id: 'route110', dir: 'Route110', location: 'hoenn-route-110', tags: ['grass', 'urban'], lane: 70 },
+  { id: 'route111', dir: 'Route111', location: 'hoenn-route-111', tags: ['desert', 'sand'], lane: 9 },
+  { id: 'route112', dir: 'Route112', location: 'hoenn-route-112', tags: ['mountain', 'volcano'], lane: 51 },
   { id: 'route113', dir: 'Route113', location: 'hoenn-route-113', tags: ['volcano', 'ash'] },
   { id: 'route114', dir: 'Route114', location: 'hoenn-route-114', tags: ['mountain', 'rough'] },
   { id: 'route115', dir: 'Route115', location: 'hoenn-route-115', tags: ['beach', 'mountain'] },
@@ -305,9 +267,9 @@ export const AREAS = [
   { id: 'route117', dir: 'Route117', location: 'hoenn-route-117', tags: ['grass', 'meadow'] },
   { id: 'route118', dir: 'Route118', location: 'hoenn-route-118', tags: ['beach', 'water'] },
   { id: 'route119', dir: 'Route119', location: 'hoenn-route-119', tags: ['jungle', 'rain'] },
-  { id: 'route120', dir: 'Route120', location: 'hoenn-route-120', tags: ['jungle', 'water'] },
+  { id: 'route120', dir: 'Route120', location: 'hoenn-route-120', tags: ['jungle', 'water'], lane: 6 },
   { id: 'route121', dir: 'Route121', location: 'hoenn-route-121', tags: ['grass', 'meadow'] },
-  { id: 'route123', dir: 'Route123', location: 'hoenn-route-123', tags: ['grass', 'meadow'] },
+  { id: 'route123', dir: 'Route123', location: 'hoenn-route-123', tags: ['grass', 'meadow'], lane: 15, bandTrim: [2, 0] },
   { id: 'petalburg-woods', dir: 'PetalburgWoods', location: 'petalburg-woods', tags: ['forest'] },
   { id: 'granite-cave', dir: 'GraniteCave_1F', location: 'granite-cave', tags: ['cave', 'rough'] },
   { id: 'fiery-path', dir: 'FieryPath', location: 'fiery-path', tags: ['volcano', 'cave'] },
@@ -339,12 +301,12 @@ export const AREAS = [
   { id: 'kanto-route-12', dir: 'Route12', location: 'kanto-route-12', tags: ['grass', 'water'], game: 'firered', region: 'kanto', ko: '12번도로' },
   { id: 'kanto-route-13', dir: 'Route13', location: 'kanto-route-13', tags: ['grass', 'meadow'], game: 'firered', region: 'kanto', ko: '13번도로' },
   { id: 'kanto-route-14', dir: 'Route14', location: 'kanto-route-14', tags: ['grass', 'meadow'], game: 'firered', region: 'kanto', ko: '14번도로' },
-  { id: 'kanto-route-15', dir: 'Route15', location: 'kanto-route-15', tags: ['grass', 'meadow'], game: 'firered', region: 'kanto', ko: '15번도로' },
-  { id: 'kanto-route-16', dir: 'Route16', location: 'kanto-route-16', tags: ['grass', 'plain'], game: 'firered', region: 'kanto', ko: '16번도로' },
-  { id: 'kanto-route-17', dir: 'Route17', location: 'kanto-route-17', tags: ['beach', 'plain'], game: 'firered', region: 'kanto', ko: '17번도로' },
-  { id: 'kanto-route-18', dir: 'Route18', location: 'kanto-route-18', tags: ['beach', 'grass'], game: 'firered', region: 'kanto', ko: '18번도로' },
+  { id: 'kanto-route-15', dir: 'Route15', location: 'kanto-route-15', tags: ['grass', 'meadow'], game: 'firered', region: 'kanto', lane: 6, bandTrim: 1, ko: '15번도로' },
+  { id: 'kanto-route-16', dir: 'Route16', location: 'kanto-route-16', tags: ['grass', 'plain'], game: 'firered', region: 'kanto', bandTrim: [2, 1], lane: 7, ko: '16번도로' },
+  { id: 'kanto-route-17', dir: 'Route17', location: 'kanto-route-17', tags: ['beach', 'plain'], game: 'firered', region: 'kanto', bandTrim: 1, ko: '17번도로' },
+  { id: 'kanto-route-18', dir: 'Route18', location: 'kanto-route-18', tags: ['beach', 'grass'], game: 'firered', region: 'kanto', bandTrim: [2, 1], ko: '18번도로' },
   { id: 'kanto-route-22', dir: 'Route22', location: 'kanto-route-22', tags: ['grass', 'plain'], game: 'firered', region: 'kanto', ko: '22번도로' },
-  { id: 'kanto-route-23', dir: 'Route23', location: 'kanto-route-23', tags: ['mountain', 'rough'], game: 'firered', region: 'kanto', backdrop: 'grass', ko: '23번도로' },
+  { id: 'kanto-route-23', dir: 'Route23', location: 'kanto-route-23', tags: ['mountain', 'rough'], game: 'firered', region: 'kanto', backdrop: 'grass', lane: 17, ko: '23번도로' },
   { id: 'kanto-route-24', dir: 'Route24', location: 'kanto-route-24', tags: ['grass', 'water'], game: 'firered', region: 'kanto', ko: '24번도로' },
   { id: 'kanto-route-25', dir: 'Route25', location: 'kanto-route-25', tags: ['grass', 'beach'], game: 'firered', region: 'kanto', ko: '25번도로' },
   { id: 'viridian-forest', dir: 'ViridianForest', location: 'viridian-forest', tags: ['forest'], game: 'firered', region: 'kanto', ko: '상록숲' },

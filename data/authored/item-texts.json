@@ -346,62 +346,62 @@
     },
     "eon-ticket": {
       "text": {
-        "ko": "가방에 있으면 라티아스, 그다음 라티오스가 길에 나타난다. 둘 다 잡을 때까지 이 티켓으로만 만날 수 있다.",
-        "en": "While it is in the bag, Latias and then Latios turn up on the road. Until both are caught, this ticket is the only way to meet them."
+        "ko": "가지고 있으면 라티아스와 라티오스를 만날 수 있다.",
+        "en": "While you have it, you can meet Latias and Latios."
       }
     },
     "silver-wing": {
       "text": {
-        "ko": "가방에 있으면 루기아가 길에 나타난다. 잡을 때까지 이 깃털로만 만날 수 있다.",
-        "en": "While it is in the bag, Lugia turns up on the road. Until it is caught, this feather is the only way to meet it."
+        "ko": "가지고 있으면 루기아를 만날 수 있다.",
+        "en": "While you have it, you can meet Lugia."
       }
     },
     "rainbow-wing": {
       "text": {
-        "ko": "가방에 있으면 칠색조가 길에 나타난다. 잡을 때까지 이 깃털로만 만날 수 있다.",
-        "en": "While it is in the bag, Ho-Oh turns up on the road. Until it is caught, this feather is the only way to meet it."
+        "ko": "가지고 있으면 칠색조를 만날 수 있다.",
+        "en": "While you have it, you can meet Ho-Oh."
       }
     },
     "jade-orb": {
       "text": {
-        "ko": "가방에 있으면 레쿠쟈가 길에 나타난다. 잡을 때까지 이 구슬로만 만날 수 있다.",
-        "en": "While it is in the bag, Rayquaza turns up on the road. Until it is caught, this orb is the only way to meet it."
+        "ko": "가지고 있으면 레쿠쟈를 만날 수 있다.",
+        "en": "While you have it, you can meet Rayquaza."
       }
     },
     "magma-stone": {
       "text": {
-        "ko": "가방에 있으면 히드런이 길에 나타난다. 잡을 때까지 이 돌로만 만날 수 있다.",
-        "en": "While it is in the bag, Heatran turns up on the road. Until it is caught, this stone is the only way to meet it."
+        "ko": "가지고 있으면 히드런을 만날 수 있다.",
+        "en": "While you have it, you can meet Heatran."
       }
     },
     "member-card": {
       "text": {
-        "ko": "가방에 있으면 다크라이가 길에 나타난다. 잡을 때까지 이 카드로만 만날 수 있다.",
-        "en": "While it is in the bag, Darkrai turns up on the road. Until it is caught, this card is the only way to meet it."
+        "ko": "가지고 있으면 다크라이를 만날 수 있다.",
+        "en": "While you have it, you can meet Darkrai."
       }
     },
     "oaks-letter": {
       "text": {
-        "ko": "가방에 있으면 쉐이미가 길에 나타난다. 잡을 때까지 이 편지로만 만날 수 있다.",
-        "en": "While it is in the bag, Shaymin turns up on the road. Until it is caught, this letter is the only way to meet it."
+        "ko": "가지고 있으면 쉐이미를 만날 수 있다.",
+        "en": "While you have it, you can meet Shaymin."
       }
     },
     "azure-flute": {
       "text": {
-        "ko": "가방에 있으면 아르세우스가 길에 나타난다. 잡을 때까지 이 피리로만 만날 수 있다.",
-        "en": "While it is in the bag, Arceus turns up on the road. Until it is caught, this flute is the only way to meet it."
+        "ko": "가지고 있으면 아르세우스를 만날 수 있다.",
+        "en": "While you have it, you can meet Arceus."
       }
     },
     "liberty-pass": {
       "text": {
-        "ko": "가방에 있으면 비크티니가 길에 나타난다. 잡을 때까지 이 티켓으로만 만날 수 있다.",
-        "en": "While it is in the bag, Victini turns up on the road. Until it is caught, this pass is the only way to meet it."
+        "ko": "가지고 있으면 비크티니를 만날 수 있다.",
+        "en": "While you have it, you can meet Victini."
       }
     },
     "enigmatic-card": {
       "text": {
-        "ko": "가방에 있으면 울트라비스트가 한 마리씩 차례로 길에 나타난다. 텅비드부터 시작해, 모두 잡을 때까지 이 카드로만 만날 수 있다.",
-        "en": "While it is in the bag, the Ultra Beasts turn up on the road one at a time, Nihilego first. Until all of them are caught, this card is the only way to meet them."
+        "ko": "가지고 있으면 울트라비스트를 만날 수 있다.",
+        "en": "While you have it, you can meet the Ultra Beasts."
       }
     },
     "lure-ball": {

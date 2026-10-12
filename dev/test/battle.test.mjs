@@ -420,6 +420,27 @@ test('each move has its own condition, ahead of its kind, and the foe\'s health 
   assert.equal(pick(), 'ember', 'the foe at a quarter brings the finisher out');
 });
 
+test('a move can wait on either side\'s stat ranks going up or down', options, () => {
+  const player = makeFixed(CHARIZARD, 50, ['flamethrower', 'swords-dance', 'ember']);
+  const foe = makeFixed(VENUSAUR, 50, ['tackle']);
+  const battle = new Battle({
+    rng: new Rng(4),
+    player,
+    foes: [foe],
+    policy: { ...defaultAutoBattle(), moves: { 'swords-dance': 'rankDown', ember: 'foeRankUp' } },
+  });
+  const pick = () => choosePolicyMove(battle, battle.player, /** @type {any} */ (battle.foe), player.moves);
+
+  assert.equal(pick(), 'flamethrower', 'with no ranks moved, neither waits its turn');
+  battle.player.stages.atk = -1;
+  assert.equal(pick(), 'swords-dance', 'a lowered rank brings the setup back out');
+  battle.player.stages.atk = 0;
+  battle.foe.stages.spe = 2;
+  assert.equal(pick(), 'ember', 'the foe\'s raised rank brings its answer out');
+  battle.foe.stages.spe = -2;
+  assert.equal(pick(), 'flamethrower', 'a lowered foe rank is not a raised one');
+});
+
 test('two moves whose moments both hold go in slot order, which the player sets', options, () => {
   const player = makeFixed(CHARIZARD, 50, ['flamethrower', 'swords-dance', 'recover']);
   const battle = new Battle({
@@ -590,6 +611,30 @@ test('a Liechi Berry waits for a quarter, and raises a stage', options, () => {
   battle.takeTurn();
   assert.equal(player.heldItem, null);
   assert.equal(battle.player.stages.atk, 1);
+});
+
+test('an item that moves a stage is named before the stage moves', options, () => {
+  const player = makeFixed(CHARIZARD, 50, ['tackle']);
+  const battle = new Battle({
+    rng: new Rng(14),
+    player,
+    foes: [makeFixed(BLASTOISE, 60, ['tackle'])],
+    policy: defaultAutoBattle(),
+  });
+  const order = (log) => log.filter((entry) => ['berry', 'heldFired', 'stat'].includes(entry.kind)).map((entry) => entry.kind);
+
+  // A pinch berry: eaten, and then the Attack it raised.
+  player.heldItem = 'liechi-berry';
+  player.hp = Math.floor(maxHp(player) / 4);
+  const eaten = [];
+  battle.eatOneBerry(battle.player, eaten);
+  assert.deepEqual(order(eaten), ['berry', 'stat']);
+
+  // A Weakness Policy: set off by the hit, and then both stats it raised.
+  player.heldItem = 'weakness-policy';
+  const hit = [];
+  battle.answerWithItem(/** @type {any} */ (battle.foe), battle.player, moveOf('surf'), 2, hit);
+  assert.deepEqual(order(hit), ['berry', 'stat', 'stat']);
 });
 
 test('Leftovers pays a sixteenth at the end of each turn', options, () => {

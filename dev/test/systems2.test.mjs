@@ -703,7 +703,7 @@ test('the box sorts by Pokédex number, by who has beaten the League or by shini
 });
 
 test('the shop sells all but the unique, prices a trainer\'s prize, and a kept item is had once', options, async () => {
-  const { alreadyOwned, buy, isConsumable, lossFor, priceOf, prizeFor, shopStock } = await import('../../app/renderer/engine/shop.mjs');
+  const { alreadyOwned, buy, isConsumable, lossFor, oneAtATime, priceOf, prizeFor, shopStock } = await import('../../app/renderer/engine/shop.mjs');
   const session = new Session({ slot: 0, save: { seed: 1, party: { active: fixed(4, 20), box: [] } } });
   assert.equal(session.money, 3000, 'a journey starts with the games\' 3,000');
 
@@ -733,9 +733,9 @@ test('the shop sells all but the unique, prices a trainer\'s prize, and a kept i
   assert.equal(alreadyOwned(session, 'leftovers'), false);
   assert.equal(buy(session, 'leftovers'), 'bought');
 
-  // A stone is spent on the evolution it makes; a Metal Coat is still held
-  // after it, so it is kept like a Leftovers.
-  assert.equal(isConsumable('fire-stone'), true);
+  // Whatever a Pokémon evolves by is kept, held or used: a Metal Coat stays
+  // in the Steelix's hand, and a Fire Stone goes back in the bag.
+  assert.equal(isConsumable('fire-stone'), false);
   assert.equal(isConsumable('metal-coat'), false);
   assert.equal(isConsumable('razor-claw'), false);
   assert.equal(isConsumable('oval-stone'), false);
@@ -744,7 +744,21 @@ test('the shop sells all but the unique, prices a trainer\'s prize, and a kept i
   assert.equal(session.countOf('metal-coat'), 1);
   assert.equal(buy(session, 'metal-coat'), 'owned');
   assert.equal(buy(session, 'fire-stone', 3), 'bought');
-  assert.equal(session.countOf('fire-stone'), 3);
+  assert.equal(session.countOf('fire-stone'), 1);
+  assert.equal(buy(session, 'fire-stone'), 'owned');
+
+  // The misc pocket holds one of everything, even what a battle uses up; the
+  // other pockets are supplies, stocked by the dozen.
+  assert.equal(isConsumable('focus-sash'), true);
+  assert.equal(oneAtATime('focus-sash'), true);
+  assert.equal(buy(session, 'focus-sash', 3), 'bought');
+  assert.equal(session.countOf('focus-sash'), 1);
+  assert.equal(buy(session, 'focus-sash'), 'owned');
+  session.addItem('focus-sash', 4);
+  assert.equal(session.countOf('focus-sash'), 1, 'however it arrives');
+  assert.equal(oneAtATime('potion'), false);
+  assert.equal(oneAtATime('oran-berry'), false);
+  assert.equal(oneAtATime('poke-ball'), false);
   session.money = 100;
   assert.equal(buy(session, 'super-potion'), 'poor');
 

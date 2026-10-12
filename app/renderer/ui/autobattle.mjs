@@ -27,7 +27,7 @@ const MODES = ['repeatAll', 'repeatLast', 'damageFirst'];
  *
  * `never` is one of them rather than a separate switch: a move that is never
  * used and a move used only under some condition are the same decision. The
- * health ones come in pairs — the companion's own, and the foe's.
+ * rank and health ones come in pairs — the companion's own, and the foe's.
  */
 const CONDITIONS = [
   'never',
@@ -36,6 +36,10 @@ const CONDITIONS = [
   'noStatus',
   'foeStatus',
   'noField',
+  'rankUp',
+  'rankDown',
+  'foeRankUp',
+  'foeRankDown',
   'hpTwoThirds',
   'hpHalf',
   'hpThird',

@@ -17,9 +17,9 @@
  * something saved up for rather than stocked by the dozen.
  */
 import { gameData, itemOf, moveOf } from '../core/data.mjs';
-import { evolvesSomething, evolvesWhenHeld } from './bagorder.mjs';
+import { evolvesSomething } from './bagorder.mjs';
 import { signatureItems } from './forms.mjs';
-import { levelOf } from './pokemon.mjs';
+import { levelOf, TRADE_ITEM } from './pokemon.mjs';
 
 /** What a new journey starts with, as the games start it. */
 export const STARTING_MONEY = 3000;
@@ -134,11 +134,11 @@ export function machinePrice(slug) {
 }
 
 /**
- * Whether an item is used up — a potion drunk, a berry eaten, a stone spent
- * on an evolution, a Focus Sash torn — or kept for good once had: a
- * Leftovers, a Choice Band, a TM's move, a Metal Coat still held after the
- * Steelix it made. What is kept is only ever had once: a second one from a
- * find or a shop would be a thing with nothing to do.
+ * Whether an item is used up — a potion drunk, a berry eaten, a Focus Sash
+ * torn — or kept for good once had: a Leftovers, a Choice Band, a TM's move,
+ * and anything a Pokémon evolves by, held or used. A Metal Coat stays in the
+ * Steelix's hand, and a Fire Stone or the Linking Cord that stands in for a
+ * trade goes back in the bag after the evolution it made.
  *
  * @param {string} slug
  */
@@ -147,21 +147,35 @@ export function isConsumable(slug) {
   if (!item) return true;
   if (item.pocket === 'medicine' || item.pocket === 'berries' || item.pocket === 'pokeballs') return true;
   if (item.pocket === 'machines') return false;
-  if (evolvesWhenHeld(slug)) return false;
+  if (evolvesSomething(slug) || slug === TRADE_ITEM) return false;
   if (['evolution', 'jewels', 'species-candies', 'tm-materials', 'loot', 'dex-completion', 'picnic', 'collectibles'].includes(item.category)) return true;
   return Boolean(item.held?.consumed || item.use?.consumed);
 }
 
 /**
- * Whether the player already has one of a kept item, in the bag or in the
- * travelling Pokémon's hand. What a Pokémon in the box holds stays with it
- * there, so it does not stop the companion getting one of its own.
+ * Whether the bag holds at most one of an item: anything kept, and everything
+ * in the misc pocket, used up or not. A second Leftovers would be a thing with
+ * nothing to do, and the misc pocket is the held items and the oddments, one
+ * of each, rather than supplies stocked by the dozen as potions, balls and
+ * berries are.
+ *
+ * @param {string} slug
+ */
+export function oneAtATime(slug) {
+  return !isConsumable(slug) || itemOf(slug)?.pocket === 'misc';
+}
+
+/**
+ * Whether the player already has the one they may have of an item, in the
+ * bag or in the travelling Pokémon's hand. What a Pokémon in the box holds
+ * stays with it there, so it does not stop the companion getting one of its
+ * own.
  *
  * @param {import('./session.mjs').Session} session
  * @param {string} slug
  */
 export function alreadyOwned(session, slug) {
-  if (isConsumable(slug)) return false;
+  if (!oneAtATime(slug)) return false;
   if (session.countOf(slug) > 0) return true;
   if (itemOf(slug)?.pocket === 'machines' && session.machines.includes(itemOf(slug)?.move ?? '')) return true;
   return session.active?.heldItem === slug;
@@ -181,8 +195,8 @@ export function shopStock() {
 }
 
 /**
- * Buy some of an item, if the purse covers it and, for a kept item, the
- * player has none yet.
+ * Buy some of an item, if the purse covers it and, for one the bag holds
+ * only one of, the player has none yet.
  *
  * @param {import('./session.mjs').Session} session
  * @param {string} slug
@@ -193,7 +207,7 @@ export function buy(session, slug, count = 1) {
   const price = priceOf(slug);
   if (price === null) return 'unsold';
   if (alreadyOwned(session, slug)) return 'owned';
-  const quantity = isConsumable(slug) ? Math.max(1, Math.floor(count)) : 1;
+  const quantity = oneAtATime(slug) ? 1 : Math.max(1, Math.floor(count));
   if (session.money < price * quantity) return 'poor';
   session.money -= price * quantity;
   session.addItem(slug, quantity);
