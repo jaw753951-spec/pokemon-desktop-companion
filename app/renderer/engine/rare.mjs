@@ -13,7 +13,9 @@
  * the Member Card leads to Darkrai, the Silver Wing to Lugia. The Pokémon an
  * item leads to are met no other way, and while one of them is waiting the
  * clock runs to a much shorter ceiling — a ticket found is a meeting soon,
- * not one more name in a draw.
+ * not one more name in a draw. The Enigmatic Card is the exception: it puts
+ * the Ultra Beasts in the draw with everyone else, which is how they are met
+ * once it is in the bag.
  */
 import { TAG_TYPES } from '../../shared/area-tags.mjs';
 import { gameData, speciesIdBySlug } from '../core/data.mjs';
@@ -76,14 +78,15 @@ export function callingItems() {
 /**
  * The Pokémon the key items in the bag have waiting: for each, the first of
  * the ones it leads to not yet caught. A ticket leads to its Pokémon one at a
- * time, in order, and stops leading anywhere once they are all caught.
+ * time, in order, and stops leading anywhere once they are all caught. An
+ * item that opens the draw instead (`pool`) has nobody waiting.
  *
  * @param {import('./session.mjs').Session} session
  * @returns {number[]}
  */
 export function calledSpecies(session) {
   return callingItems()
-    .filter(({ slug }) => session.countOf(slug) > 0)
+    .filter(({ slug, item }) => !item.pool && session.countOf(slug) > 0)
     .map(({ calls }) => calls.find((id) => !session.caught.has(id)))
     .filter((id) => typeof id === 'number');
 }
@@ -106,13 +109,28 @@ export function rollRare(session) {
   if (!session.rng.chance(rareChance(since, called.length > 0))) return null;
   session.rareSince = session.playtime;
   if (called.length) return session.rng.pick(called);
-  return pickRare(session.rng, session.area, session.caught);
+  return pickRare(session.rng, session.area, session.caught, pooledSpecies(session));
+}
+
+/**
+ * The Pokémon the items in the bag have put in the rare draw: the Ultra
+ * Beasts, once the Enigmatic Card is had.
+ *
+ * @param {import('./session.mjs').Session} session
+ * @returns {Set<number>}
+ */
+export function pooledSpecies(session) {
+  return new Set(
+    callingItems()
+      .filter(({ slug, item }) => item.pool && session.countOf(slug) > 0)
+      .flatMap(({ calls }) => calls),
+  );
 }
 
 /**
  * A rare Pokémon for the road, from all of them but the ones a key item
- * leads to, leaning towards the types the area's terrain suits as a stray
- * does.
+ * leads to — less those an item in the bag has put in the draw — leaning
+ * towards the types the area's terrain suits as a stray does.
  *
  * One not yet caught comes first, while there are any: each legendary is one
  * to a save in the games, and a second Mewtwo is no prize while there are a
@@ -121,10 +139,11 @@ export function rollRare(session) {
  * @param {import('../core/rng.mjs').Rng} rng
  * @param {any} area
  * @param {Set<number>} [caught]
+ * @param {Set<number>} [pooled] the reserved Pokémon an item has put in the draw
  * @returns {number|null}
  */
-export function pickRare(rng, area, caught = new Set()) {
-  const reserved = new Set(callingItems().flatMap(({ calls }) => calls));
+export function pickRare(rng, area, caught = new Set(), pooled = new Set()) {
+  const reserved = new Set(callingItems().flatMap(({ calls }) => calls).filter((id) => !pooled.has(id)));
   const pool = Object.values(gameData().species).filter((species) => isRare(species) && !reserved.has(species.id));
   const fresh = pool.filter((species) => !caught.has(species.id));
   const wanted = new Set((area?.tags ?? []).flatMap((tag) => TAG_TYPES[tag] ?? []));

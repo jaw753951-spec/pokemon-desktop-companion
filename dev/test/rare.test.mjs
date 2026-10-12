@@ -129,17 +129,31 @@ test('a key item leads to its Pokémon one at a time, soon, and stops once they 
   assert.ok(rare !== null && ![id('latias'), id('latios')].includes(rare));
 });
 
-test('the Enigmatic Card leads to the Ultra Beasts in the order the task force hunts them', options, () => {
+test('the Enigmatic Card puts the Ultra Beasts in the rare draw, and nothing else does', options, () => {
+  const beasts = ['nihilego', 'buzzwole', 'pheromosa', 'xurkitree', 'kartana', 'celesteela', 'guzzlord', 'poipole', 'stakataka', 'blacephalon'].map(id);
+  const draw = (/** @type {any} */ session) => {
+    const met = new Set();
+    for (let roll = 0; roll < 600; roll++) {
+      session.playtime += RARE_CEILING.hard;
+      met.add(/** @type {number} */ (rollRare(session)));
+    }
+    return met;
+  };
+
+  // Without it, no Ultra Beast is ever drawn.
+  const without = draw(sessionOf());
+  assert.ok(beasts.every((beast) => !without.has(beast)));
+
+  // With it, they are drawn among the rest at random rather than called one
+  // after another: nobody is waiting, the clock is the ordinary one, and the
+  // other legendaries keep turning up beside them.
   const session = sessionOf();
   session.addItem('enigmatic-card');
-  const met = [];
-  for (let beast = 0; beast < 10; beast++) {
-    session.playtime += CALLED_CEILING.hard;
-    const rare = /** @type {number} */ (rollRare(session));
-    met.push(speciesOf(rare)?.slug);
-    session.markCaught(rare);
-  }
-  assert.deepEqual(met, ['nihilego', 'buzzwole', 'pheromosa', 'xurkitree', 'kartana', 'celesteela', 'guzzlord', 'poipole', 'stakataka', 'blacephalon']);
+  assert.deepEqual(calledSpecies(session), []);
+  assert.ok(rareChance(CALLED_CEILING.hard) < 1);
+  const met = draw(session);
+  assert.ok(beasts.some((beast) => met.has(beast)), 'an Ultra Beast turns up');
+  assert.ok([...met].some((rare) => !beasts.includes(rare)), 'and so does everyone else');
 });
 
 test('a key item is found on the road, never bought, and the mythical ones only after a title', options, () => {

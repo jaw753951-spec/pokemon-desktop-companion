@@ -245,13 +245,17 @@ const CHARM_ITEMS = {
  * `calls` is who the item leads to, met in that order, one at a time, until
  * every one of them is caught — the Eon Ticket's Latias and then Latios, the
  * Enigmatic Card's Ultra Beasts in the order Sun and Moon's task force hunts
- * them. Those Pokémon are met no other way. `afterLeague` holds an item back
- * until the save has a champion, as the games kept the mythical Pokémon's
- * tickets and Looker's card for after the story. Only the items with an
- * official Korean name are here, so the Old Sea Map and the Aurora and Mystic
- * Tickets, from a generation never released in Korean, are not.
+ * them. Those Pokémon are met no other way. `pool` has them join the rare
+ * draw instead, one picked at random among the legendaries like any other,
+ * for as long as the item is in the bag: ten Ultra Beasts one after another
+ * crowded out every other rare Pokémon for most of a day's walking.
+ * `afterLeague` holds an item back until the save has a champion, as the
+ * games kept the mythical Pokémon's tickets and Looker's card for after the
+ * story. Only the items with an official Korean name are here, so the Old Sea
+ * Map and the Aurora and Mystic Tickets, from a generation never released in
+ * Korean, are not.
  *
- * @type {Record<string, {category: string, calls: string[], afterLeague?: boolean}>}
+ * @type {Record<string, {category: string, calls: string[], afterLeague?: boolean, pool?: boolean}>}
  */
 const CALLING_ITEMS = {
   'eon-ticket': { category: 'calls', calls: ['latias', 'latios'] },
@@ -267,6 +271,7 @@ const CALLING_ITEMS = {
     category: 'calls',
     calls: ['nihilego', 'buzzwole', 'pheromosa', 'xurkitree', 'kartana', 'celesteela', 'guzzlord', 'poipole', 'stakataka', 'blacephalon'],
     afterLeague: true,
+    pool: true,
   },
 };
 
