@@ -1351,7 +1351,7 @@ function unwritten(item, slug, natures) {
  * - The Quick Claw uses its Gen 4+ numbers.
  * - The rest are the items whose effect is written nowhere upstream.
  *
- * @type {Record<string, {held?: any, use?: any, attributes?: string[], capture?: any}>}
+ * @type {Record<string, {held?: any, use?: any, attributes?: string[], capture?: any, flingPower?: number}>}
  */
 const CORRECTED = {
   'sticky-barb': { held: { on: 'turn', harm: { fraction: 1 / 8 }, sticky: true } },
@@ -1383,6 +1383,12 @@ const CORRECTED = {
   'red-card': { held: { on: 'redCard', consumed: true } },
   'fresh-start-mochi': { use: { resetEffort: true } },
   honey: { use: { lure: true } },
+  // Ogerpon's masks are thrown for 60, as the games throw them; PokeAPI has
+  // no figure. An Ogerpon cannot throw the mask it wears (see `bindsItem`),
+  // so it is anything else holding one that can.
+  'wellspring-mask': { flingPower: 60 },
+  'hearthflame-mask': { flingPower: 60 },
+  'cornerstone-mask': { flingPower: 60 },
 };
 
 /**
@@ -1398,6 +1404,7 @@ function corrected(item, slug) {
   if (fix?.held) item.held = fix.held;
   if (fix?.use) item.use = fix.use;
   if (fix?.capture) item.capture = fix.capture;
+  if (fix?.flingPower) item.flingPower = fix.flingPower;
   if (fix?.attributes) item.attributes = [...new Set([...(item.attributes ?? []), ...fix.attributes])];
 
   const gem = /^([a-z]+)-gem$/.exec(slug);

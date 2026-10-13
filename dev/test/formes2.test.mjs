@@ -120,13 +120,12 @@ test('a Wishiwashi schools only from level 20', options, () => {
   assert.equal(fight(grown).player.marks.forme, 'wishiwashi-school');
 });
 
-test('only an Ogerpon is met holding the item that shapes it', options, () => {
+test('nothing is met holding the item that shapes it, an Ogerpon included', options, () => {
   for (const slug of HELD_FORMES.keys()) {
     const id = /** @type {number} */ (speciesIdBySlug(slug));
     const held = new Set();
     for (let seed = 1; seed <= 40; seed++) held.add(createPokemon(new Rng(seed), id, 60).heldItem ?? null);
-    if (slug === 'ogerpon') assert.ok(held.size > 1, 'an Ogerpon comes in its masks');
-    else assert.deepEqual([...held], [null], `a ${slug} came holding ${[...held].join(', ')}`);
+    assert.deepEqual([...held], [null], `a ${slug} came holding ${[...held].join(', ')}`);
   }
 });
 

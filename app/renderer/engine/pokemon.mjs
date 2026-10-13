@@ -7,7 +7,7 @@
  */
 import { randomLook } from '../../shared/alcremie.mjs';
 import { gameData, moveOf, speciesOf } from '../core/data.mjs';
-import { FORME_MOVES, HELD_FORMES, settleForme } from './forms.mjs';
+import { FORME_MOVES, settleForme } from './forms.mjs';
 import {
   computeStats,
   experienceForLevel,
@@ -152,15 +152,11 @@ export function createPokemon(rng, speciesId, level, options = {}) {
     pokemon.experience = experienceForLevel(variant.growthRate, Math.max(1, level));
   }
 
-  // An Ogerpon is met in one of its four masks: the Teal it wears bare, or
-  // holding one of the other three — and it keeps the mask it came in. The
-  // other species a held item shapes are met holding nothing: a plate, a
-  // memory, a drive or a crystal is found only while its Pokémon travels.
-  const masks = species.slug === 'ogerpon' ? HELD_FORMES.get(species.slug) : null;
-  if (masks) {
-    pokemon.heldItem = rng.pick([null, ...masks.keys()]) ?? null;
-    settleForme(pokemon);
-  }
+  // Every species a held item shapes is met holding nothing, in its own
+  // shape: a plate, a memory, a drive or a crystal is found only while its
+  // Pokémon travels. An Ogerpon is met in its Teal Mask, which it wears bare,
+  // as the games have it; its other three masks come with catching it (see
+  // `Session.handOverOgerponMasks`).
 
   if (species.slug === 'alcremie') pokemon.look = randomLook(rng);
 

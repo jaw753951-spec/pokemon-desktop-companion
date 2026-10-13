@@ -14,7 +14,7 @@ import { gameData, spriteKey } from '../../app/renderer/core/data.mjs';
 import { Battle } from '../../app/renderer/engine/battle.mjs';
 import { formeFor, FORM_ABILITY, heldForme, settleHeldForme } from '../../app/renderer/engine/forms.mjs';
 import { abilityName } from '../../app/renderer/engine/abilities.mjs';
-import { moveOf } from '../../app/renderer/core/data.mjs';
+import { itemOf, moveOf } from '../../app/renderer/core/data.mjs';
 import { createPokemon, maxHp, setMove } from '../../app/renderer/engine/pokemon.mjs';
 import { defaultAutoBattle } from '../../app/renderer/engine/session.mjs';
 import { WEATHER } from '../../app/renderer/engine/field.mjs';
@@ -298,13 +298,17 @@ test('a mask does nothing for anyone but Ogerpon', options, () => {
   assert.equal(battle.heldDamage(battle.player, moveOf('tackle'), 1), 1);
 });
 
-test('an Ogerpon is met in any of its four masks', options, () => {
+test('an Ogerpon is met in its Teal Mask, holding nothing, as the games have it', options, () => {
   const rng = new Rng(3);
-  const seen = new Set();
-  for (let roll = 0; roll < 80; roll++) {
+  for (let roll = 0; roll < 40; roll++) {
     const ogerpon = createPokemon(rng, OGERPON, 50);
-    seen.add(ogerpon.heldItem);
-    assert.equal(ogerpon.forme, heldForme(ogerpon)?.forme, 'the forme matches the mask');
+    assert.equal(ogerpon.heldItem, null);
+    assert.equal(ogerpon.forme ?? null, null, 'the Teal Mask is its own shape');
   }
-  assert.deepEqual([...seen].sort(), [null, 'cornerstone-mask', 'hearthflame-mask', 'wellspring-mask'].sort());
+});
+
+test('a mask is thrown for 60 by anything but the Ogerpon wearing it', options, () => {
+  for (const mask of ['wellspring-mask', 'hearthflame-mask', 'cornerstone-mask']) {
+    assert.equal(itemOf(mask)?.flingPower, 60, mask);
+  }
 });

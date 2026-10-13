@@ -13,7 +13,7 @@ import { Rng } from '../core/rng.mjs';
 import { pocketOrder } from './bagorder.mjs';
 import { EventScheduler } from './events.mjs';
 import { ensureAttack, fullyHeal, shinyOddsFor } from './pokemon.mjs';
-import { settleForme } from './forms.mjs';
+import { HELD_FORMES, settleForme } from './forms.mjs';
 import { oneAtATime, STARTING_MONEY } from './shop.mjs';
 
 /** Items that have been folded into another since saves were written. */
@@ -97,6 +97,9 @@ export class Session {
     this.seen = new Set(save.dex?.seen ?? []);
     this.caught = new Set(save.dex?.caught ?? []);
     this.champions = new Set(save.dex?.champions ?? []);
+    // A save that caught an Ogerpon before its masks came with it gets them
+    // now.
+    this.handOverOgerponMasks();
 
     /**
      * How the box was last sorted, for its tab to show and turn round.
@@ -312,6 +315,25 @@ export class Session {
     else this.box.push(pokemon);
     this.markCaught(pokemon.speciesId);
     return true;
+  }
+
+  /**
+   * Put Ogerpon's three masks in the bag, once an Ogerpon has been caught: in
+   * the games they are had after catching it, and it is met wearing its Teal
+   * Mask, bare. Only the ones not had already, in the bag or in any
+   * Pokémon's hand — the games give one set, and a second Ogerpon brings no
+   * second set; a mask lost with a released Pokémon comes back.
+   *
+   * @returns {string[]} the masks put in the bag
+   */
+  handOverOgerponMasks() {
+    if (![...this.caught].some((id) => speciesOf(id)?.slug === 'ogerpon')) return [];
+    const held = new Set([this.active, ...this.box].map((pokemon) => pokemon?.heldItem).filter(Boolean));
+    const given = [...(HELD_FORMES.get('ogerpon')?.keys() ?? [])].filter(
+      (mask) => gameData().items[mask] && this.countOf(mask) === 0 && !held.has(mask),
+    );
+    for (const mask of given) this.addItem(mask);
+    return given;
   }
 
   /** Whether the box has no room: never, since it holds as many as are caught. */
