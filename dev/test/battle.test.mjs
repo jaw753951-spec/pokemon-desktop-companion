@@ -255,7 +255,7 @@ test('moves are sorted into auto-battle categories', options, () => {
   assert.equal(categoryOf({ damageClass: 'status', meta: { ailment: 'none', healing: 0 }, statChanges: [] }), 'field');
 });
 
-test('every two, three or four turns comes round on the turn the count reaches', options, () => {
+test('every two, three or four turns counts from the turn the move was last used', options, () => {
   const player = makeFixed(CHARIZARD, 50, ['flamethrower', 'ember', 'slash', 'scratch']);
   const battle = new Battle({
     rng: new Rng(2),
@@ -266,14 +266,33 @@ test('every two, three or four turns comes round on the turn the count reaches',
 
   const picks = [];
   for (let turn = 0; turn < 8; turn++) {
-    picks.push(choosePolicyMove(battle, battle.player, /** @type {any} */ (battle.foe), player.moves));
+    const pick = choosePolicyMove(battle, battle.player, /** @type {any} */ (battle.foe), player.moves);
+    picks.push(pick);
     battle.player.turnsTaken++;
+    battle.player.usedOn[pick] = battle.player.turnsTaken;
   }
-  // The sixth turn is due both every two and every three: the slot ahead wins.
-  assert.deepEqual(picks, ['flamethrower', 'ember', 'slash', 'ember', 'flamethrower', 'ember', 'flamethrower', 'ember']);
-  [player.moves[1], player.moves[2]] = [player.moves[2], player.moves[1]];
-  battle.player.turnsTaken = 5;
-  assert.equal(choosePolicyMove(battle, battle.player, /** @type {any} */ (battle.foe), player.moves), 'slash');
+  // Scratch, due on the fourth, gives way to Ember and goes on the fifth;
+  // Slash, used on the third, is next due on the sixth, where Ember is
+  // ahead of it, and so goes on the seventh.
+  assert.deepEqual(picks, ['flamethrower', 'ember', 'slash', 'ember', 'scratch', 'ember', 'slash', 'ember']);
+});
+
+test('a move used on the first turn goes every two turns from there', options, () => {
+  const player = makeFixed(CHARIZARD, 50, ['tackle', 'growl']);
+  const battle = new Battle({
+    rng: new Rng(2),
+    player,
+    foes: [makeFixed(VENUSAUR, 90, ['growl'])],
+    policy: { ...defaultAutoBattle(), moves: { growl: 'firstTurn' }, second: { growl: 'everyTwoTurns' } },
+  });
+
+  // Played out, so the battle itself records which turn each move went on.
+  const picks = [];
+  for (let turn = 0; turn < 5; turn++) {
+    const log = battle.takeTurn();
+    picks.push(log.find((entry) => entry.kind === 'move' && entry.side === 'player')?.data?.move);
+  }
+  assert.deepEqual(picks, ['growl', 'tackle', 'growl', 'tackle', 'growl']);
 });
 
 test('every move\'s first condition is looked at before any move\'s second', options, () => {

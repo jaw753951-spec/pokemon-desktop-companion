@@ -72,6 +72,8 @@ import { stageMultiplier } from './stats.mjs';
  * @property {boolean} flinched
  * @property {string|null} lockedMove the move a Choice item has it committed to
  * @property {number} turnsTaken
+ * @property {Record<string, number>} [usedOn] the turn, counted in its own
+ *   turns from one, that it last used each move on
  * @property {number} [enteredTurn] the battle turn it came out on
  * @property {'player'|'foe'} side
  * @property {Record<string, any>} marks what an ability or item has left on it
@@ -2477,6 +2479,8 @@ export class Battle {
     let moveName = attacker.charging ?? this.pendingMoves?.get(attacker) ?? this.chooseMove(attacker, defender);
     let base = moveName === 'struggle' ? STRUGGLE : moveOf(moveName);
     attacker.turnsTaken++;
+    // What the auto-battle's "every so many turns" counts from.
+    (attacker.usedOn ??= {})[moveName] = attacker.turnsTaken;
 
     if (!base) {
       log.push({ kind: 'move', side: attacker.side, data: { move: moveName } });
@@ -5066,6 +5070,7 @@ function makeCombatant(pokemon, side) {
     flinched: false,
     lockedMove: null,
     turnsTaken: 0,
+    usedOn: {},
     side,
     marks: {},
     volatile: freshVolatile(),
@@ -5412,7 +5417,7 @@ export function choosePolicyMove(battle, attacker, defender, usable) {
   // to set.
   for (const rank of /** @type {const} */ (['first', 'second'])) {
     const triggered = candidates.find((entry) =>
-      entry[rank] !== 'always' && conditionHolds(entry[rank], battle, attacker, defender));
+      entry[rank] !== 'always' && conditionHolds(entry[rank], battle, attacker, defender, entry.move));
     if (triggered) return triggered.move;
   }
 
@@ -5479,8 +5484,9 @@ export function categoryOf(move) {
  * @param {Battle} battle
  * @param {Combatant} attacker
  * @param {Combatant} defender
+ * @param {string} slug the move it is the condition of
  */
-function conditionHolds(condition, battle, attacker, defender) {
+function conditionHolds(condition, battle, attacker, defender, slug) {
   const health = () => attacker.pokemon.hp / Math.max(1, maxHp(attacker.pokemon));
   const foeHealth = () => defender.pokemon.hp / Math.max(1, maxHp(defender.pokemon));
 
@@ -5489,15 +5495,17 @@ function conditionHolds(condition, battle, attacker, defender) {
       return false;
     case 'firstTurn':
       return attacker.turnsTaken === 0;
-    // Every so many turns: the second, fourth, sixth for every two — the turn
-    // the count comes round to, not the first, which has a condition of its
-    // own to pair with this one.
+    // Every so many turns, counted from the turn the move was last used,
+    // however it came to be: one not yet used counts from before the first
+    // turn, so every two is the second, fourth, sixth — and one used on the
+    // first turn goes on the third, fifth, seventh. A turn something else
+    // took leaves it due on the next.
     case 'everyTwoTurns':
-      return (attacker.turnsTaken + 1) % 2 === 0;
+      return turnsSinceUsed(attacker, slug) >= 2;
     case 'everyThreeTurns':
-      return (attacker.turnsTaken + 1) % 3 === 0;
+      return turnsSinceUsed(attacker, slug) >= 3;
     case 'everyFourTurns':
-      return (attacker.turnsTaken + 1) % 4 === 0;
+      return turnsSinceUsed(attacker, slug) >= 4;
     case 'noStatus':
       return !defender.pokemon.status;
     case 'foeStatus':
@@ -5538,6 +5546,17 @@ function conditionHolds(condition, battle, attacker, defender) {
     default:
       return true;
   }
+}
+
+/**
+ * How many of its own turns this one is past the one a move was last used on,
+ * this turn included.
+ *
+ * @param {Combatant} attacker
+ * @param {string} slug
+ */
+function turnsSinceUsed(attacker, slug) {
+  return attacker.turnsTaken + 1 - (attacker.usedOn?.[slug] ?? 0);
 }
 
 /**
