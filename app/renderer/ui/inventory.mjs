@@ -173,7 +173,7 @@ function render(app, session, state, rebuild) {
     case 'items':
       return itemsTab(app, session, rebuild, state);
     case 'box':
-      return boxTab(app, session, rebuild, state);
+      return boxTab(app, session, state);
     case 'shop':
       return shopTab(app, session, state.shop, rebuild, { purse: true });
     case 'pokemon':
