@@ -83,17 +83,181 @@ export function concatX(parts) {
 }
 
 /**
- * Turn a band into a strip that loops without a seam, by appending a mirrored
- * copy with the shared edge columns dropped ("ping-pong" tiling). Mirrored
- * terrain reads naturally in a top-down map, and the join is pixel-exact.
+ * Turn a band into a strip that loops without a seam, by appending its mirror
+ * image ("ping-pong" tiling). Mirrored terrain reads naturally in a top-down
+ * map, and both joins are pixel-exact.
+ *
+ * The mirror is taken whole, its edge column and all, so the two joins fall
+ * on block boundaries: a block at either end of the band comes back as itself
+ * and its mirror image side by side, two flowers where the map had one. The
+ * mirror used to be taken around the band's last column of pixels, which
+ * folded whatever stood in the end block into one symmetric shape half again
+ * as wide — a flower became a cross, a patch's rim a line down the middle of
+ * the road.
+ *
+ * Text does not mirror. Each rectangle in `upright` — a sign board — is put
+ * back the right way round where the mirror image lays it down.
  *
  * @param {Raster} band
+ * @param {Array<{x: number, y: number, width: number, height: number}>} [upright]
  * @returns {Raster}
  */
-export function makeSeamless(band) {
-  if (band.width < 3) return band;
-  const mirrored = mirrorX(band);
-  return concatX([band, crop(mirrored, 1, 0, band.width - 2, band.height)]);
+export function makeSeamless(band, upright = []) {
+  const strip = concatX([band, mirrorX(band)]);
+  for (const { x, y, width, height } of upright) {
+    const at = 2 * band.width - x - width;
+    for (let row = y; row < y + height; row++) {
+      const from = (row * band.width + x) * 4;
+      strip.data.set(band.data.subarray(from, from + width * 4), (row * strip.width + at) * 4);
+    }
+  }
+  return strip;
+}
+
+/**
+ * Where a band should end, at each side, so that the strip's two mirror
+ * joins read as the map going on rather than as a seam.
+ *
+ * A join at the right edge of a block column puts that column's mirror image
+ * next to it, where the map has its next column. When the two look alike —
+ * open ground, a tree line, the middle of a road — the join cannot be told
+ * from the map. When they do not, the mirror makes something the map never
+ * had: a sand patch's rim against its own mirror image is a line of grass
+ * down the road, a flower against its own is a pair grown into one, half a
+ * dome against its own half is a building no one built. So each block on the
+ * edge column is compared, blurred to its colours, with its neighbour across
+ * the join, and what differs by more than a tile's own texture is counted
+ * against the join.
+ *
+ * The run is then cut to the pair of ends whose joins cost least, with
+ * length weighed against it: anything under {@link LOOP_GOOD_BLOCKS} is
+ * charged for being short, since a short loop shows the same scenery over and
+ * over, and none is cut below {@link LOOP_MIN_BLOCKS}.
+ *
+ * @param {Raster} image the whole map, everything on it drawn
+ * @param {number} widthInBlocks the map's width
+ * @param {number} bandRow the band's first block row
+ * @param {number} bandBlocks how many block rows it spans
+ * @param {number} column the walkable run's first block column
+ * @param {number} columns how long the run is
+ * @param {number} [blockSize]
+ * @returns {{column: number, columns: number}}
+ */
+export function pickLoopEnds(image, widthInBlocks, bandRow, bandBlocks, column, columns, blockSize = 16) {
+  /** @type {Map<number, Float32Array>} */
+  const looks = new Map();
+  const look = (x, y) => {
+    const key = y * widthInBlocks + x;
+    if (!looks.has(key)) looks.set(key, blockColours(image, x, y, blockSize));
+    return /** @type {Float32Array} */ (looks.get(key));
+  };
+  // What a join at the given side of a block column costs: `side` is -1 for
+  // its left edge, 1 for its right.
+  const joinCost = (x, side) => {
+    const next = x + side;
+    if (next < 0 || next >= widthInBlocks) return Infinity;
+    let cost = 0;
+    for (let y = bandRow; y < bandRow + bandBlocks; y++) {
+      cost += Math.max(0, colourDistance(mirrorColours(look(x, y)), look(next, y)) - TEXTURE_ALLOWANCE);
+    }
+    return cost;
+  };
+
+  const shortest = Math.min(columns, LOOP_MIN_BLOCKS);
+  let best = { column, columns, score: Infinity };
+  for (let first = column; first < column + columns; first++) {
+    const left = joinCost(first, -1);
+    for (let last = first + shortest - 1; last < column + columns; last++) {
+      const length = last - first + 1;
+      const score = left + joinCost(last, 1) + SHORT_LOOP_COST * Math.max(0, LOOP_GOOD_BLOCKS - length) - length / 10;
+      if (score < best.score) best = { column: first, columns: length, score };
+    }
+  }
+  return { column: best.column, columns: best.columns };
+}
+
+/** The fewest blocks a band is cut down to; a strip is twice this, mirrored. */
+const LOOP_MIN_BLOCKS = 8;
+
+/** A band shorter than this is charged {@link SHORT_LOOP_COST} a block for it. */
+const LOOP_GOOD_BLOCKS = 16;
+const SHORT_LOOP_COST = 8;
+
+/**
+ * How far apart, per colour channel on average, two blurred blocks can be and
+ * still pass for the same ground: grass against its mirror image differs by
+ * its blades, which the eye does not follow across a join.
+ */
+const TEXTURE_ALLOWANCE = 20;
+
+/** A block blurred to two columns of four cells each, as mean RGB. */
+const COLOUR_COLUMNS = 2;
+const COLOUR_ROWS = 4;
+
+/**
+ * @param {Raster} image
+ * @param {number} blockX
+ * @param {number} blockY
+ * @param {number} blockSize
+ */
+function blockColours(image, blockX, blockY, blockSize) {
+  const out = new Float32Array(COLOUR_COLUMNS * COLOUR_ROWS * 3);
+  const cellWidth = blockSize / COLOUR_COLUMNS;
+  const cellHeight = blockSize / COLOUR_ROWS;
+  for (let cellY = 0; cellY < COLOUR_ROWS; cellY++) {
+    for (let cellX = 0; cellX < COLOUR_COLUMNS; cellX++) {
+      const sum = [0, 0, 0];
+      for (let y = 0; y < cellHeight; y++) {
+        for (let x = 0; x < cellWidth; x++) {
+          const offset = ((blockY * blockSize + cellY * cellHeight + y) * image.width + blockX * blockSize + cellX * cellWidth + x) * 4;
+          for (let channel = 0; channel < 3; channel++) sum[channel] += image.data[offset + channel];
+        }
+      }
+      for (let channel = 0; channel < 3; channel++) {
+        out[(cellY * COLOUR_COLUMNS + cellX) * 3 + channel] = sum[channel] / (cellWidth * cellHeight);
+      }
+    }
+  }
+  return out;
+}
+
+/** @param {Float32Array} colours */
+function mirrorColours(colours) {
+  const out = new Float32Array(colours.length);
+  for (let cellY = 0; cellY < COLOUR_ROWS; cellY++) {
+    for (let cellX = 0; cellX < COLOUR_COLUMNS; cellX++) {
+      for (let channel = 0; channel < 3; channel++) {
+        out[(cellY * COLOUR_COLUMNS + cellX) * 3 + channel] = colours[(cellY * COLOUR_COLUMNS + COLOUR_COLUMNS - 1 - cellX) * 3 + channel];
+      }
+    }
+  }
+  return out;
+}
+
+/** @param {Float32Array} a @param {Float32Array} b */
+function colourDistance(a, b) {
+  let sum = 0;
+  for (let index = 0; index < a.length; index++) sum += Math.abs(a[index] - b[index]);
+  return sum / a.length;
+}
+
+/**
+ * One raster laid over another of the same size, where the top one is drawn.
+ *
+ * @param {Raster} base
+ * @param {Raster} top
+ * @returns {Raster}
+ */
+export function overlay(base, top) {
+  const out = { width: base.width, height: base.height, data: Uint8Array.from(base.data) };
+  for (let offset = 0; offset < out.data.length; offset += 4) {
+    const alpha = top.data[offset + 3] / 255;
+    if (!alpha) continue;
+    for (let channel = 0; channel < 3; channel++) {
+      out.data[offset + channel] = Math.round(top.data[offset + channel] * alpha + out.data[offset + channel] * (1 - alpha));
+    }
+  }
+  return out;
 }
 
 /**

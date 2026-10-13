@@ -230,7 +230,7 @@ export const VERSION_GROUP_PRIORITY = [
  * its own, and Emerald's — near white above a pebbled platform — read as a
  * backdrop that failed to load (`backdrop`). And a strip can be slid down the
  * map a few blocks to show more of what stands under the lane (`bandDrop`):
- * Route 10's Power Plant was only the top of its dome.
+ * Route 10's showed only the tops of the rocks beside its road.
  *
  * The lane is found as the longest run with two rows of headroom over it, which
  * on a road two blocks wide with trees or a fence along its far side is the
@@ -238,25 +238,22 @@ export const VERSION_GROUP_PRIORITY = [
  * on it. An area can name the map row to walk along instead (`lane`), the
  * road's own nearer row.
  *
- * The strip loops by mirroring the walked run at both ends, so whatever
- * reaches into the run's end column from just outside it comes back as half
- * of something, doubled. A run can be shortened to leave it out (`bandTrim`,
- * blocks off both ends, or `[left, right]`): Route 17's street lamps stand
- * just outside its run and hang their heads over it, and mirrored, a lamp's
- * head with nothing under it read as two Poké Balls stuck together in the
- * grass. Route 16's run ended on a fence corner and the edge of a gatehouse
- * wall, and Route 18's on a fence post and the grass by its gatehouse. The
- * end column has to land on plain ground, past the edge of any patch of sand
- * as well: the one-pixel rim of grass round it, mirrored, is a dotted line
- * down the sand.
+ * The strip loops by mirroring the walked run at both ends, and where it ends
+ * is chosen so that each mirror join reads as the map going on — open ground,
+ * a tree line, the middle of a road — rather than as half of something
+ * doubled (see `pickLoopEnds`). Where nothing in the run joins cleanly, an
+ * area names its first and last block column itself (`loop`): Route 10's
+ * strip stops short of the Power Plant, since half a dome against its own
+ * mirror image is a building no one built, and Route 2's walks the gap in
+ * its tall grass rather than the edge of the sand path beside it.
  *
- * @type {Array<{id: string, dir: string, location: string, tags: string[], game?: 'emerald'|'firered', region?: string, ko?: string, backdrop?: string, bandDrop?: number, bandTrim?: number|[number, number], lane?: number}>}
+ * @type {Array<{id: string, dir: string, location: string, tags: string[], game?: 'emerald'|'firered', region?: string, ko?: string, backdrop?: string, bandDrop?: number, loop?: [number, number], lane?: number}>}
  */
 export const AREAS = [
-  { id: 'route101', dir: 'Route101', location: 'hoenn-route-101', tags: ['grass', 'plain'] },
+  { id: 'route101', dir: 'Route101', location: 'hoenn-route-101', tags: ['grass', 'plain'], loop: [9, 17] },
   { id: 'route102', dir: 'Route102', location: 'hoenn-route-102', tags: ['grass', 'water'] },
-  { id: 'route103', dir: 'Route103', location: 'hoenn-route-103', tags: ['grass', 'beach'], lane: 13, bandTrim: [0, 1] },
-  { id: 'route104', dir: 'Route104', location: 'hoenn-route-104', tags: ['beach', 'forest'], lane: 25, bandTrim: [2, 1] },
+  { id: 'route103', dir: 'Route103', location: 'hoenn-route-103', tags: ['grass', 'beach'], lane: 13 },
+  { id: 'route104', dir: 'Route104', location: 'hoenn-route-104', tags: ['beach', 'forest'], lane: 25 },
   { id: 'route110', dir: 'Route110', location: 'hoenn-route-110', tags: ['grass', 'urban'], lane: 70 },
   { id: 'route111', dir: 'Route111', location: 'hoenn-route-111', tags: ['desert', 'sand'], lane: 9 },
   { id: 'route112', dir: 'Route112', location: 'hoenn-route-112', tags: ['mountain', 'volcano'], lane: 51 },
@@ -269,13 +266,13 @@ export const AREAS = [
   { id: 'route119', dir: 'Route119', location: 'hoenn-route-119', tags: ['jungle', 'rain'] },
   { id: 'route120', dir: 'Route120', location: 'hoenn-route-120', tags: ['jungle', 'water'], lane: 6 },
   { id: 'route121', dir: 'Route121', location: 'hoenn-route-121', tags: ['grass', 'meadow'] },
-  { id: 'route123', dir: 'Route123', location: 'hoenn-route-123', tags: ['grass', 'meadow'], lane: 15, bandTrim: [2, 0] },
+  { id: 'route123', dir: 'Route123', location: 'hoenn-route-123', tags: ['grass', 'meadow'], lane: 15 },
   { id: 'petalburg-woods', dir: 'PetalburgWoods', location: 'petalburg-woods', tags: ['forest'] },
   { id: 'granite-cave', dir: 'GraniteCave_1F', location: 'granite-cave', tags: ['cave', 'rough'] },
   { id: 'fiery-path', dir: 'FieryPath', location: 'fiery-path', tags: ['volcano', 'cave'] },
   { id: 'jagged-pass', dir: 'JaggedPass', location: 'jagged-pass', tags: ['mountain', 'volcano'] },
   { id: 'meteor-falls', dir: 'MeteorFalls_1F_1R', location: 'meteor-falls', tags: ['cave', 'water'] },
-  { id: 'mt-pyre', dir: 'MtPyre_Exterior', location: 'mt-pyre', tags: ['mountain', 'graveyard'] },
+  { id: 'mt-pyre', dir: 'MtPyre_Exterior', location: 'mt-pyre', tags: ['mountain', 'graveyard'], loop: [12, 18] },
   { id: 'safari-zone', dir: 'SafariZone_South', location: 'hoenn-safari-zone', tags: ['grass', 'safari'] },
   { id: 'shoal-cave', dir: 'ShoalCave_LowTideEntranceRoom', location: 'shoal-cave', tags: ['cave', 'ice'] },
   { id: 'victory-road', dir: 'VictoryRoad_1F', location: 'hoenn-victory-road', tags: ['cave', 'rough'] },
@@ -288,7 +285,7 @@ export const AREAS = [
   // are nearly all water, and the Sevii Islands never had a Korean release to
   // name them, so neither is here.
   { id: 'kanto-route-1', dir: 'Route1', location: 'kanto-route-1', tags: ['grass', 'plain'], game: 'firered', region: 'kanto', ko: '1번도로' },
-  { id: 'kanto-route-2', dir: 'Route2', location: 'kanto-route-2', tags: ['grass', 'forest'], game: 'firered', region: 'kanto', ko: '2번도로' },
+  { id: 'kanto-route-2', dir: 'Route2', location: 'kanto-route-2', tags: ['grass', 'forest'], game: 'firered', region: 'kanto', ko: '2번도로', loop: [7, 13] },
   { id: 'kanto-route-3', dir: 'Route3', location: 'kanto-route-3', tags: ['mountain', 'rough'], game: 'firered', region: 'kanto', backdrop: 'grass', ko: '3번도로' },
   { id: 'kanto-route-4', dir: 'Route4', location: 'kanto-route-4', tags: ['mountain', 'grass'], game: 'firered', region: 'kanto', backdrop: 'grass', ko: '4번도로' },
   { id: 'kanto-route-5', dir: 'Route5', location: 'kanto-route-5', tags: ['grass', 'urban'], game: 'firered', region: 'kanto', ko: '5번도로' },
@@ -296,15 +293,15 @@ export const AREAS = [
   { id: 'kanto-route-7', dir: 'Route7', location: 'kanto-route-7', tags: ['grass', 'urban'], game: 'firered', region: 'kanto', ko: '7번도로' },
   { id: 'kanto-route-8', dir: 'Route8', location: 'kanto-route-8', tags: ['grass', 'urban'], game: 'firered', region: 'kanto', ko: '8번도로' },
   { id: 'kanto-route-9', dir: 'Route9', location: 'kanto-route-9', tags: ['mountain', 'rough'], game: 'firered', region: 'kanto', backdrop: 'grass', ko: '9번도로' },
-  { id: 'kanto-route-10', dir: 'Route10', location: 'kanto-route-10', tags: ['mountain', 'electric'], game: 'firered', region: 'kanto', backdrop: 'grass', bandDrop: 2, ko: '10번도로' },
+  { id: 'kanto-route-10', dir: 'Route10', location: 'kanto-route-10', tags: ['mountain', 'electric'], game: 'firered', region: 'kanto', backdrop: 'grass', bandDrop: 2, ko: '10번도로', loop: [3, 13] },
   { id: 'kanto-route-11', dir: 'Route11', location: 'kanto-route-11', tags: ['grass', 'plain'], game: 'firered', region: 'kanto', ko: '11번도로' },
   { id: 'kanto-route-12', dir: 'Route12', location: 'kanto-route-12', tags: ['grass', 'water'], game: 'firered', region: 'kanto', ko: '12번도로' },
   { id: 'kanto-route-13', dir: 'Route13', location: 'kanto-route-13', tags: ['grass', 'meadow'], game: 'firered', region: 'kanto', ko: '13번도로' },
   { id: 'kanto-route-14', dir: 'Route14', location: 'kanto-route-14', tags: ['grass', 'meadow'], game: 'firered', region: 'kanto', ko: '14번도로' },
-  { id: 'kanto-route-15', dir: 'Route15', location: 'kanto-route-15', tags: ['grass', 'meadow'], game: 'firered', region: 'kanto', lane: 6, bandTrim: 1, ko: '15번도로' },
-  { id: 'kanto-route-16', dir: 'Route16', location: 'kanto-route-16', tags: ['grass', 'plain'], game: 'firered', region: 'kanto', bandTrim: [2, 1], lane: 7, ko: '16번도로' },
-  { id: 'kanto-route-17', dir: 'Route17', location: 'kanto-route-17', tags: ['beach', 'plain'], game: 'firered', region: 'kanto', bandTrim: 1, ko: '17번도로' },
-  { id: 'kanto-route-18', dir: 'Route18', location: 'kanto-route-18', tags: ['beach', 'grass'], game: 'firered', region: 'kanto', bandTrim: [2, 1], ko: '18번도로' },
+  { id: 'kanto-route-15', dir: 'Route15', location: 'kanto-route-15', tags: ['grass', 'meadow'], game: 'firered', region: 'kanto', lane: 6, ko: '15번도로' },
+  { id: 'kanto-route-16', dir: 'Route16', location: 'kanto-route-16', tags: ['grass', 'plain'], game: 'firered', region: 'kanto', lane: 7, ko: '16번도로' },
+  { id: 'kanto-route-17', dir: 'Route17', location: 'kanto-route-17', tags: ['beach', 'plain'], game: 'firered', region: 'kanto', ko: '17번도로' },
+  { id: 'kanto-route-18', dir: 'Route18', location: 'kanto-route-18', tags: ['beach', 'grass'], game: 'firered', region: 'kanto', ko: '18번도로' },
   { id: 'kanto-route-22', dir: 'Route22', location: 'kanto-route-22', tags: ['grass', 'plain'], game: 'firered', region: 'kanto', ko: '22번도로' },
   { id: 'kanto-route-23', dir: 'Route23', location: 'kanto-route-23', tags: ['mountain', 'rough'], game: 'firered', region: 'kanto', backdrop: 'grass', lane: 17, ko: '23번도로' },
   { id: 'kanto-route-24', dir: 'Route24', location: 'kanto-route-24', tags: ['grass', 'water'], game: 'firered', region: 'kanto', ko: '24번도로' },
@@ -314,7 +311,7 @@ export const AREAS = [
   { id: 'rock-tunnel', dir: 'RockTunnel_1F', location: 'rock-tunnel', tags: ['cave', 'rough'], game: 'firered', region: 'kanto', ko: '돌산터널' },
   { id: 'digletts-cave', dir: 'DiglettsCave_B1F', location: 'digletts-cave', tags: ['cave', 'sand'], game: 'firered', region: 'kanto', ko: '디그다의굴' },
   { id: 'seafoam-islands', dir: 'SeafoamIslands_1F', location: 'seafoam-islands', tags: ['cave', 'ice'], game: 'firered', region: 'kanto', ko: '쌍둥이섬' },
-  { id: 'kanto-victory-road', dir: 'VictoryRoad_1F', location: 'kanto-victory-road-2', tags: ['cave', 'rough'], game: 'firered', region: 'kanto', ko: '챔피언로드' },
+  { id: 'kanto-victory-road', dir: 'VictoryRoad_1F', location: 'kanto-victory-road-2', tags: ['cave', 'rough'], game: 'firered', region: 'kanto', ko: '챔피언로드', loop: [9, 18] },
   { id: 'cerulean-cave', dir: 'CeruleanCave_1F', location: 'cerulean-cave', tags: ['cave', 'ruins'], game: 'firered', region: 'kanto', ko: '블루시티동굴' },
 ];
 

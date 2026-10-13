@@ -133,6 +133,7 @@ export async function openMaps(pool, game = 'emerald') {
      *   isLongGrass: (x: number, y: number) => boolean,
      *   isTallGrass: (x: number, y: number) => boolean,
      *   isWarp: (x: number, y: number) => boolean,
+     *   signs: Array<{x: number, y: number}>,
      * }>}
      */
     async render(dir) {
@@ -175,6 +176,14 @@ export async function openMaps(pool, game = 'emerald') {
       const isLongGrass = blockIs(profile.longGrass);
       const isTallGrass = blockIs(profile.tallGrass);
       const isWarp = blockIs(profile.warps);
+      // The signposts, which are a block of their own each: the route signs
+      // and trainer tips boards of the shared tileset. A sign event on
+      // anything else — a notice painted across the Cycling Road, a cave's
+      // board — is part of something wider and is left out.
+      const signs = (map.bg_events ?? [])
+        .filter((event) => event.type === 'sign' && event.x >= 0 && event.y >= 0 && event.x < layout.width && event.y < layout.height)
+        .filter((event) => (blockdata.readUInt16LE((event.y * layout.width + event.x) * 2) & 0x3ff) < inPrimary)
+        .map((event) => ({ x: event.x, y: event.y }));
 
       return {
         map,
@@ -186,6 +195,7 @@ export async function openMaps(pool, game = 'emerald') {
         isLongGrass,
         isTallGrass,
         isWarp,
+        signs,
       };
     },
   };
