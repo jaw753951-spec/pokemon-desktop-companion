@@ -455,7 +455,6 @@ export class Session {
  */
 export function defaultAutoBattle() {
   return {
-    mode: 'damageFirst',
     /**
      * The condition each kind of move starts with, until the player gives a
      * move one of its own: an attack always, a hindrance on a foe still
@@ -464,12 +463,18 @@ export function defaultAutoBattle() {
      */
     conditions: { damage: 'always', status: 'noStatus', stat: 'firstTurn', field: 'noField', heal: 'hpHalf' },
     /**
-     * When each move may be used, by the move, `never` included. A condition
-     * that names a moment is answered before anything else; `always` leaves
-     * the move to the mode.
+     * When each move may be used first, by the move, `never` included. A
+     * condition that names a moment is answered before anything else;
+     * `always` leaves the move to be used when nothing else is due.
      * @type {Record<string, string>}
      */
     moves: {},
+    /**
+     * When each move may be used second, by the move: looked at only once no
+     * move's first condition has come round. A move without one has none.
+     * @type {Record<string, string>}
+     */
+    second: {},
   };
 }
 
@@ -534,9 +539,9 @@ export function normalizeItemPolicy(policy) {
  * weight per category — numbers the player could not see the effect of — used
  * zero to mean "never", and one carrying a tick per category said the same
  * thing with a box. Either way the answer is a condition, so both fold into
- * the one field the engine now reads. And a policy with a move order of its
- * own has the order dropped, its mode kept or, for an order left empty, made
- * damage first (below).
+ * the one field the engine now reads. And the mode a policy once carried —
+ * damage first, or going round the slots — is dropped: what a moment does not
+ * decide is now always the hardest hit.
  *
  * @param {any} policy
  */
@@ -550,21 +555,18 @@ export function normalizeAutoBattle(policy) {
     if (off) conditions[category] = 'never';
   }
 
-  // A policy from when there was a move order of its own. One that laid an
-  // order out keeps its mode, now over the moves as they sit in their slots;
-  // one that left it empty was only ever hitting with its hardest attack,
-  // which is what damage first does now.
-  let mode = policy.mode ?? fresh.mode;
-  if (Array.isArray(policy.order) && !policy.order.some(Boolean)) mode = 'damageFirst';
+  // Each move's own two conditions, as set on the auto-battle screen.
+  /** @param {any} stored */
+  const byMove = (stored) => {
+    /** @type {Record<string, string>} */
+    const out = {};
+    for (const [slug, condition] of Object.entries(stored ?? {})) {
+      if (typeof condition === 'string') out[slug] = condition;
+    }
+    return out;
+  };
 
-  // Each move's own condition, as set on the auto-battle screen.
-  /** @type {Record<string, string>} */
-  const moves = {};
-  for (const [slug, condition] of Object.entries(policy.moves ?? {})) {
-    if (typeof condition === 'string') moves[slug] = condition;
-  }
-
-  return { mode, conditions, moves };
+  return { conditions, moves: byMove(policy.moves), second: byMove(policy.second) };
 }
 
 /**

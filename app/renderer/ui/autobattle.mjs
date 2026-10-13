@@ -1,13 +1,14 @@
 /**
  * Auto-battle settings.
  *
- * Two things decide what the companion does on its turn. Each move it has is
- * used under a condition of its own, and one whose condition names a moment
- * is used the moment it holds, before anything else — the first such in the
- * order the moves sit in their slots. The mode then decides among what is
- * left, over the same slots. So the screen keeps the mode on top, picked at a
- * glance, and the moves below it in their order, each with its condition,
- * where a press on a move picks it up and a press on another puts it there.
+ * Each move the companion has is used under two conditions of its own, a
+ * first and a second. One that names a moment is used the moment it holds,
+ * before anything else: every move's first ahead of any move's second, and
+ * within each, the first in the order the moves sit in their slots. When no
+ * moment has come, the moves allowed always are left, and the hardest hit
+ * among them is used. So the screen is the moves in their order, each with its
+ * two conditions beside it, where a press on a move picks it up and a press
+ * on another puts it there.
  *
  * Everything here edits the policy the battle engine reads, and the moves'
  * own order, so the effect of a change is immediate.
@@ -15,12 +16,9 @@
 import { moveOf } from '../core/data.mjs';
 import { button, el, scrollable, setChildren } from '../core/dom.mjs';
 import { name as localized, t } from '../core/i18n.mjs';
-import { moveCondition } from '../engine/battle.mjs';
+import { moveCondition, secondCondition } from '../engine/battle.mjs';
 import { chooseFromList } from './dialog.mjs';
 import { typeChip } from './typechip.mjs';
-
-/** Exactly one of these is active, as the brief requires. */
-const MODES = ['repeatAll', 'repeatLast', 'damageFirst'];
 
 /**
  * When a move may be used, in the order the picker lists them.
@@ -33,6 +31,9 @@ const CONDITIONS = [
   'never',
   'always',
   'firstTurn',
+  'everyTwoTurns',
+  'everyThreeTurns',
+  'everyFourTurns',
   'noStatus',
   'foeStatus',
   'noField',
@@ -66,9 +67,13 @@ export function autoBattleScene({ session, onClose }) {
 
       const rebuild = () => {
         setChildren(body, [
-          el('div.auto-tier.auto-tier-1', {}, [modeRow(app, session, rebuild)]),
-          el('div.auto-tier.auto-tier-3', {}, [
+          el('div.auto-tier', {}, [
             el('div.section-title', { text: t(state.moving === null ? 'auto.moves' : 'auto.moveTarget') }),
+            el('div.auto-move-row.auto-move-head', {}, [
+              el('span.auto-move-head-move'),
+              el('span.auto-move-head-rank', { text: t('auto.first') }),
+              el('span.auto-move-head-rank', { text: t('auto.second') }),
+            ]),
             el('div.auto-moves', {}, session.active.moves.map((slot, index) => moveRow(app, session, state, index, rebuild))),
           ]),
         ]);
@@ -91,35 +96,13 @@ export function autoBattleScene({ session, onClose }) {
 }
 
 /**
- * @param {import('../core/app.mjs').App} app
- * @param {import('../engine/session.mjs').Session} session
- * @param {() => void} rebuild
- */
-function modeRow(app, session, rebuild) {
-  const policy = session.autoBattle;
-  return el('div.auto-modes', {}, MODES.map((mode) =>
-      el('button.chip', {
-        type: 'button',
-        text: t(`auto.${mode}`),
-        'aria-pressed': String(policy.mode === mode),
-        onClick: () => {
-          app.audio.blip('select');
-          // Only one may be active, so selecting replaces rather than toggles.
-          policy.mode = mode;
-          rebuild();
-        },
-      }),
-    ));
-}
-
-/**
- * One of the companion's moves, in its place in the order, with its
- * condition beside it.
+ * One of the companion's moves, in its place in the order, with its two
+ * conditions beside it.
  *
  * The move itself is the handle for the order: pressed, it is picked up, and
  * pressed again on another move, the two change places — the box's way of
- * moving a Pokémon. Pressing the one picked up puts it back down. The chip is
- * its condition, `never` included.
+ * moving a Pokémon. Pressing the one picked up puts it back down. The chips
+ * are its first and second conditions, `never` included.
  *
  * @param {import('../core/app.mjs').App} app
  * @param {import('../engine/session.mjs').Session} session
@@ -130,9 +113,9 @@ function modeRow(app, session, rebuild) {
 function moveRow(app, session, state, index, rebuild) {
   const policy = session.autoBattle;
   policy.moves = policy.moves ?? {};
+  policy.second = policy.second ?? {};
   const slug = session.active.moves[index].move;
   const move = moveOf(slug);
-  const condition = moveCondition(policy, slug);
 
   const picked = state.moving === index;
   const handle = el(`button.auto-move${picked ? '.moving' : ''}${state.moving !== null && !picked ? '.target' : ''}`, {
@@ -161,17 +144,22 @@ function moveRow(app, session, state, index, rebuild) {
     move?.type ? typeChip(move.type, true) : null,
   ]);
 
-  return el('div.auto-move-row', {}, [
-    handle,
+  /**
+   * One of the move's two conditions, and the list it is picked from.
+   * @param {Record<string, string>} stored
+   * @param {string} condition
+   * @param {string} label
+   */
+  const conditionChip = (stored, condition, label) =>
     el(`button.chip${condition === 'never' ? '.off' : ''}`, {
       type: 'button',
       text: t(`auto.condition.${condition}`),
-      title: t('auto.condition'),
+      title: `${label} ${t('auto.condition')}`,
       onClick: async () => {
         app.audio.blip('select');
         const chosen = await chooseFromList(
           app,
-          localized(move?.name, slug),
+          `${localized(move?.name, slug)} · ${label}`,
           CONDITIONS.map((value) => ({
             value,
             label: t(`auto.condition.${value}`),
@@ -179,9 +167,14 @@ function moveRow(app, session, state, index, rebuild) {
           })),
         );
         if (chosen === null) return;
-        policy.moves[slug] = chosen;
+        stored[slug] = chosen;
         rebuild();
       },
-    }),
+    });
+
+  return el('div.auto-move-row', {}, [
+    handle,
+    conditionChip(policy.moves, moveCondition(policy, slug), t('auto.first')),
+    conditionChip(policy.second, secondCondition(policy, slug), t('auto.second')),
   ]);
 }

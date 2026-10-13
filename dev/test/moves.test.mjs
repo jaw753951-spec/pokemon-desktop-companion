@@ -86,10 +86,9 @@ test('a move bound to fail is passed over, and taken up again once it would work
   const log = battle.takeTurn();
   assert.equal(log.find((entry) => entry.kind === 'move' && entry.side === 'player')?.data?.move, 'poltergeist');
 
-  // First in the slots, too, when they are gone through in turn: the turn
-  // steps past it.
+  // Its moment come round, too: the turn steps past it.
   const ordered = fight(fixed(GOLURK, 60, ['poltergeist', 'shadow-claw']), target(), {
-    policy: { ...defaultAutoBattle(), mode: 'repeatLast' },
+    policy: { ...defaultAutoBattle(), moves: { poltergeist: 'firstTurn' } },
   });
   assert.equal(ordered.chooseMove(ordered.player, /** @type {any} */ (ordered.foe)), 'shadow-claw');
 

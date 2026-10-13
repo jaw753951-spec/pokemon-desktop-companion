@@ -5343,9 +5343,9 @@ function estimatedFixedDamage(attacker, defender, move, slug) {
 }
 
 /**
- * The condition a move is used under: its own, where the player has set one,
- * or else the one its kind starts with — the policy's `conditions`, which a
- * save from before the moves had their own keeps as it was set.
+ * The condition a move is used under first: its own, where the player has set
+ * one, or else the one its kind starts with — the policy's `conditions`, which
+ * a save from before the moves had their own keeps as it was set.
  *
  * @param {{conditions?: Record<string, string>, moves?: Record<string, string>}} policy
  * @param {string} slug
@@ -5359,20 +5359,32 @@ export function moveCondition(policy, slug) {
 }
 
 /**
+ * The condition a move is used under second, looked at only once no move's
+ * first has come round. A move starts with none, which reads as `never`.
+ *
+ * @param {{second?: Record<string, string>}} policy
+ * @param {string} slug
+ * @returns {string}
+ */
+export function secondCondition(policy, slug) {
+  return policy.second?.[slug] || 'never';
+}
+
+/**
  * Choose a move from the player's auto-battle policy.
  *
- * Each move is used under a condition of its own, and the moves are tried in
- * the order they sit in their slots. A move whose condition names a moment —
- * a third of health left, the first turn, a foe nearly beaten — is used the
- * moment it holds, before anything else, the first such in slot order. A move
- * left at `always` is only allowed, and `never` takes it out of the fight.
+ * Each move has two conditions, a first and a second, and the moves are tried
+ * in the order they sit in their slots. A condition that names a moment — a
+ * third of health left, every other turn, a foe nearly beaten — is answered
+ * the moment it holds, before anything else: every move's first condition is
+ * looked at before any move's second, and within each, the first move in slot
+ * order wins. A move with `always` in either is only allowed, and `never` in
+ * both takes it out of the fight.
  *
- * What is left — the moves allowed always — goes by the `mode`, over the
- * slots: `damageFirst` takes the hardest-hitting attack, `repeatAll` goes
- * round the slots a turn at a time, and `repeatLast` goes through them once
- * and holds on the last. A move that cannot land, or one its condition keeps
- * out, hands its turn to the next. Anything none of this decides falls
- * through to the strongest attack that can land.
+ * When no moment has come, the moves allowed always are left, and of those
+ * the hardest-hitting attack is used — or, with no attack among them, the
+ * first in slot order. Anything none of this decides falls through to the
+ * strongest attack that can land.
  *
  * @param {Battle} battle
  * @param {Combatant} attacker
@@ -5383,45 +5395,31 @@ export function moveCondition(policy, slug) {
 export function choosePolicyMove(battle, attacker, defender, usable) {
   const policy = battle.policy;
 
-  /** What the policy allows this turn, each with its condition, in slot order. */
-  const allowed = [];
+  /** What the policy could use this turn, each with its two conditions, in slot order. */
+  const candidates = [];
   for (const slot of usable) {
     const move = moveOf(slot.move);
     if (!move) continue;
     // What cannot do anything in a battle of one against one, or would end it
     // unwon, is never reached for by the policy.
     if (neverAutomatic(slot.move)) continue;
-    const category = categoryOf(move);
-    const condition = moveCondition(policy, slot.move);
-    if (!conditionHolds(condition, battle, attacker, defender)) continue;
-    if (!worthReachingFor(move, category, attacker, defender)) continue;
-    allowed.push({ move: slot.move, category, condition });
+    if (!worthReachingFor(move, categoryOf(move), attacker, defender)) continue;
+    candidates.push({ move: slot.move, first: moveCondition(policy, slot.move), second: secondCondition(policy, slot.move) });
   }
 
-  // A condition that names a moment is answered as soon as it comes, the
-  // first in slot order: the order is the player's to set.
-  const triggered = allowed.find((entry) => entry.condition !== 'always');
-  if (triggered) return triggered.move;
+  // A condition that names a moment is answered as soon as it comes: the
+  // firsts before the seconds, and each in slot order, which is the player's
+  // to set.
+  for (const rank of /** @type {const} */ (['first', 'second'])) {
+    const triggered = candidates.find((entry) =>
+      entry[rank] !== 'always' && conditionHolds(entry[rank], battle, attacker, defender));
+    if (triggered) return triggered.move;
+  }
 
-  const pool = allowed.map((entry) => entry.move);
+  const pool = candidates.filter((entry) => entry.first === 'always' || entry.second === 'always').map((entry) => entry.move);
   if (pool.length) {
-    if (policy.mode === 'damageFirst') {
-      const attacks = usable.filter((slot) => pool.includes(slot.move) && categoryOf(moveOf(slot.move)) === 'damage');
-      return bestDamageMove(battle, attacker, defender, attacks) ?? pool[0];
-    }
-    const slots = usable.map((slot) => slot.move);
-    const turn = attacker.turnsTaken;
-    /** The slots in the order this turn tries them. */
-    const steps = [];
-    if (policy.mode === 'repeatLast') {
-      for (let index = Math.min(turn, slots.length - 1); index < slots.length; index++) steps.push(slots[index]);
-      // Past the end, the last that can still be used is the one held on.
-      steps.push(...[...pool].reverse());
-    } else {
-      for (let step = 0; step < slots.length; step++) steps.push(slots[(turn + step) % slots.length]);
-    }
-    const next = steps.find((move) => pool.includes(move));
-    if (next) return next;
+    const attacks = usable.filter((slot) => pool.includes(slot.move) && categoryOf(moveOf(slot.move)) === 'damage');
+    return bestDamageMove(battle, attacker, defender, attacks) ?? pool[0];
   }
 
   // Nothing the policy allows applies this turn. Rather than stand there
@@ -5473,9 +5471,9 @@ export function categoryOf(move) {
  * Whether a move may be used this turn.
  *
  * `never` takes a move out of the fight altogether, `always` lets it be used
- * whenever the mode picks it, and the rest name the moment it is used ahead
- * of everything else — the companion's own health or stat ranks, or the
- * foe's.
+ * whenever nothing else comes first, and the rest name the moment it is used
+ * ahead of everything else — the turn, the companion's own health or stat
+ * ranks, or the foe's.
  *
  * @param {string} condition
  * @param {Battle} battle
@@ -5491,6 +5489,15 @@ function conditionHolds(condition, battle, attacker, defender) {
       return false;
     case 'firstTurn':
       return attacker.turnsTaken === 0;
+    // Every so many turns: the second, fourth, sixth for every two — the turn
+    // the count comes round to, not the first, which has a condition of its
+    // own to pair with this one.
+    case 'everyTwoTurns':
+      return (attacker.turnsTaken + 1) % 2 === 0;
+    case 'everyThreeTurns':
+      return (attacker.turnsTaken + 1) % 3 === 0;
+    case 'everyFourTurns':
+      return (attacker.turnsTaken + 1) % 4 === 0;
     case 'noStatus':
       return !defender.pokemon.status;
     case 'foeStatus':

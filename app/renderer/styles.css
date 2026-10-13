@@ -1859,8 +1859,7 @@ canvas {
   padding: 8px 10px;
 }
 
-/* The mode on top and the conditions under it, each a tier of its own on
-   one left edge. */
+/* The moves and their conditions, on one left edge. */
 .auto-tier {
   flex: none;
   display: flex;
@@ -1869,27 +1868,7 @@ canvas {
   padding: 5px 8px 6px;
   border-left: 3px solid var(--frame-light);
   border-radius: 0 5px 5px 0;
-}
-
-.auto-tier-1 {
-  border-left-color: var(--accent);
-  background: rgba(216, 68, 60, 0.08);
-}
-
-.auto-tier-3 {
   background: rgba(56, 74, 99, 0.03);
-}
-
-.auto-modes {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 4px;
-}
-
-.auto-modes .chip {
-  padding: 3px 6px;
-  font-size: 10px;
-  font-weight: 700;
 }
 
 .auto-moves {
@@ -1955,9 +1934,29 @@ canvas {
   text-overflow: ellipsis;
 }
 
-.auto-move-row > .chip {
+/* The two conditions sit in fixed columns, so the first and second line up
+   down the list under their headings. */
+.auto-move-row > .chip,
+.auto-move-head-rank {
   flex: none;
-  min-width: 112px;
+  width: 104px;
+}
+
+.auto-move-row > .chip {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.auto-move-head-move {
+  flex: 1;
+}
+
+.auto-move-head-rank {
+  color: var(--ink-soft);
+  font-size: 9px;
+  font-weight: 700;
+  text-align: center;
 }
 
 /* A move set to never is still listed, greyed rather than hidden, so turning
