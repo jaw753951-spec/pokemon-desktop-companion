@@ -7,7 +7,7 @@
  *
  * The box has no limit: it grows a row at a time as it fills.
  */
-import { loadPictureUrl, readyPictureUrl } from '../core/assets.mjs';
+import { url } from '../core/bridge.mjs';
 import { artPath, speciesOf } from '../core/data.mjs';
 import { button, el, scrollable, setChildren, shinyMark } from '../core/dom.mjs';
 import { name as localized, t } from '../core/i18n.mjs';
@@ -20,11 +20,27 @@ const ROW = 10;
 const MIN_ROWS = 5;
 
 /**
- * How far past the edge of the box's window a space's picture is fetched
- * before it scrolls into view, so a steady scroll meets pictures already
- * there.
+ * How far past the edge of the box's window, in pixels, a space's picture is
+ * fetched before it scrolls into view, so a steady scroll meets pictures
+ * already there.
  */
-const FETCH_AHEAD = '120px 0px';
+const FETCH_AHEAD = 120;
+
+/**
+ * How many pictures are fetched at once; the rest near the window wait their
+ * turn, and any that scroll away before it comes are not fetched at all.
+ */
+const FETCHES_AT_ONCE = 12;
+
+/**
+ * How fast the box can scroll, in pixels a millisecond, and still fetch the
+ * pictures it passes: about a window's height in a tenth of a second. Faster
+ * than that, it is flying past rows nobody is looking at.
+ */
+const FLYING_PAST = 2.5;
+
+/** How long a fast scroll has to slow down for before its pictures come. */
+const SETTLE_MS = 80;
 
 /**
  * The box is laid out once when the tab opens, and from then on put right
@@ -34,7 +50,9 @@ const FETCH_AHEAD = '120px 0px';
  * afresh set every picture in the box up again on each press.
  *
  * And a picture is only fetched once its space comes near the window: a box of
- * hundreds opens on its first few rows, and the rest arrive as it scrolls.
+ * hundreds opens on its first few rows, and the rest arrive as it scrolls —
+ * see {@link pictureLoader} for why a fast scroll does not fetch everything
+ * it passes.
  *
  * @param {import('../core/app.mjs').App} app
  * @param {import('../engine/session.mjs').Session} session
@@ -45,17 +63,7 @@ export function boxTab(app, session, state) {
   const grid = scrollable(el('div.box-grid'));
   const head = el('div.box-head');
 
-  // A space's picture is fetched the first time it comes near the window.
-  const nearby = new IntersectionObserver(
-    (entries) => {
-      for (const entry of entries) {
-        if (!entry.isIntersecting) continue;
-        nearby.unobserve(entry.target);
-        showPicture(/** @type {HTMLImageElement} */ (entry.target));
-      }
-    },
-    { root: grid, rootMargin: FETCH_AHEAD },
-  );
+  const pictures = pictureLoader(grid);
 
   /** The space each Pokémon is drawn in. @type {Map<any, HTMLElement>} */
   let drawn = new Map();
@@ -77,13 +85,14 @@ export function boxTab(app, session, state) {
       }
       const path = artPath(pokemon) ?? '';
       let node = drawn.get(pokemon);
-      if (!node || node.dataset.art !== path) node = filledSpace(app, session, pokemon, path, state, update, nearby);
+      if (!node || node.dataset.art !== path) node = filledSpace(app, session, pokemon, path, state, update);
       dress(node, pokemon, moving === index);
       next.set(pokemon, node);
       children.push(node);
     }
     grid.replaceChildren(...children);
     drawn = next;
+    pictures.refresh();
   };
   update();
 
@@ -180,13 +189,11 @@ function emptySpace(app, session, index, state, update) {
  * @param {string} path its picture
  * @param {{moving?: number|null}} state
  * @param {() => void} update
- * @param {IntersectionObserver} nearby
  */
-function filledSpace(app, session, pokemon, path, state, update, nearby) {
-  const picture = /** @type {HTMLImageElement} */ (el('img', { alt: '', loading: 'lazy', decoding: 'async', dataset: { path } }));
-  const ready = readyPictureUrl(path);
-  if (ready) picture.src = ready;
-  else if (path) nearby.observe(picture);
+function filledSpace(app, session, pokemon, path, state, update) {
+  // Its picture is put up by the box's `pictureLoader` once it is near the
+  // window.
+  const picture = /** @type {HTMLImageElement} */ (el('img', { alt: '', decoding: 'async', dataset: { path } }));
 
   return el('button.box-space', {
     type: 'button',
@@ -206,19 +213,119 @@ function filledSpace(app, session, pokemon, path, state, update, nearby) {
   }, [picture]);
 }
 
+/** The pictures the box has shown this run. @type {Set<string>} */
+const shown = new Set();
+
 /**
- * Put a space's picture up, fetching it first if no space has shown it yet.
- * @param {HTMLImageElement} picture
+ * Puts up the pictures of the spaces in and near the box's window, fetching
+ * the ones no space has shown yet a few at a time.
+ *
+ * Which spaces those are is worked out from where the box is scrolled to —
+ * every row is the same height — each time it moves, top row first. Fetching
+ * every space the moment it came near the window had a fast scroll down a
+ * long box ask for every picture it passed, hundreds of them for rows long
+ * gone by the time they arrived, and the box stuttered under them while the
+ * rows it stopped on waited behind. Now a space that has scrolled away before
+ * its turn is simply not fetched, and while the box is still flying past
+ * nothing is: the rows go by too fast to read, and the work is what made it
+ * stutter.
+ *
+ * @param {HTMLElement} grid the box's scrolling grid, its spaces in order
+ * @returns {{refresh: () => void}} look again after the spaces change
  */
-function showPicture(picture) {
-  const path = picture.dataset.path ?? '';
-  loadPictureUrl(path)
-    .then((src) => {
-      picture.src = src;
-    })
-    .catch(() => {
-      // A missing picture leaves the space empty rather than the box broken.
+function pictureLoader(grid) {
+  /** The pictures being fetched. @type {Set<HTMLImageElement>} */
+  const fetching = new Set();
+
+  // How fast the box is scrolling.
+  let lastTop = grid.scrollTop;
+  let lastAt = performance.now();
+  let flyingUntil = 0;
+  /** @type {number|null} */
+  let settle = null;
+  /** @type {number|null} */
+  let frame = null;
+
+  const schedule = () => {
+    if (frame !== null) return;
+    frame = requestAnimationFrame(() => {
+      frame = null;
+      next();
     });
+  };
+
+  /** The pictures still to put up in and near the window, top row first. */
+  const wanted = () => {
+    const spaces = grid.children;
+    if (spaces.length <= ROW) return [];
+    const first = spaces[0].getBoundingClientRect();
+    const stride = spaces[ROW].getBoundingClientRect().top - first.top;
+    if (stride <= 0) return [];
+    // Where the first row sits in the scrolled content, and the stretch of it
+    // wanted now.
+    const offset = first.top - grid.getBoundingClientRect().top + grid.scrollTop;
+    const top = grid.scrollTop - FETCH_AHEAD - offset;
+    const bottom = grid.scrollTop + grid.clientHeight + FETCH_AHEAD - offset;
+    const from = Math.max(0, Math.floor(top / stride)) * ROW;
+    const to = Math.min(spaces.length, Math.ceil(bottom / stride) * ROW);
+    /** @type {HTMLImageElement[]} */
+    const out = [];
+    for (let index = from; index < to; index++) {
+      const picture = spaces[index].firstElementChild;
+      if (!(picture instanceof HTMLImageElement) || picture.hasAttribute('src') || fetching.has(picture)) continue;
+      if (!picture.dataset.path || picture.dataset.failed) continue;
+      out.push(picture);
+    }
+    return out;
+  };
+
+  const next = () => {
+    if (!grid.isConnected) return;
+    const wait = flyingUntil - performance.now();
+    if (wait > 0) {
+      if (settle === null) {
+        settle = window.setTimeout(() => {
+          settle = null;
+          schedule();
+        }, wait);
+      }
+      return;
+    }
+    for (const picture of wanted()) {
+      const path = /** @type {string} */ (picture.dataset.path);
+      // One the box has shown before is in the renderer's memory already.
+      if (shown.has(path)) {
+        picture.src = url('assets', path);
+        continue;
+      }
+      if (fetching.size >= FETCHES_AT_ONCE) continue;
+      fetching.add(picture);
+      picture.addEventListener('load', () => {
+        shown.add(path);
+        fetching.delete(picture);
+        schedule();
+      }, { once: true });
+      picture.addEventListener('error', () => {
+        // A missing picture leaves the space empty rather than the box
+        // broken, and is not asked for again.
+        picture.dataset.failed = 'true';
+        fetching.delete(picture);
+        schedule();
+      }, { once: true });
+      picture.src = url('assets', path);
+    }
+  };
+
+  grid.addEventListener('scroll', () => {
+    const now = performance.now();
+    const speed = Math.abs(grid.scrollTop - lastTop) / Math.max(1, now - lastAt);
+    lastTop = grid.scrollTop;
+    lastAt = now;
+    if (speed > FLYING_PAST) flyingUntil = now + SETTLE_MS;
+    schedule();
+  }, { passive: true });
+
+  return { refresh: schedule };
 }
 
 /**

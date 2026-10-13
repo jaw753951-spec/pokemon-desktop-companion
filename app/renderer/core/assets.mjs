@@ -36,57 +36,6 @@ export function forgetImage(path) {
 }
 
 /**
- * Pictures shown as `<img>` elements, each fetched once and kept in the
- * renderer as an object URL.
- *
- * An `<img>` pointed at `pdc://` asks the main process for the file every time
- * a screen is built with it, and the box is built with every Pokémon in it.
- * Kept here, a picture shown before comes back without leaving the renderer —
- * reopening the bag, sorting the box — and two spaces holding the same
- * species share the one copy. They are small and never let go: the whole dex
- * of them is a few megabytes.
- *
- * @type {Map<string, Promise<string>>}
- */
-const pictureUrls = new Map();
-
-/** The ones already fetched, for a screen to show at once rather than wait a tick. @type {Map<string, string>} */
-const readyPictureUrls = new Map();
-
-/**
- * @param {string} path relative to the assets root
- * @returns {Promise<string>} a URL the picture can be shown from
- */
-export function loadPictureUrl(path) {
-  let pending = pictureUrls.get(path);
-  if (!pending) {
-    pending = fetch(url('assets', path))
-      .then((response) => {
-        if (!response.ok) throw new Error(`Failed to load picture ${path} (${response.status})`);
-        return response.blob();
-      })
-      .then((blob) => {
-        const objectUrl = URL.createObjectURL(blob);
-        readyPictureUrls.set(path, objectUrl);
-        return objectUrl;
-      });
-    // A failure is not remembered, so the next screen tries again.
-    pending.catch(() => pictureUrls.delete(path));
-    pictureUrls.set(path, pending);
-  }
-  return pending;
-}
-
-/**
- * The URL of a picture {@link loadPictureUrl} has already fetched, or null.
- * @param {string} path
- * @returns {string|null}
- */
-export function readyPictureUrl(path) {
-  return readyPictureUrls.get(path) ?? null;
-}
-
-/**
  * One animation: a horizontal strip of equal-width frames.
  */
 export class Sprite {
