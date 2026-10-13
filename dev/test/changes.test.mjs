@@ -283,24 +283,3 @@ test('Victini is turned round to face left, as every other picture does', option
   assert.deepEqual(Buffer.from(shipped.data), Buffer.from(expected.data));
 });
 
-
-test('catching an Ogerpon brings its three masks, once', options, () => {
-  const MASKS = ['cornerstone-mask', 'hearthflame-mask', 'wellspring-mask'];
-  const masksIn = (session) => MASKS.filter((mask) => session.countOf(mask) > 0);
-  const ogerpon = id('ogerpon');
-
-  const session = sessionOf(fixed(4, 30));
-  assert.deepEqual(session.handOverOgerponMasks(), [], 'nothing before an Ogerpon is caught');
-  session.storeInBox(fixed(ogerpon, 5));
-  assert.deepEqual(session.handOverOgerponMasks().sort(), MASKS);
-  assert.deepEqual(masksIn(session), MASKS);
-  // A second Ogerpon brings no second set.
-  session.storeInBox(fixed(ogerpon, 5));
-  assert.deepEqual(session.handOverOgerponMasks(), []);
-
-  // A mask in a Pokémon's hand counts as had, wherever it is.
-  const masked = fixed(ogerpon, 5);
-  masked.heldItem = 'wellspring-mask';
-  const saved = new Session({ slot: 0, save: { seed: 1, party: { active: fixed(4, 30), box: [masked] }, dex: { caught: [ogerpon] } } });
-  assert.deepEqual(masksIn(saved), ['cornerstone-mask', 'hearthflame-mask'], 'a save that caught one is given the rest on loading');
-});

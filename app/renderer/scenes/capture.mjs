@@ -390,18 +390,10 @@ export function captureScene({ session, target, onFinish }) {
       resetToLevel(target, CAUGHT_LEVEL);
       fullyHeal(target);
       const stored = session.storeInBox(target);
-      // Catching an Ogerpon brings its masks, as the games give them.
-      const masks = stored ? session.handOverOgerponMasks() : [];
 
-      const told = stored
+      app.toast(stored
         ? t('capture.sentToBox', { name: target.nickname || label() })
-        : t('capture.boxFull');
-      app.toast(
-        masks.length
-          ? `${told} ${t('capture.masks', { items: masks.map((mask) => localized(gameData().items[mask]?.name, mask)).join(', ') })}`
-          : told,
-        masks.length ? 4200 : 2600,
-      );
+        : t('capture.boxFull'));
       // A full box has nowhere to put it. Reporting it as caught anyway threw
       // the Pokémon away along with the ball, so it is handed back instead —
       // the tray keeps it until room is made.
