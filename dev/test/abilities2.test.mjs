@@ -64,9 +64,14 @@ test('Stance Change draws the blade to strike', options, () => {
   const battle = fight(aegislash, make('chansey', 80, ['splash']));
   assert.equal(battle.player.marks.forme ?? null, null, 'it walks in guarding');
   const guarding = battle.stat(battle.player, 'atk');
-  battle.takeTurn();
+  const log = battle.takeTurn();
   assert.equal(battle.player.marks.forme, 'aegislash-blade');
   assert.ok(battle.stat(battle.player, 'atk') > guarding * 2);
+  // The stance is taken before the move is announced, as the games show it.
+  const mine = log.map((entry, index) => ({ ...entry, index })).filter((entry) => entry.side === 'player');
+  const changed = mine.find((entry) => entry.kind === 'ability')?.index ?? Infinity;
+  const used = mine.find((entry) => entry.kind === 'move')?.index ?? -1;
+  assert.ok(changed < used, `ability at ${changed}, move at ${used}`);
 });
 
 test('Hunger Switch turns Morpeko every turn, and its Aura Wheel with it', options, () => {

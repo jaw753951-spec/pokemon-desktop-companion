@@ -2556,6 +2556,22 @@ export class Battle {
       if (slot) slot.pp = Math.max(0, slot.pp - 1);
     }
 
+    // An Aegislash draws its blade to strike and raises its shield to guard,
+    // before the move is announced — "Changed to Blade Forme!", then the
+    // move — as the games show it. A move another calls takes its stance in
+    // turn, before it is announced in its own right.
+    const takeStance = (/** @type {any} */ used, /** @type {string} */ usedName) => {
+      if (!this.abilityOf(attacker)?.stanceChange) return;
+      const stance = used.damageClass !== 'status' ? 'blade' : usedName === 'kings-shield' ? 'shield' : null;
+      if (!stance || (attacker.marks.stance ?? 'shield') === stance) return;
+      attacker.marks.stance = stance;
+      const before = log.length;
+      if (this.applyForme(attacker, this.formeState(attacker), log)) {
+        log.splice(before, 0, { kind: 'ability', side: attacker.side, data: { ability: this.abilitySlugOf(attacker) } });
+      }
+    };
+    takeStance(move, moveName);
+
     log.push({ kind: 'move', side: attacker.side, data: reappears ? { move: moveName, reveal: true } : { move: moveName } });
     const moveLogStart = log.length;
 
@@ -2576,24 +2592,12 @@ export class Battle {
       move = this.effectiveMove(attacker, defender, base, called);
       // A Me First hits half again as hard as the move it took.
       if (caller === 'me-first' && move.power) move = { ...move, power: Math.floor(move.power * 1.5) };
+      takeStance(move, called);
       log.push({ kind: 'move', side: attacker.side, data: { move: called } });
     }
     this.lastMoveUsed = moveName;
     // A Sunsteel Strike or a Photon Geyser ignores the ability in its way.
     attacker.marks.moldBreaking = Boolean(move.rules?.ignoreAbility);
-
-    // An Aegislash draws its blade to strike and raises its shield to guard,
-    // before the move goes off.
-    if (this.abilityOf(attacker)?.stanceChange) {
-      const stance = move.damageClass !== 'status' ? 'blade' : moveName === 'kings-shield' ? 'shield' : null;
-      if (stance && (attacker.marks.stance ?? 'shield') !== stance) {
-        attacker.marks.stance = stance;
-        const before = log.length;
-        if (this.applyForme(attacker, this.formeState(attacker), log)) {
-          log.splice(before, 0, { kind: 'ability', side: attacker.side, data: { ability: this.abilitySlugOf(attacker) } });
-        }
-      }
-    }
 
     // A Snatch lying in wait takes a move that would have helped its user,
     // and uses it for itself.
