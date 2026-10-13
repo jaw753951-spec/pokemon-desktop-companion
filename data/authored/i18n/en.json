@@ -101,6 +101,7 @@
   "auto.condition.everyTwoTurns": "Every 2 turns",
   "auto.condition.everyThreeTurns": "Every 3 turns",
   "auto.condition.everyFourTurns": "Every 4 turns",
+  "auto.condition.superEffective": "Super effective",
   "auto.condition.noStatus": "Foe has no status",
   "auto.condition.foeStatus": "Foe has a status",
   "auto.condition.noField": "No field active",

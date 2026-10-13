@@ -34,6 +34,7 @@ const CONDITIONS = [
   'everyTwoTurns',
   'everyThreeTurns',
   'everyFourTurns',
+  'superEffective',
   'noStatus',
   'foeStatus',
   'noField',

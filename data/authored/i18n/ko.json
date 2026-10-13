@@ -101,6 +101,7 @@
   "auto.condition.everyTwoTurns": "2턴마다",
   "auto.condition.everyThreeTurns": "3턴마다",
   "auto.condition.everyFourTurns": "4턴마다",
+  "auto.condition.superEffective": "효과가 굉장할 때",
   "auto.condition.noStatus": "상대가 멀쩡할 때",
   "auto.condition.foeStatus": "상대가 상태이상일 때",
   "auto.condition.noField": "필드가 없을 때",

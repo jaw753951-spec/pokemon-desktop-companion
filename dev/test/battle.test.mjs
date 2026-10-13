@@ -295,6 +295,25 @@ test('a move used on the first turn goes every two turns from there', options, (
   assert.deepEqual(picks, ['growl', 'tackle', 'growl', 'tackle', 'growl']);
 });
 
+test('a move can wait for the foe to be weak to it', options, () => {
+  const pick = (foe, moves = ['slash', 'ember', 'present']) => {
+    const player = makeFixed(CHARIZARD, 50, moves);
+    const battle = new Battle({
+      rng: new Rng(2),
+      player,
+      foes: [makeFixed(foe, 50, ['tackle'])],
+      policy: { ...defaultAutoBattle(), moves: { ember: 'superEffective', present: 'superEffective' } },
+    });
+    const chosen = choosePolicyMove(battle, battle.player, /** @type {any} */ (battle.foe), player.moves);
+    // Looking at a Present's type does not open it.
+    assert.equal(battle.player.marks.present, undefined);
+    return chosen;
+  };
+  assert.equal(pick(VENUSAUR), 'ember', 'Fire on a Grass type');
+  assert.equal(pick(BLASTOISE), 'slash', 'Fire on a Water type waits');
+  assert.equal(pick(25), 'slash', 'Fire on a Pikachu: neutral is not super effective');
+});
+
 test('every move\'s first condition is looked at before any move\'s second', options, () => {
   const player = makeFixed(CHARIZARD, 50, ['flamethrower', 'ember', 'recover']);
   const foe = makeFixed(VENUSAUR, 50, ['tackle']);

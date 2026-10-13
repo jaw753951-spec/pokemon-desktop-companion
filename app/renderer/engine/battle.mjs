@@ -3031,8 +3031,11 @@ export class Battle {
    * @param {Combatant} attacker
    * @param {Combatant} defender
    * @param {any} move
+   * @param {string} [slug]
+   * @param {{peek?: boolean}} [options] `peek` looks without deciding
+   *   anything the use would: a Present is not opened
    */
-  effectiveMove(attacker, defender, move, slug = this.slugOf(move)) {
+  effectiveMove(attacker, defender, move, slug = this.slugOf(move), { peek = false } = {}) {
     move = { ...move, slug };
     // A Crowned Zacian's Iron Head is a Behemoth Blade, a Crowned
     // Zamazenta's a Behemoth Bash.
@@ -3064,7 +3067,7 @@ export class Battle {
     // An Ion Deluge charges every Normal move for the rest of the turn.
     if (this.field.ionDeluge === this.turn && move.type === 'normal') move = { ...move, type: 'electric' };
     // A Present decides what it is when it is opened.
-    if (move.slug === 'present') {
+    if (move.slug === 'present' && !peek) {
       const roll = this.rng.next();
       attacker.marks.present = roll < 0.4 ? 40 : roll < 0.7 ? 80 : roll < 0.8 ? 120 : 0;
     }
@@ -5506,6 +5509,15 @@ function conditionHolds(condition, battle, attacker, defender, slug) {
       return turnsSinceUsed(attacker, slug) >= 3;
     case 'everyFourTurns':
       return turnsSinceUsed(attacker, slug) >= 4;
+    // Super effective or better against the foe as it stands: its types now,
+    // and the move's as it would leave — an ability retyping it, the field, a
+    // mask or a plate behind it. A move that deals no damage never is.
+    case 'superEffective': {
+      const move = moveOf(slug);
+      if (!move || move.damageClass === 'status') return false;
+      const used = battle.effectiveMove(attacker, defender, move, slug, { peek: true });
+      return battle.effectivenessOf(attacker, used, defender) > 1;
+    }
     case 'noStatus':
       return !defender.pokemon.status;
     case 'foeStatus':
