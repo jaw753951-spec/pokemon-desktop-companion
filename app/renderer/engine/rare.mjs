@@ -32,12 +32,14 @@ export const RARE_CHANCE = 0.005;
  * How long the wait is, in walking time, before the odds start to climb, and
  * how long before a rare Pokémon is certain.
  *
- * About fifteen wild Pokémon are met an hour, so a fifth of the waits end
- * early on the low odds and most of the rest in the hour after the climb
- * starts: about three hours apart on average, and in practice never past
- * five, as the climb all but makes it certain before the ceiling does.
+ * About fifteen wild Pokémon are met an hour, so a third of the waits end
+ * early on the low odds and most of the rest in the hour or so after the
+ * climb starts: four and a half hours apart on average, and in practice
+ * never past seven, as the climb all but makes it certain before the ceiling
+ * does. It was three hours and six, about three apart, which made a
+ * legendary something met a few times every day.
  */
-export const RARE_CEILING = { soft: 3 * HOUR, hard: 6 * HOUR };
+export const RARE_CEILING = { soft: 5 * HOUR, hard: 10 * HOUR };
 
 /** The same, while a key item has a Pokémon waiting to be met. */
 export const CALLED_CEILING = { soft: 0.5 * HOUR, hard: 1.5 * HOUR };
@@ -45,9 +47,9 @@ export const CALLED_CEILING = { soft: 0.5 * HOUR, hard: 1.5 * HOUR };
 /**
  * How often an item find on the road is a key item that leads somewhere,
  * while there is one still to find: at about fifteen finds an hour, one every
- * two hours or so.
+ * three hours or so. It was one every two.
  */
-export const CALLING_FIND_CHANCE = 0.03;
+export const CALLING_FIND_CHANCE = 0.02;
 
 /**
  * The odds that the next wild Pokémon is a rare one.

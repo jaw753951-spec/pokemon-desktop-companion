@@ -83,9 +83,9 @@ test('a rare Pokémon is never more than the ceiling apart on the road', options
     last = session.playtime;
   }
   assert.ok(gaps.every((gap) => gap <= RARE_CEILING.hard + step), `a gap of ${Math.max(...gaps) / HOUR}h`);
-  // About three hours apart on average.
+  // About four and a half hours apart on average.
   const mean = gaps.reduce((sum, gap) => sum + gap, 0) / gaps.length / HOUR;
-  assert.ok(mean > 2.5 && mean < 5, `on average ${mean.toFixed(2)}h apart`);
+  assert.ok(mean > 3.5 && mean < 5.5, `on average ${mean.toFixed(2)}h apart`);
 });
 
 test('the first run has no clock: a rare Pokémon is only ever the low odds', options, () => {
