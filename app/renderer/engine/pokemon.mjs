@@ -55,6 +55,8 @@ import {
  * @property {string} [look] an Alcremie's cream and sweet, rolled when it evolves
  * @property {string[]} [badges] the gym badges it has won, by type
  * @property {boolean} [champion] whether it has beaten the League's champion
+ * @property {boolean} [travelled] whether it has been the travelling Pokémon,
+ *   whose move settings are then the player's to keep
  * @property {string} [forme] the alternate forme it is wearing, if any — the
  *   one it stands in (a held mask, a chosen Sky Forme) outside a battle, and
  *   whatever the battle has changed it into inside one, let go of after

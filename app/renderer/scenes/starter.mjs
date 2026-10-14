@@ -13,7 +13,9 @@ import { gameData, speciesOf } from '../core/data.mjs';
 import { button, el } from '../core/dom.mjs';
 import { name as localized, t } from '../core/i18n.mjs';
 import { Rng } from '../core/rng.mjs';
+import { optimizeMoves } from '../engine/autoplan.mjs';
 import { createPokemon } from '../engine/pokemon.mjs';
+import { defaultAutoBattle } from '../engine/session.mjs';
 import { confirm } from '../ui/dialog.mjs';
 import { walkerPortrait } from '../ui/portrait.mjs';
 import { startRun } from './field.mjs';
@@ -119,13 +121,16 @@ async function begin(app, slot, speciesId) {
   // Starters are a gift, so they get a guaranteed-decent spread rather than
   // the fully random one a wild Pokémon rolls.
   const starter = createPokemon(rng, speciesId, STARTER_LEVEL, { ivFloor: 12, ball: 'poke-ball' });
+  // Its moves start set up as the Optimize button would.
+  const autoBattle = defaultAutoBattle();
+  optimizeMoves(starter, autoBattle);
 
   app.toast(t('starter.chosen', { name: localized(species.name, species.slug) }));
   app.audio.playCry(speciesId);
 
   startRun(app, {
     slot,
-    save: newSave(rng, starter),
+    save: newSave(rng, starter, autoBattle),
   });
 }
 
@@ -133,8 +138,9 @@ async function begin(app, slot, speciesId) {
  * The shape of a fresh save.
  * @param {Rng} rng
  * @param {import('../engine/pokemon.mjs').Pokemon} starter
+ * @param {any} autoBattle the move settings it starts with
  */
-function newSave(rng, starter) {
+function newSave(rng, starter, autoBattle) {
   const areas = gameData().areas;
   return {
     seed: rng.seed,
@@ -150,6 +156,6 @@ function newSave(rng, starter) {
       machines: [],
     },
     dex: { seen: [starter.speciesId], caught: [starter.speciesId], champions: [] },
-    autoBattle: null,
+    autoBattle,
   };
 }

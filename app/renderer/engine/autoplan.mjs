@@ -167,6 +167,37 @@ export function suggestPolicy(pokemon) {
 }
 
 /**
+ * Give a Pokémon's moves the conditions and the order a plan names, in the
+ * policy given. Other Pokémon's moves keep what they had.
+ *
+ * @param {import('./pokemon.mjs').Pokemon} pokemon
+ * @param {{moves?: Record<string, string>, second?: Record<string, string>}} policy
+ * @param {{order: string[], moves: Record<string, string>, second: Record<string, string>}} plan
+ */
+export function applyPlan(pokemon, policy, plan) {
+  policy.moves = { ...(policy.moves ?? {}), ...plan.moves };
+  policy.second = { ...(policy.second ?? {}), ...plan.second };
+  const bySlug = new Map(pokemon.moves.map((slot) => [slot.move, slot]));
+  const ordered = plan.order.map((slug) => bySlug.get(slug)).filter((slot) => slot !== undefined);
+  // Anything the plan did not name (a move the data does not know) stays at the end.
+  const rest = pokemon.moves.filter((slot) => !plan.order.includes(slot.move));
+  // In place, as the swap on the auto-battle screen does, for anything holding the list.
+  pokemon.moves.splice(0, pokemon.moves.length, ...ordered, ...rest);
+}
+
+/**
+ * What the Optimize button does, without the asking: the Pokémon's moves set
+ * up by the rules here. A new game's starter and a Pokémon setting out from
+ * the box for the first time start this way.
+ *
+ * @param {import('./pokemon.mjs').Pokemon} pokemon
+ * @param {{moves?: Record<string, string>, second?: Record<string, string>}} policy
+ */
+export function optimizeMoves(pokemon, policy) {
+  applyPlan(pokemon, policy, suggestPolicy(pokemon));
+}
+
+/**
  * @typedef {{rank: number, first: string, second: string}} Plan
  */
 

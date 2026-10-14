@@ -8,8 +8,9 @@ import assert from 'node:assert/strict';
 import { NEEDS_ASSETS, useRealGameData } from './helpers/data.mjs';
 import { Rng } from '../../app/renderer/core/rng.mjs';
 import { speciesIdBySlug } from '../../app/renderer/core/data.mjs';
-import { profileOf, suggestPolicy } from '../../app/renderer/engine/autoplan.mjs';
+import { optimizeMoves, profileOf, suggestPolicy } from '../../app/renderer/engine/autoplan.mjs';
 import { createPokemon, setMove } from '../../app/renderer/engine/pokemon.mjs';
+import { defaultAutoBattle, Session } from '../../app/renderer/engine/session.mjs';
 
 const ready = await useRealGameData();
 const options = { skip: ready ? false : NEEDS_ASSETS };
@@ -121,4 +122,42 @@ test('the order: heal, the foe\'s conditions, boosts, field, moment attacks, the
     ['roost', 'quick-attack', 'outrage', 'dragon-claw']);
   assert.deepEqual(suggestPolicy(make('gengar', ['shadow-ball', 'hex', 'will-o-wisp', 'protect'])).order,
     ['will-o-wisp', 'protect', 'hex', 'shadow-ball']);
+});
+
+test('a Pokémon setting out for the first time starts optimized, and one that has travelled keeps its own', options, () => {
+  const plan = (/** @type {any} */ pokemon) => {
+    const copy = structuredClone(pokemon);
+    const policy = defaultAutoBattle();
+    optimizeMoves(copy, policy);
+    return { order: copy.moves.map((/** @type {any} */ slot) => slot.move), moves: policy.moves, second: policy.second };
+  };
+  const gengar = make('gengar', ['shadow-ball', 'hypnosis', 'dream-eater', 'fake-out']);
+  const blissey = make('blissey', ['soft-boiled', 'body-slam', 'toxic', 'protect']);
+  const veteran = make('alakazam', ['psychic', 'recover']);
+  veteran.badges = ['rock'];
+  const expected = plan(blissey);
+
+  const session = new Session({ slot: 0, save: { seed: 1, party: { active: gengar, box: [blissey, veteran] } } });
+  assert.ok(session.active.travelled, 'whoever is travelling counts as having travelled');
+  session.autoBattle.moves['shadow-ball'] = 'hpHalf';
+
+  session.switchActive(0);
+  assert.equal(session.active, blissey);
+  assert.deepEqual(blissey.moves.map((slot) => slot.move), expected.order);
+  for (const slug of expected.order) {
+    assert.equal(session.autoBattle.moves[slug], expected.moves[slug], `${slug}'s first`);
+    assert.equal(session.autoBattle.second[slug], expected.second[slug], `${slug}'s second`);
+  }
+  assert.ok(blissey.travelled);
+
+  // Back to the one that travelled before: its settings are left alone.
+  session.switchActive(0);
+  assert.equal(session.active, gengar);
+  assert.equal(session.autoBattle.moves['shadow-ball'], 'hpHalf');
+
+  // And one from an older save that won a badge travelling.
+  const before = structuredClone(session.autoBattle);
+  session.switchActive(1);
+  assert.equal(session.active, veteran);
+  assert.deepEqual(session.autoBattle, before);
 });

@@ -12,6 +12,7 @@ import { gameData, itemOf, speciesOf } from '../core/data.mjs';
 import { Rng } from '../core/rng.mjs';
 import { pocketOrder } from './bagorder.mjs';
 import { EventScheduler } from './events.mjs';
+import { optimizeMoves } from './autoplan.mjs';
 import { ensureAttack, fullyHeal, shinyOddsFor } from './pokemon.mjs';
 import { settleForme } from './forms.mjs';
 import { oneAtATime, STARTING_MONEY } from './shop.mjs';
@@ -33,6 +34,8 @@ export class Session {
     this.rng = new Rng(save.seed);
 
     this.active = save.party.active;
+    // Whoever is travelling has its move settings as the player left them.
+    this.active.travelled = true;
     /** @type {Array<import('./pokemon.mjs').Pokemon|null>} */
     this.box = save.party.box ?? [];
 
@@ -390,6 +393,11 @@ export class Session {
 
   /**
    * Swap the travelling Pokémon with one from the box.
+   *
+   * One setting out for the first time starts with its moves set up as the
+   * Optimize button would; one that has travelled before keeps what the
+   * player gave it.
+   *
    * @param {number} index
    */
   switchActive(index) {
@@ -399,6 +407,8 @@ export class Session {
     this.leagueRun = null;
     this.box[index] = this.active;
     this.active = chosen;
+    if (!hasTravelled(chosen)) optimizeMoves(chosen, this.autoBattle);
+    chosen.travelled = true;
     return chosen;
   }
 
@@ -587,6 +597,17 @@ export function normalizeAutoBattle(policy) {
   };
 
   return { conditions, moves: byMove(policy.moves), second: byMove(policy.second) };
+}
+
+/**
+ * Whether a Pokémon has been the travelling one before: marked so, or — from
+ * a save older than the mark — holding a badge or a title it could only have
+ * won travelling.
+ *
+ * @param {import('./pokemon.mjs').Pokemon} pokemon
+ */
+function hasTravelled(pokemon) {
+  return Boolean(pokemon.travelled || pokemon.champion || pokemon.badges?.length);
 }
 
 /**
