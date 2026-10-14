@@ -1256,6 +1256,13 @@ function emptyMove(pokemon) {
  */
 export const SIGNATURE_FIND_CHANCE = 0.1;
 
+/**
+ * The same on the save's first run, before it has a champion: a third as
+ * often, so a forme change or an orb is something the first trip earns
+ * slowly rather than a few hours' walking.
+ */
+export const FIRST_RUN_SIGNATURE_FIND_CHANCE = 0.03;
+
 /** Built once: which species each signature item is for. */
 let signature = /** @type {Map<string, string[]>|null} */ (null);
 
@@ -1280,7 +1287,8 @@ export function signatureFind(session) {
     ...[...signature].filter(([, owners]) => owners.includes(slug)).map(([item]) => item),
     ...evolvesBy,
   ].filter((item, index, all) => all.indexOf(item) === index && itemOf(item) && !held.has(item) && session.countOf(item) === 0);
-  if (!wanted.length || !session.rng.chance(SIGNATURE_FIND_CHANCE)) return null;
+  const chance = session.firstRun ? FIRST_RUN_SIGNATURE_FIND_CHANCE : SIGNATURE_FIND_CHANCE;
+  if (!wanted.length || !session.rng.chance(chance)) return null;
   return session.rng.pick(wanted);
 }
 

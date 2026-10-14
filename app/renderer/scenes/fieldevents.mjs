@@ -6,7 +6,7 @@
  * met along the way rather than something that appeared on top of the player.
  * The runner owns the props and their timing; the field scene owns the walk.
  */
-import { FIELD_HEIGHT, FIELD_WIDTH, leaderLevels, leaderOdds } from '../../shared/constants.mjs';
+import { FIELD_HEIGHT, FIELD_WIDTH, FIRST_RUN_LEADER_STATS, leaderLevels, leaderOdds } from '../../shared/constants.mjs';
 import { loadImage, loadSprite, Sprite } from '../core/assets.mjs';
 import { artOf, gameData, itemOf, speciesOf } from '../core/data.mjs';
 import { name as localized, t } from '../core/i18n.mjs';
@@ -1038,38 +1038,59 @@ function pickLeader(session) {
 /**
  * A leader's party: the species they are known for, at the levels of the
  * badge they hold (see `leaderLevels`) — whoever challenges them, as the
- * League is.
+ * League is. On the save's first run the first three leaders keep under their
+ * gym's ceiling (see `FIRST_RUN_LEADER_STATS`).
  *
  * @param {import('../engine/session.mjs').Session} session
  * @param {any} leader
  */
 export function leaderParty(session, leader) {
-  const roster = (leader.party ?? []).filter((id) => speciesOf(id));
+  const ceiling = leaderCeiling(session);
+  const roster = (leader.party ?? []).filter((id) => speciesOf(id) && totalStats(speciesOf(id)) <= ceiling);
 
   const species = roster.length
     ? capRoster(roster, LEADER_PARTY_CAP)
     : // No roster on file: fall back to strong members of the leader's type.
-      pickTypeRoster(session, leader.type, LEADER_PARTY_CAP);
+      pickTypeRoster(session, leader.type, LEADER_PARTY_CAP, ceiling);
 
   const levels = leaderLevels(session.badges.length, species.length);
-  const party = species.map((id, index) =>
-    createPokemon(session.rng, evolveToLevel(id, levels[index]), levels[index], { ivFloor: 10 }),
-  );
+  const party = species.map((id, index) => {
+    // Grown to its level, unless that takes it over the ceiling: a Magikarp
+    // drawn for an early gym stays a Magikarp.
+    const grown = evolveToLevel(id, levels[index]);
+    const kept = totalStats(speciesOf(grown)) <= ceiling ? grown : id;
+    return createPokemon(session.rng, kept, levels[index], { ivFloor: 10 });
+  });
   return giveTrainerItems(session.rng, party, 'leader');
 }
 
 /**
- * The highest-statted non-legendary species of a type, which is what a gym
- * leader would plausibly have trained.
+ * The most base stats the next leader's Pokémon may have: the gym's ceiling
+ * on the save's first run, and no limit otherwise.
+ *
+ * @param {import('../engine/session.mjs').Session} session
+ */
+function leaderCeiling(session) {
+  return session.firstRun ? FIRST_RUN_LEADER_STATS[session.badges.length] ?? Infinity : Infinity;
+}
+
+/**
+ * The highest-statted non-legendary species of a type, within the ceiling,
+ * which is what a gym leader would plausibly have trained. A type with
+ * nothing under the ceiling goes without it.
  *
  * @param {import('../engine/session.mjs').Session} session
  * @param {string} type
  * @param {number} count
+ * @param {number} [ceiling]
  * @returns {number[]}
  */
-function pickTypeRoster(session, type, count) {
-  const candidates = Object.values(gameData().species)
-    .filter((entry) => !entry.isLegendary && !entry.isMythical && entry.types.includes(type))
+function pickTypeRoster(session, type, count, ceiling = Infinity) {
+  const ofType = Object.values(gameData().species).filter(
+    (entry) => !entry.isLegendary && !entry.isMythical && entry.types.includes(type),
+  );
+  const within = ofType.filter((entry) => totalStats(entry) <= ceiling);
+  const candidates = (within.length ? within : ofType)
     .sort((a, b) => totalStats(b) - totalStats(a))
     .slice(0, 24)
     .map((entry) => entry.id);

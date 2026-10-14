@@ -156,7 +156,7 @@ test('the Enigmatic Card puts the Ultra Beasts in the rare draw, and nothing els
   assert.ok([...met].some((rare) => !beasts.includes(rare)), 'and so does everyone else');
 });
 
-test('a key item is found on the road, never bought, and the mythical ones only after a title', options, () => {
+test('a key item is found on the road, never bought, and only after a title', options, () => {
   const always = { chance: () => true, pick: (/** @type {any[]} */ list) => list[0], next: () => 0 };
   const session = sessionOf();
   session.rng = /** @type {any} */ (always);
@@ -172,21 +172,21 @@ test('a key item is found on the road, never bought, and the mythical ones only 
     return seen;
   };
 
-  const before = offered();
-  assert.ok(before.has('silver-wing') && before.has('eon-ticket'));
-  for (const slug of ['member-card', 'oaks-letter', 'azure-flute', 'liberty-pass', 'enigmatic-card']) {
-    assert.ok(!before.has(slug), `${slug} before a title`);
-  }
-  // None twice: everything still to find is already in the bag.
-  assert.equal(callingFind(session), null);
+  // The first run finds none of them.
+  assert.ok(session.firstRun);
+  assert.equal(offered().size, 0);
 
   session.champions.add(id('pikachu'));
+  assert.ok(!session.firstRun);
   const after = offered();
-  assert.ok(after.has('member-card') && after.has('enigmatic-card'));
+  for (const slug of ['silver-wing', 'eon-ticket', 'member-card', 'enigmatic-card']) assert.ok(after.has(slug), `${slug} after a title`);
+  // None twice: everything still to find is already in the bag.
+  assert.equal(callingFind(session), null);
 
   // One that leads only to Pokémon already caught is not found.
   const fresh = sessionOf();
   fresh.rng = /** @type {any} */ (always);
+  fresh.champions.add(id('pikachu'));
   fresh.markCaught(id('lugia'));
   for (let find = 0; find < 20; find++) {
     const found = callingFind(fresh);

@@ -157,6 +157,16 @@ export class Session {
     else delete this.active.champion;
   }
 
+  /**
+   * Whether the save is on its first time through: none of its Pokémon has
+   * been crowned Champion yet. The first run holds a few things back — the
+   * early gyms' strongest Pokémon, the key items that lead to a legendary — and
+   * makes the legendaries' own items rarer.
+   */
+  get firstRun() {
+    return !this.champion && this.champions.size === 0;
+  }
+
   /** @param {string|null|undefined} id */
   findArea(id) {
     return gameData().areas.find((area) => area.id === id) ?? null;

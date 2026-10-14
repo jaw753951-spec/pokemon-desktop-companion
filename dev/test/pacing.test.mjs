@@ -10,9 +10,10 @@ import assert from 'node:assert/strict';
 
 import { NEEDS_ASSETS, useRealGameData } from './helpers/data.mjs';
 import { Rng } from '../../app/renderer/core/rng.mjs';
+import { speciesOf } from '../../app/renderer/core/data.mjs';
 import { createPokemon } from '../../app/renderer/engine/pokemon.mjs';
 import { Session } from '../../app/renderer/engine/session.mjs';
-import { BADGE_LEVELS, BADGES_FOR_LEAGUE, LEADER_REST_AFTER_LOSS, leaderLevels, leaderOdds } from '../../app/shared/constants.mjs';
+import { BADGE_LEVELS, BADGES_FOR_LEAGUE, FIRST_RUN_LEADER_STATS, LEADER_REST_AFTER_LOSS, leaderLevels, leaderOdds } from '../../app/shared/constants.mjs';
 import { levelOf } from '../../app/renderer/engine/pokemon.mjs';
 import { leaderParty, shouldSummonLeader } from '../../app/renderer/scenes/fieldevents.mjs';
 import { LEAGUE_LEVELS, leagueLevel } from '../../app/renderer/scenes/league.mjs';
@@ -80,6 +81,33 @@ test('a leader\'s team is the same whoever challenges it', options, () => {
     session.badges = ['rock', 'water', 'electric'];
     assert.deepEqual(leaderParty(session, leader).map(levelOf), leaderLevels(3, 2), `the fourth badge, against a level ${level}`);
   }
+});
+
+test("on the first run the first three leaders keep under their gym's ceiling", options, () => {
+  /** @param {any} pokemon */
+  const total = (pokemon) => Object.values(speciesOf(pokemon.speciesId).stats).reduce((sum, value) => sum + Number(value), 0);
+  const types = ['rock', 'water', 'dragon', 'ghost', 'steel', 'fairy', 'ice', 'bug'];
+  const strongest = (/** @type {any} */ session) =>
+    Math.max(...types.flatMap((type) => leaderParty(session, { id: type, type }).map(total)));
+
+  for (let seed = 1; seed <= 20; seed++) {
+    const session = new Session({ slot: 0, save: { seed, party: { active: createPokemon(new Rng(1), 4, 30), box: [] } } });
+    assert.ok(session.firstRun);
+    for (const [badges, ceiling] of FIRST_RUN_LEADER_STATS.entries()) {
+      session.badges = types.slice(0, badges).map((type) => `held-${type}`);
+      const top = strongest(session);
+      assert.ok(top <= ceiling, `badge ${badges + 1} sent out ${top} against a ceiling of ${ceiling}`);
+    }
+  }
+
+  // The fourth gym, and every gym once the save has a champion, is not held back.
+  const later = new Session({ slot: 0, save: { seed: 1, party: { active: createPokemon(new Rng(1), 4, 30), box: [] } } });
+  later.badges = ['a', 'b', 'c'];
+  assert.ok(strongest(later) > FIRST_RUN_LEADER_STATS[2]);
+  const crowned = new Session({ slot: 0, save: { seed: 1, party: { active: createPokemon(new Rng(1), 4, 30), box: [] } } });
+  crowned.champions.add(4);
+  assert.ok(!crowned.firstRun);
+  assert.ok(strongest(crowned) > FIRST_RUN_LEADER_STATS[0]);
 });
 
 test('the League stands in the 70s, the champion at the top of it', () => {

@@ -10,7 +10,8 @@
  * next wild Pokémon is one, until past a ceiling it certainly is.
  *
  * And a key item can decide who it is (see `CALLING_ITEMS` in the dex build):
- * the Member Card leads to Darkrai, the Silver Wing to Lugia. The Pokémon an
+ * the Member Card leads to Darkrai, the Silver Wing to Lugia — once the save
+ * has a champion, as none is found on the first run. The Pokémon an
  * item leads to are met no other way, and while one of them is waiting the
  * clock runs to a much shorter ceiling — a ticket found is a meeting soon,
  * not one more name in a draw. The Enigmatic Card is the exception: it puts
@@ -157,17 +158,17 @@ export function pickRare(rng, area, caught = new Set(), pooled = new Set()) {
 
 /**
  * The key item an item find turns out to be, if it does: one not in the bag
- * that still leads to someone uncaught. The mythical Pokémon's tickets and
- * the Ultra Beasts' card wait until the save has a champion.
+ * that still leads to someone uncaught. None is found on the first run: they
+ * all wait until the save has a champion, as the games kept the mythical
+ * Pokémon's tickets and Looker's card for after the story.
  *
  * @param {import('./session.mjs').Session} session
  * @returns {string|null}
  */
 export function callingFind(session) {
-  const crowned = session.champion || session.champions.size > 0;
+  if (session.firstRun) return null;
   const open = callingItems().filter(
-    ({ slug, item, calls }) =>
-      session.countOf(slug) === 0 && (crowned || !item.afterLeague) && calls.some((id) => !session.caught.has(id)),
+    ({ slug, calls }) => session.countOf(slug) === 0 && calls.some((id) => !session.caught.has(id)),
   );
   if (!open.length || !session.rng.chance(CALLING_FIND_CHANCE)) return null;
   return session.rng.pick(open).slug;
