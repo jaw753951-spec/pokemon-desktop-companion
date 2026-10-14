@@ -1871,13 +1871,7 @@ canvas {
   background: rgba(56, 74, 99, 0.03);
 }
 
-/* The heading, with the one-press setup at its end, which counts its trial
-   up while it runs. */
-.auto-tier-head .btn.busy {
-  cursor: progress;
-  opacity: 0.75;
-}
-
+/* The heading, with the one-press setup at its end. */
 .auto-tier-head {
   display: flex;
   align-items: center;

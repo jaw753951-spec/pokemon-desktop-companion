@@ -10,7 +10,7 @@
 import { COMPANION_DAMAGE_TAKEN, COMPANION_WEAKNESS } from '../../shared/constants.mjs';
 import { gameData, itemOf, moveOf, speciesOf, typeEffectiveness } from '../core/data.mjs';
 import { ABILITIES, abilityEffect, abilityName, afterBattle, auraMultiplier, hasSecondary } from './abilities.mjs';
-import { chooseFoeMove, goingDownFirst } from './foeai.mjs';
+import { chooseFoeMove } from './foeai.mjs';
 import { formeFor, heldForme, SIGNATURE_MOVES, signatureType, standingForme, START_FORMES } from './forms.mjs';
 import {
   AFTER_HIT,
@@ -332,8 +332,6 @@ export class Battle {
      * @type {Set<string>}
      */
     this.seenMoves = new Set();
-    /** And the other way round: what the foes have used, which the companion keeps in mind. @type {Set<string>} */
-    this.foeMovesSeen = new Set();
 
     this.player = makeCombatant(player, 'player');
     this.foeQueue = foes.map((foe) => makeCombatant(foe, 'foe'));
@@ -2599,7 +2597,7 @@ export class Battle {
     takeStance(move, moveName);
 
     log.push({ kind: 'move', side: attacker.side, data: reappears ? { move: moveName, reveal: true } : { move: moveName } });
-    (attacker.side === 'player' ? this.seenMoves : this.foeMovesSeen).add(moveName);
+    if (attacker.side === 'player') this.seenMoves.add(moveName);
     const moveLogStart = log.length;
 
     // A move that calls another uses that one in its place: a Metronome, a
@@ -5712,9 +5710,6 @@ function conditionHolds(condition, battle, attacker, defender, slug) {
       if (!move || move.damageClass === 'status' || cannotTouch(defender, move)) return false;
       return expectedDamage(attacker, defender, move) >= defender.pokemon.hp;
     }
-    // The foe looks able to finish the companion this turn, moving first.
-    case 'inDanger':
-      return goingDownFirst(battle, attacker, defender);
     case 'foePhysical':
       return battle.stat(defender, 'atk') >= battle.stat(defender, 'spa');
     case 'foeSpecial':

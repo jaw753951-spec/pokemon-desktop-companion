@@ -379,7 +379,7 @@ test('the finer conditions: once a battle, the foe just out, speed, the kind of 
   assert.equal(pick(field), 'growl');
 });
 
-test('a move can wait for a knock-out, for the danger of going down first, or for the kind of attacker the foe is', options, () => {
+test('a move can wait for a knock-out, or for the kind of attacker the foe is', options, () => {
   const setUp = (condition, foeMoves = ['tackle']) => new Battle({
     rng: new Rng(2),
     player: makeFixed(CHARIZARD, 50, ['quick-attack', 'flamethrower']),
@@ -392,14 +392,6 @@ test('a move can wait for a knock-out, for the danger of going down first, or fo
   assert.equal(pick(finish), 'flamethrower');
   finish.foe.pokemon.hp = 5;
   assert.equal(pick(finish), 'quick-attack');
-
-  const danger = setUp('inDanger');
-  assert.equal(pick(danger), 'flamethrower');
-  danger.player.pokemon.hp = 1;
-  danger.foe.stages.spe = 6;
-  assert.equal(pick(danger), 'quick-attack', 'slower, and one hit from going down');
-  danger.foe.stages.spe = -6;
-  assert.equal(pick(danger), 'flamethrower', 'it moves first anyway');
 
   // Venusaur leans special.
   assert.equal(pick(setUp('foeSpecial')), 'quick-attack');
@@ -629,6 +621,12 @@ test('two moves whose moments both hold go in slot order, which the player sets'
   assert.equal(pick(), 'swords-dance');
   [player.moves[1], player.moves[2]] = [player.moves[2], player.moves[1]];
   assert.equal(pick(), 'recover', 'moved ahead, the heal goes first');
+});
+
+test('a move set to a retired condition is given the nearest one still offered', () => {
+  const policy = normalizeAutoBattle({ moves: { 'quick-attack': 'inDanger' }, second: { tackle: 'inDanger' } });
+  assert.equal(policy.moves['quick-attack'], 'slower');
+  assert.equal(policy.second.tackle, 'slower');
 });
 
 test('a stored policy from either older shape becomes conditions', options, () => {

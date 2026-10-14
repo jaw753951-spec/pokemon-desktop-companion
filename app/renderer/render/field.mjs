@@ -53,11 +53,20 @@ export function setGroundY(value) {
  * the road as a box icon and needed the help; next to the Pokémon's own sprite
  * a trainer at half again towered over it.
  *
- * This is the figure for the things that really are tile art: trainers and
- * the props an event puts on the road. A Pokémon is sized by
+ * This is the figure for the things that really are tile art: the props an
+ * event puts on the road. A trainer is drawn larger (see {@link TRAINER_SCALE}). A Pokémon is sized by
  * {@link actorScale} instead — see there for why.
  */
 export const ACTOR_SCALE = 1;
+
+/**
+ * How much larger than its own art a trainer waiting on the road is drawn:
+ * half again. At the map's own size a trainer read as a speck beside the
+ * Pokémon it was about to send out; half again is the step up that keeps
+ * every art pixel a whole number of screen pixels — three, where a map pixel
+ * is two — so the sheet stays crisp.
+ */
+export const TRAINER_SCALE = 1.5;
 
 /**
  * How much larger than its own art a Pokémon is drawn on the field: half, for

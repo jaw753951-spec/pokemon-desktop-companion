@@ -533,6 +533,16 @@ export function normalizeItemPolicy(policy) {
 }
 
 /**
+ * Conditions that were offered once and are not any more, and what a move
+ * set to one is given instead. "About to go down first" guessed at the foe's
+ * moves from what it had used; the companion's setting now reads only what
+ * is plain to see, and the nearest plain thing is the foe being faster.
+ *
+ * @type {Record<string, string>}
+ */
+const RETIRED_CONDITIONS = { inDanger: 'slower' };
+
+/**
  * Bring a stored policy up to the shape the engine reads.
  *
  * Three older shapes are read for what they plainly meant. A policy carrying a
@@ -561,7 +571,7 @@ export function normalizeAutoBattle(policy) {
     /** @type {Record<string, string>} */
     const out = {};
     for (const [slug, condition] of Object.entries(stored ?? {})) {
-      if (typeof condition === 'string') out[slug] = condition;
+      if (typeof condition === 'string') out[slug] = RETIRED_CONDITIONS[condition] ?? condition;
     }
     return out;
   };

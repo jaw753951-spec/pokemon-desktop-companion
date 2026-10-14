@@ -13,12 +13,12 @@
  * Everything here edits the policy the battle engine reads, and the moves'
  * own order, so the effect of a change is immediate.
  */
-import { gameData, moveOf } from '../core/data.mjs';
+import { moveOf } from '../core/data.mjs';
 import { button, el, scrollable, setChildren } from '../core/dom.mjs';
 import { name as localized, t } from '../core/i18n.mjs';
 import { moveCondition, secondCondition } from '../engine/battle.mjs';
-import { tunePolicy } from '../engine/autotune.mjs';
-import { describe, mountModal } from './dialog.mjs';
+import { suggestPolicy } from '../engine/autoplan.mjs';
+import { confirm, mountModal } from './dialog.mjs';
 import { typeChip } from './typechip.mjs';
 
 /**
@@ -33,7 +33,7 @@ import { typeChip } from './typechip.mjs';
 const CONDITION_GROUPS = [
   { key: 'basic', conditions: ['never', 'always'] },
   { key: 'turn', conditions: ['firstTurn', 'foeEntered', 'oncePerBattle', 'everyTwoTurns', 'everyThreeTurns', 'everyFourTurns'] },
-  { key: 'matchup', conditions: ['canFinish', 'inDanger', 'superEffective', 'faster', 'slower'] },
+  { key: 'matchup', conditions: ['canFinish', 'superEffective', 'faster', 'slower'] },
   { key: 'battle', conditions: ['foePhysical', 'foeSpecial', 'trainerBattle', 'wildBattle'] },
   { key: 'status', conditions: ['noStatus', 'foeStatus', 'selfStatus', 'noField', 'hasField'] },
   { key: 'rank', conditions: ['rankUp', 'rankDown', 'foeRankUp', 'foeRankDown'] },
@@ -105,52 +105,22 @@ export function autoBattleScene({ session, onClose }) {
 }
 
 /**
- * The one-press setup: a trial run against what the area holds (see
- * `autotune.mjs`), then what it found, to take or leave. The button counts
- * the trial up while it runs, and the screen stays usable meanwhile.
+ * The one-press setup: each move's conditions and the order, set by the
+ * rules in `autoplan.mjs`, after asking.
  *
  * @param {import('../core/app.mjs').App} app
  * @param {import('../engine/session.mjs').Session} session
  * @param {() => void} applied
  */
 function optimizeButton(app, session, applied) {
-  let running = false;
-  const node = button(t('auto.optimize'), async () => {
-    if (running) return;
-    running = true;
+  return button(t('auto.optimize'), async () => {
     app.audio.blip('select');
-    node.classList.add('busy');
     const pokemon = session.active;
-    try {
-      const result = await tunePolicy({
-        pokemon,
-        area: session.area,
-        classes: gameData().trainerClasses ?? [],
-        current: session.autoBattle,
-      }, {
-        onProgress: (share) => {
-          node.textContent = t('auto.optimizing', { percent: Math.round(share * 100) });
-        },
-        pause: () => new Promise((resolve) => setTimeout(resolve, 0)),
-      });
-      const percent = (/** @type {{wins: number, battles: number}} */ tally) => Math.round((tally.wins / tally.battles) * 100);
-      const take = await describe(app, {
-        title: t('auto.optimizeTitle'),
-        subtitle: t('auto.optimizeTrial', { battles: result.after.battles, area: localized(session.area?.name, session.area?.id ?? '') }),
-        body: t('auto.optimizeResult', { before: percent(result.before), after: percent(result.after) }),
-        action: { label: t('auto.apply') },
-      });
-      if (take && session.active === pokemon) {
-        apply(session, result);
-        applied();
-      }
-    } finally {
-      running = false;
-      node.classList.remove('busy');
-      node.textContent = t('auto.optimize');
-    }
+    if (!(await confirm(app, t('auto.optimizeConfirm')))) return;
+    if (session.active !== pokemon) return;
+    apply(session, suggestPolicy(pokemon));
+    applied();
   }, { className: 'small', title: t('auto.optimizeHint') });
-  return node;
 }
 
 /**

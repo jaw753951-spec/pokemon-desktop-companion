@@ -140,9 +140,8 @@ export function sizeUp(battle, attacker, defender, usable) {
  * its attacking stats is the stronger, as strong as a Pokémon of its level
  * tends to have. Moves seen used are weighed as well: a trainer remembers
  * what it has watched the companion use, for the rest of the battle — so a
- * Water type's Thunderbolt, once shown, is not forgotten — and the
- * companion's own auto-battle remembers what the foes have used on it. A
- * wild Pokémon pays no such attention.
+ * Water type's Thunderbolt, once shown, is not forgotten. A wild Pokémon
+ * pays no such attention.
  *
  * @param {import('./battle.mjs').Battle} battle
  * @param {import('./battle.mjs').Combatant} attacker the one weighing it up
@@ -160,8 +159,9 @@ export function expectedThreat(battle, attacker, defender) {
     accuracy: 100,
     damageClass: physical ? 'physical' : 'special',
   }));
-  const remembered = defender.side === 'player' ? (battle.trainerBattle ? battle.seenMoves : null) : battle.foeMovesSeen;
-  for (const slug of remembered ?? []) {
+  // Only a trainer remembers; the companion's own setting remembers nothing.
+  const remembered = defender.side === 'player' && battle.trainerBattle ? battle.seenMoves : [];
+  for (const slug of remembered) {
     const move = moveOf(slug);
     if (move && move.damageClass !== 'status') moves.push(move);
   }
@@ -180,21 +180,6 @@ export function expectedThreat(battle, attacker, defender) {
     }
   }
   return { threat, threatClass };
-}
-
-/**
- * Whether the other side looks able to knock this one out this turn, and to
- * move first doing it — on Speed, a Trick Room turning it round.
- *
- * @param {import('./battle.mjs').Battle} battle
- * @param {import('./battle.mjs').Combatant} attacker
- * @param {import('./battle.mjs').Combatant} defender
- */
-export function goingDownFirst(battle, attacker, defender) {
-  const mine = battle.speedOf(attacker);
-  const theirs = battle.speedOf(defender);
-  const outsped = battle.field.trickRoom > 0 ? theirs < mine : theirs > mine;
-  return outsped && expectedThreat(battle, attacker, defender).threat >= 1;
 }
 
 /**
