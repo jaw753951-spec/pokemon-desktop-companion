@@ -15,7 +15,7 @@ import { TAG_TYPES } from '../../shared/area-tags.mjs';
 import { alreadyOwned, priceOf } from '../engine/shop.mjs';
 import { capRoster, evolveToLevel, giveTrainerItems, LEADER_PARTY_CAP, rollTrainer, rollWildPokemon } from '../engine/encounter.mjs';
 import { createPokemon, levelOf } from '../engine/pokemon.mjs';
-import { signatureFind } from '../engine/items.mjs';
+import { pickFind, signatureFind } from '../engine/items.mjs';
 import { callingFind, rollRare } from '../engine/rare.mjs';
 import {
   TRAINER_SCALE,
@@ -501,7 +501,7 @@ function startBall(session, spawnAt) {
   );
   // Now and then, the item the travelling legendary is waiting on, or a key
   // item that leads to a rare Pokémon.
-  const item = signatureFind(session) ?? callingFind(session) ?? (pool.length ? session.rng.pick(pool) : 'poke-ball');
+  const item = signatureFind(session) ?? callingFind(session) ?? pickFind(session, pool) ?? 'poke-ball';
   const count = foundCount(session.rng, item, session.firstRun);
 
   const state = {

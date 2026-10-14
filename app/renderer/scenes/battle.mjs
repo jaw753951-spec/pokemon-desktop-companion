@@ -14,7 +14,7 @@ import { button, el, setChildren, shinyMark, statusMark } from '../core/dom.mjs'
 import { name as localized, t } from '../core/i18n.mjs';
 import { chooseFromList } from '../ui/dialog.mjs';
 import { Battle } from '../engine/battle.mjs';
-import { battleMedicine, healingItemFor, restoreHeldItem, shedAfterEvolving, throwItem } from '../engine/items.mjs';
+import { battleMedicine, healingItemFor, pickFind, restoreHeldItem, shedAfterEvolving, throwItem } from '../engine/items.mjs';
 import {
   evolveInto,
   friendshipForLevels,
@@ -1300,7 +1300,7 @@ export function battleScene({ session, foes, trainer = null, leader = false, bac
     session.active.toxic = false;
     if (battle.outcome === 'won' && abilityName(session.active) === 'pickup' && session.rng.chance(PICKUP_CHANCE)) {
       const pool = (gameData().itemTiers?.['poke-ball'] ?? []).filter((slug) => !alreadyOwned(session, slug));
-      const found = pool.length ? session.rng.pick(pool) : null;
+      const found = pickFind(session, pool);
       if (found) {
         session.addItem(found);
         app.toast(t('battle.pickup', { name: nameOf(session.active), item: localized(gameData().items[found]?.name, found) }), 3200);

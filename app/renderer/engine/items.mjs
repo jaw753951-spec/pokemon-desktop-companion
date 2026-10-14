@@ -72,11 +72,10 @@ export function useItem(session, slug, choice = {}) {
   if (item.pocket === 'machines') {
     const move = item.move;
     if (!move || !moveOf(move)) return { used: false, ok: false, message: t('items.cannotUse') };
-    const species = speciesOf(pokemon.speciesId);
     // The games name both the Pokémon and the move rather than refusing
     // silently, which is the only way to tell "wrong Pokémon" apart from
     // "wrong moment".
-    if (!species?.learnset.machine.includes(move)) {
+    if (!learnsMachine(pokemon, slug)) {
       return {
         used: false,
         ok: false,
@@ -1290,6 +1289,44 @@ export function signatureFind(session) {
   const chance = session.firstRun ? FIRST_RUN_SIGNATURE_FIND_CHANCE : SIGNATURE_FIND_CHANCE;
   if (!wanted.length || !session.rng.chance(chance)) return null;
   return session.rng.pick(wanted);
+}
+
+/**
+ * Whether a Pokémon's species can be taught a TM's move.
+ *
+ * @param {import('./pokemon.mjs').Pokemon|null|undefined} pokemon
+ * @param {string} slug the TM
+ */
+export function learnsMachine(pokemon, slug) {
+  const move = itemOf(slug)?.move;
+  return Boolean(move && pokemon && speciesOf(pokemon.speciesId)?.learnset.machine.includes(move));
+}
+
+/**
+ * How often, on the save's first run, a TM found is drawn again from the ones
+ * the travelling Pokémon can learn. A Pokémon learns a fifth or so of the
+ * TMs, so four finds in five were a TM it could do nothing with; this makes
+ * it more like three in five that it can use. After a champion the TMs come
+ * as they fall.
+ */
+export const LEARNABLE_MACHINE_SHARE = 0.5;
+
+/**
+ * An item found out of a pool: any of it alike, except that on the save's
+ * first run a TM is now and then traded for one the travelling Pokémon can
+ * learn (see `LEARNABLE_MACHINE_SHARE`). How often a find is a TM at all is
+ * the pool's, as it was.
+ *
+ * @param {import('./session.mjs').Session} session
+ * @param {string[]} pool
+ * @returns {string|null}
+ */
+export function pickFind(session, pool) {
+  if (!pool.length) return null;
+  const found = session.rng.pick(pool);
+  if (!session.firstRun || itemOf(found)?.pocket !== 'machines') return found;
+  const learnable = pool.filter((slug) => itemOf(slug)?.pocket === 'machines' && learnsMachine(session.active, slug));
+  return learnable.length && session.rng.chance(LEARNABLE_MACHINE_SHARE) ? session.rng.pick(learnable) : found;
 }
 
 /**
