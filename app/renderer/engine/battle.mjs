@@ -76,6 +76,11 @@ import { stageMultiplier } from './stats.mjs';
  * @property {number} turnsTaken
  * @property {Record<string, number>} [usedOn] the turn, counted in its own
  *   turns from one, that it last used each move on
+ * @property {Record<string, number>} [missedOn] the turn each move missed on,
+ *   for as long as its last use was that miss
+ * @property {number} [lastMissTurn] the last of its turns any move missed on
+ * @property {{target: Combatant, moves: Set<string>}} [landed] the moves that
+ *   have landed on the foe in front of it
  * @property {number} [enteredTurn] the battle turn it came out on
  * @property {'player'|'foe'} side
  * @property {Record<string, any>} marks what an ability or item has left on it
@@ -2836,6 +2841,32 @@ export class Battle {
   }
 
   /**
+   * What the auto-battle's miss conditions read off a move just used: whether
+   * it missed — an accuracy roll lost, or a foe out of reach in the sky or
+   * underground — and so is still owed a hit, and whether it landed on the
+   * foe in front of it. A move that was blocked or did nothing has not
+   * landed, but has not missed either.
+   *
+   * @param {Combatant} attacker
+   * @param {Combatant} defender
+   * @param {string} moveName
+   * @param {LogEntry[]} lines this move's lines of the log
+   */
+  noteLanding(attacker, defender, moveName, lines) {
+    const missed = lines.some((entry) => entry.kind === 'miss' && entry.side === attacker.side);
+    const missedOn = (attacker.missedOn ??= {});
+    if (missed) {
+      missedOn[moveName] = attacker.turnsTaken;
+      attacker.lastMissTurn = attacker.turnsTaken;
+    } else {
+      delete missedOn[moveName];
+    }
+    if (attacker.marks.lastFailed) return;
+    if (attacker.landed?.target !== defender) attacker.landed = { target: defender, moves: new Set() };
+    attacker.landed.moves.add(moveName);
+  }
+
+  /**
    * What is left once a move has gone, however it went: the half of its
    * health a Mind Blown costs, the lock an Outrage keeps, whether it failed
    * (which a Stomping Tantrum remembers), and the count an Echoed Voice
@@ -2855,6 +2886,7 @@ export class Battle {
         entry.kind === 'failed' || entry.kind === 'miss' || entry.kind === 'noEffect' || entry.kind === 'protected' ||
         (entry.kind === 'effectiveness' && entry.data?.effectiveness === 0),
     );
+    this.noteLanding(attacker, defender, moveName, lines);
     const move = moveOf(moveName);
     if (move && this.shrugsOff(attacker, defender, move, lines)) {
       // Seen to do nothing to this one, for a reason that will not change
@@ -5229,6 +5261,7 @@ function makeCombatant(pokemon, side) {
     lockedMove: null,
     turnsTaken: 0,
     usedOn: {},
+    missedOn: {},
     side,
     marks: {},
     volatile: freshVolatile(),
@@ -5690,6 +5723,27 @@ function conditionHolds(condition, battle, attacker, defender, slug) {
       return turnsSinceUsed(attacker, slug) >= 3;
     case 'everyFourTurns':
       return turnsSinceUsed(attacker, slug) >= 4;
+    // A move whose last use missed is owed another try: on the next turn, or
+    // so many of its user's turns on from the miss — two is the turn after
+    // next — or the first turn after that nothing else takes. A use that does
+    // not miss settles it.
+    case 'missedRetry':
+      return Object.hasOwn(attacker.missedOn ?? {}, slug);
+    case 'missedTwoTurns':
+      return Object.hasOwn(attacker.missedOn ?? {}, slug) && turnsSinceUsed(attacker, slug) >= 2;
+    case 'missedThreeTurns':
+      return Object.hasOwn(attacker.missedOn ?? {}, slug) && turnsSinceUsed(attacker, slug) >= 3;
+    // Until it has landed on the foe in front of it: tried again after a miss
+    // or a block, and again for each Pokémon a trainer sends out.
+    case 'untilHit':
+      return !(attacker.landed?.target === defender && attacker.landed.moves.has(slug));
+    // Whatever the companion used on its last turn missed.
+    case 'lastMissed':
+      return attacker.lastMissTurn !== undefined && attacker.lastMissTurn === attacker.turnsTaken;
+    // Its own accuracy lowered, or the foe's evasion raised: when a move that
+    // never misses is worth more than a strong one that might.
+    case 'accuracyDown':
+      return (attacker.stages.acc ?? 0) < 0 || (defender.stages.eva ?? 0) > 0;
     // Super effective or better against the foe as it stands: its types now,
     // and the move's as it would leave — an ability retyping it, the field, a
     // mask or a plate behind it. A move that deals no damage never is.
@@ -5729,6 +5783,8 @@ function conditionHolds(condition, battle, attacker, defender, slug) {
       return Boolean(defender.pokemon.status);
     case 'selfStatus':
       return Boolean(attacker.pokemon.status);
+    case 'foeAsleep':
+      return defender.pokemon.status === STATUS.SLEEP;
     case 'hasField':
       return battle.field ? !battle.field.quiet : false;
     case 'noField':

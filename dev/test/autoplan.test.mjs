@@ -60,7 +60,7 @@ test('a weak priority attack finishes or swings last; a strong one is just an at
 test('an attack with a moment of its own is used at it, and is an ordinary attack otherwise', options, () => {
   const plan = pairs('gengar', ['hex', 'dream-eater', 'shadow-ball', 'fake-out']);
   assert.equal(plan.hex, 'foeStatus/always');
-  assert.equal(plan['dream-eater'], 'foeStatus/never');
+  assert.equal(plan['dream-eater'], 'foeAsleep/never');
   assert.equal(plan['fake-out'], 'foeEntered/never');
   const ursaring = pairs('ursaring', ['facade', 'reversal', 'slash', 'counter']);
   assert.equal(ursaring.facade, 'selfStatus/always');

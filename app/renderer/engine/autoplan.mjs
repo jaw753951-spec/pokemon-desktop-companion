@@ -66,7 +66,7 @@ const MOMENT_ATTACKS = {
   'power-trip': ['rankUp', 'always'],
   // Fail outright unless the foe is asleep — the battle passes them over
   // otherwise — and are worth nothing else.
-  'dream-eater': ['foeStatus', 'never'],
+  'dream-eater': ['foeAsleep', 'never'],
   // Only works while its user sleeps.
   snore: ['selfStatus', 'never'],
 };

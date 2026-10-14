@@ -1130,3 +1130,104 @@ test('on the first run a battle pays more experience until level 30', options, (
   assert.equal(paid(FIRST_RUN_EXPERIENCE_UNTIL, true), paid(FIRST_RUN_EXPERIENCE_UNTIL, false), 'level 30 is the usual pace');
   assert.equal(paid(50, true), paid(50, false));
 });
+
+test('a move that missed is used again, at once or so many turns on, and a hit settles it', options, () => {
+  const player = makeFixed(CHARIZARD, 50, ['flamethrower', 'fire-blast', 'swift']);
+  const battle = new Battle({
+    rng: new Rng(2),
+    player,
+    foes: [makeFixed(VENUSAUR, 50, ['tackle'])],
+    policy: {
+      ...defaultAutoBattle(),
+      moves: { flamethrower: 'always', 'fire-blast': 'never', swift: 'never' },
+      second: { 'fire-blast': 'missedRetry', swift: 'missedTwoTurns' },
+    },
+  });
+  const me = battle.player;
+  const pick = () => choosePolicyMove(battle, me, /** @type {any} */ (battle.foe), player.moves);
+  const use = (/** @type {string} */ move, /** @type {boolean} */ missed) => {
+    me.turnsTaken++;
+    /** @type {Record<string, number>} */ (me.usedOn)[move] = me.turnsTaken;
+    me.marks.lastFailed = missed;
+    battle.noteLanding(me, /** @type {any} */ (battle.foe), move, missed ? [{ kind: 'miss', side: 'player' }] : []);
+  };
+
+  assert.equal(pick(), 'flamethrower', 'nothing has missed');
+  use('fire-blast', true);
+  assert.equal(pick(), 'fire-blast', 'missed, so tried again at once');
+  use('fire-blast', false);
+  assert.equal(pick(), 'flamethrower', 'and a hit settles it');
+
+  use('swift', true);
+  assert.equal(pick(), 'flamethrower', 'two turns on is not the next turn');
+  use('flamethrower', false);
+  assert.equal(pick(), 'swift', 'but the one after');
+  use('flamethrower', false);
+  assert.equal(pick(), 'swift', 'and stays due until it is used');
+});
+
+test('until it hits, the last move missed, accuracy against it, and a foe asleep', options, () => {
+  const player = makeFixed(CHARIZARD, 50, ['flamethrower', 'swift']);
+  const battle = new Battle({
+    rng: new Rng(2),
+    player,
+    foes: [makeFixed(VENUSAUR, 50, ['tackle']), makeFixed(VENUSAUR, 50, ['tackle'])],
+    policy: { ...defaultAutoBattle(), moves: { flamethrower: 'always', swift: 'untilHit' } },
+  });
+  const me = battle.player;
+  const foe = /** @type {any} */ (battle.foe);
+  const pick = (/** @type {any} */ against = foe) => choosePolicyMove(battle, me, against, player.moves);
+
+  assert.equal(pick(), 'swift', 'not yet landed');
+  me.marks.lastFailed = true;
+  battle.noteLanding(me, foe, 'swift', [{ kind: 'protected', side: 'foe' }]);
+  assert.equal(pick(), 'swift', 'a block is not a hit');
+  me.marks.lastFailed = false;
+  battle.noteLanding(me, foe, 'swift', []);
+  assert.equal(pick(), 'flamethrower', 'landed on this foe');
+  assert.equal(pick(/** @type {any} */ ({ ...foe })), 'swift', 'and owed again to the next one sent out');
+
+  battle.policy.moves = { flamethrower: 'always', swift: 'lastMissed' };
+  assert.equal(pick(), 'flamethrower');
+  me.turnsTaken++;
+  battle.noteLanding(me, foe, 'flamethrower', [{ kind: 'miss', side: 'player' }]);
+  assert.equal(pick(), 'swift', 'whatever was used last missed');
+  me.turnsTaken++;
+  assert.equal(pick(), 'flamethrower', 'only for the turn after');
+
+  battle.policy.moves = { flamethrower: 'always', swift: 'accuracyDown' };
+  assert.equal(pick(), 'flamethrower');
+  me.stages.acc = -1;
+  assert.equal(pick(), 'swift', 'its own accuracy lowered');
+  me.stages.acc = 0;
+  foe.stages.eva = 1;
+  assert.equal(pick(), 'swift', "the foe's evasion raised");
+  foe.stages.eva = 0;
+
+  battle.policy.moves = { flamethrower: 'always', swift: 'foeAsleep' };
+  foe.pokemon.status = STATUS.PARALYSIS;
+  assert.equal(pick(), 'flamethrower', 'another status is not sleep');
+  foe.pokemon.status = STATUS.SLEEP;
+  assert.equal(pick(), 'swift');
+});
+
+test('a miss in a real battle is noted, and a hit clears it', options, () => {
+  let missed = 0;
+  let landed = 0;
+  for (let seed = 1; seed <= 40 && (missed === 0 || landed === 0); seed++) {
+    const player = makeFixed(CHARIZARD, 50, ['zap-cannon']);
+    const battle = new Battle({
+      rng: new Rng(seed),
+      player,
+      foes: [makeFixed(VENUSAUR, 100, ['splash'])],
+      policy: defaultAutoBattle(),
+    });
+    const log = battle.takeTurn();
+    const miss = log.some((entry) => entry.kind === 'miss' && entry.side === 'player');
+    assert.equal(Object.hasOwn(battle.player.missedOn ?? {}, 'zap-cannon'), miss, `seed ${seed}`);
+    assert.equal(battle.player.landed?.moves.has('zap-cannon') ?? false, !miss, `seed ${seed}`);
+    if (miss) missed++;
+    else landed++;
+  }
+  assert.ok(missed > 0 && landed > 0, 'both a miss and a hit were seen');
+});

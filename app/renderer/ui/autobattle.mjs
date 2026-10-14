@@ -33,9 +33,10 @@ import { typeChip } from './typechip.mjs';
 const CONDITION_GROUPS = [
   { key: 'basic', conditions: ['never', 'always'] },
   { key: 'turn', conditions: ['firstTurn', 'foeEntered', 'oncePerBattle', 'everyTwoTurns', 'everyThreeTurns', 'everyFourTurns'] },
+  { key: 'miss', conditions: ['missedRetry', 'missedTwoTurns', 'missedThreeTurns', 'untilHit', 'lastMissed', 'accuracyDown'] },
   { key: 'matchup', conditions: ['canFinish', 'superEffective', 'faster', 'slower'] },
   { key: 'battle', conditions: ['foePhysical', 'foeSpecial', 'trainerBattle', 'wildBattle'] },
-  { key: 'status', conditions: ['noStatus', 'foeStatus', 'selfStatus', 'noField', 'hasField'] },
+  { key: 'status', conditions: ['noStatus', 'foeStatus', 'foeAsleep', 'selfStatus', 'noField', 'hasField'] },
   { key: 'rank', conditions: ['rankUp', 'rankDown', 'foeRankUp', 'foeRankDown'] },
   { key: 'hp', conditions: ['hpFull', 'hpAboveHalf', 'hpTwoThirds', 'hpHalf', 'hpThird', 'hpQuarter'] },
   { key: 'foeHp', conditions: ['foeHpFull', 'foeHpAboveHalf', 'foeHpTwoThirds', 'foeHpHalf', 'foeHpThird', 'foeHpQuarter'] },
