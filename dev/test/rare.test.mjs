@@ -31,11 +31,21 @@ const HOUR = 60 * 60 * 1000;
 /** @param {string} slug */
 const id = (slug) => /** @type {number} */ (speciesIdBySlug(slug));
 
-/** @param {Record<string, any>} [progress] */
-function sessionOf(progress = {}, seed = 1) {
+/**
+ * A save that has had its champion, unless `firstRun`: the first run turns
+ * the clock and the key items off.
+ *
+ * @param {Record<string, any>} [progress]
+ */
+function sessionOf(progress = {}, seed = 1, { firstRun = false } = {}) {
   return new Session({
     slot: 0,
-    save: { seed, party: { active: createPokemon(new Rng(1), 25, 40), box: [] }, progress },
+    save: {
+      seed,
+      party: { active: createPokemon(new Rng(1), 25, 40), box: [] },
+      progress,
+      dex: { champions: firstRun ? [] : [25] },
+    },
   });
 }
 
@@ -76,6 +86,24 @@ test('a rare Pokémon is never more than the ceiling apart on the road', options
   // About three hours apart on average.
   const mean = gaps.reduce((sum, gap) => sum + gap, 0) / gaps.length / HOUR;
   assert.ok(mean > 2.5 && mean < 5, `on average ${mean.toFixed(2)}h apart`);
+});
+
+test('the first run has no clock: a rare Pokémon is only ever the low odds', options, () => {
+  const session = sessionOf({}, 1, { firstRun: true });
+  /** @type {number[]} */
+  const asked = [];
+  session.rng = /** @type {any} */ ({ chance: (/** @type {number} */ odds) => (asked.push(odds), false) });
+  for (let hour = 0; hour <= RARE_CEILING.hard / HOUR * 3; hour++) {
+    session.playtime += HOUR;
+    assert.equal(rollRare(session), null);
+  }
+  assert.ok(asked.every((odds) => odds === RARE_CHANCE), 'the odds climbed');
+
+  // And the clock starts from the champion, rather than owing the first run.
+  session.champions.add(id('pikachu'));
+  session.playtime += 1000;
+  rollRare(session);
+  assert.equal(asked[asked.length - 1], RARE_CHANCE);
 });
 
 test('the draw prefers what is not caught yet, and leaves the key items\' Pokémon to them', options, () => {
@@ -158,7 +186,7 @@ test('the Enigmatic Card puts the Ultra Beasts in the rare draw, and nothing els
 
 test('a key item is found on the road, never bought, and only after a title', options, () => {
   const always = { chance: () => true, pick: (/** @type {any[]} */ list) => list[0], next: () => 0 };
-  const session = sessionOf();
+  const session = sessionOf({}, 1, { firstRun: true });
   session.rng = /** @type {any} */ (always);
 
   const offered = () => {
@@ -186,7 +214,6 @@ test('a key item is found on the road, never bought, and only after a title', op
   // One that leads only to Pokémon already caught is not found.
   const fresh = sessionOf();
   fresh.rng = /** @type {any} */ (always);
-  fresh.champions.add(id('pikachu'));
   fresh.markCaught(id('lugia'));
   for (let find = 0; find < 20; find++) {
     const found = callingFind(fresh);

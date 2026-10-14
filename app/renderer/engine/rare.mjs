@@ -7,7 +7,8 @@
  * run, any amount longer. Turning the weight up only makes them common. So
  * they come on a clock of their own instead, the way Legends: Arceus's
  * space-time distortions do: the longer since the last one, the likelier the
- * next wild Pokémon is one, until past a ceiling it certainly is.
+ * next wild Pokémon is one, until past a ceiling it certainly is. Not on the
+ * save's first run, though: there they stay at the low odds throughout.
  *
  * And a key item can decide who it is (see `CALLING_ITEMS` in the dex build):
  * the Member Card leads to Darkrai, the Silver Wing to Lugia — once the save
@@ -101,11 +102,16 @@ export function calledSpecies(session) {
  * item goes on leading to it, and the draw goes on preferring it, until it is
  * caught — the way the games bring a legendary back after the Elite Four.
  *
+ * The save's first run has no clock: a rare Pokémon is only ever the low
+ * odds, however long the wait. The clock starts from where the save is when
+ * it gets its champion, rather than owing the whole first run at once.
+ *
  * @param {import('./session.mjs').Session} session
  * @returns {number|null} a Pokédex number, or null for an ordinary draw
  */
 export function rollRare(session) {
   const called = calledSpecies(session);
+  if (session.firstRun) session.rareSince = session.playtime;
   const since = Math.max(0, session.playtime - session.rareSince);
   if (!session.rng.chance(rareChance(since, called.length > 0))) return null;
   session.rareSince = session.playtime;
