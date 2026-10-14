@@ -76,7 +76,8 @@ test('Stance Change draws the blade to strike', options, () => {
 
 test('Hunger Switch turns Morpeko every turn, and its Aura Wheel with it', options, () => {
   const morpeko = make('morpeko', 50, ['aura-wheel'], 'hunger-switch');
-  const battle = fight(morpeko, make('chansey', 80, ['splash']));
+  // Something that will still be standing after two turns of it.
+  const battle = fight(morpeko, make('blissey', 100, ['splash']));
   battle.takeTurn();
   assert.equal(battle.player.marks.forme, 'morpeko-hangry');
   assert.equal(battle.effectiveMove(battle.player, battle.foe, moveOf('aura-wheel')).type, 'dark');

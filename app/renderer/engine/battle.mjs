@@ -10,6 +10,7 @@
 import { COMPANION_DAMAGE_TAKEN, COMPANION_WEAKNESS } from '../../shared/constants.mjs';
 import { gameData, itemOf, moveOf, speciesOf, typeEffectiveness } from '../core/data.mjs';
 import { ABILITIES, abilityEffect, abilityName, afterBattle, auraMultiplier, hasSecondary } from './abilities.mjs';
+import { chooseFoeMove } from './foeai.mjs';
 import { formeFor, heldForme, SIGNATURE_MOVES, signatureType, standingForme, START_FORMES } from './forms.mjs';
 import {
   AFTER_HIT,
@@ -2338,12 +2339,13 @@ export class Battle {
       if (attacks.length > 0) usable = attacks;
     }
 
-    // The player's side follows the policy the user configured; the opponent
-    // plays a simple best-damage game, as the games' trainers broadly do.
+    // The player's side follows the policy the user configured; the other
+    // side reads the board for itself (see `foeai.mjs`).
     const chosen =
       attacker.side === 'player' && this.policy
         ? choosePolicyMove(this, attacker, defender, usable)
-        : bestDamageMove(this, attacker, defender, usable)
+        : (attacker.side === 'foe' ? chooseFoeMove(this, attacker, defender, usable) : null)
+          ?? bestDamageMove(this, attacker, defender, usable)
           ?? this.rng.pick(movesWorthUsing(attacker, defender, usable)).move;
 
     if (restriction?.lock) attacker.lockedMove = chosen;
