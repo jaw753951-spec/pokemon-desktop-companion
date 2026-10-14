@@ -46,7 +46,7 @@ test('attacks are left to the hardest hit; the costly ones are kept to finish', 
   assert.equal(plan.flamethrower, 'always/never');
   assert.equal(plan.overheat, 'canFinish/never', 'a sharp fall in its own Sp. Atk');
   assert.equal(plan['hyper-beam'], 'canFinish/never', 'a turn recharging');
-  assert.equal(plan['solar-beam'], 'never/never', 'a turn standing still');
+  assert.equal(plan['solar-beam'], 'sunny/never', 'only in the sun, where it does not stand still a turn');
   // With nothing else to do the work, each is just an attack.
   assert.equal(pairs('charizard', ['overheat'])['overheat'], 'always/never');
   assert.equal(pairs('charizard', ['hyper-beam', 'scratch'])['hyper-beam'], 'always/never');
@@ -62,7 +62,10 @@ test('an attack with a moment of its own is used at it, and is an ordinary attac
   const plan = pairs('gengar', ['hex', 'dream-eater', 'shadow-ball', 'fake-out']);
   assert.equal(plan.hex, 'foeStatus/always');
   assert.equal(plan['dream-eater'], 'foeAsleep/never');
-  assert.equal(plan['fake-out'], 'foeEntered/never');
+  assert.equal(plan['fake-out'], 'foeEntered/never', 'only on its first turn out');
+  assert.equal(pairs('hawlucha', ['acrobatics', 'close-combat'])['acrobatics'], 'noItem/always');
+  assert.equal(pairs('zapdos', ['thunder', 'drill-peck'])['thunder'], 'rainy/always');
+  assert.equal(pairs('gengar', ['nightmare', 'shadow-ball'])['nightmare'], 'foeAsleep/never');
   const ursaring = pairs('ursaring', ['facade', 'reversal', 'slash', 'counter']);
   assert.equal(ursaring.facade, 'selfStatus/always');
   assert.equal(ursaring.reversal, 'hpQuarter/never');
@@ -81,7 +84,7 @@ test('a heal waits for half health, or a third for something fast and frail', op
 test('each condition goes on the foe it suits', options, () => {
   // A sure sleep on a healthy foe, an unreliable one once per foe.
   assert.equal(pairs('breloom', ['spore', 'seed-bomb'])['spore'], 'foeHpAboveHalf/never');
-  assert.equal(pairs('gengar', ['hypnosis', 'shadow-ball'])['hypnosis'], 'foeEntered/never');
+  assert.equal(pairs('gengar', ['hypnosis', 'shadow-ball'])['hypnosis'], 'oncePerFoe/never');
   // Paralysis for something not fast; a burn for a physical foe.
   assert.equal(pairs('snorlax', ['thunder-wave', 'body-slam'])['thunder-wave'], 'slower/never');
   assert.equal(pairs('gengar', ['will-o-wisp', 'shadow-ball'])['will-o-wisp'], 'foePhysical/never');
@@ -101,7 +104,7 @@ test('a boost is used when it feeds its own attacks, and again after it is lower
   assert.equal(pairs('cloyster', ['iron-defense', 'body-press'])['iron-defense'], 'oncePerBattle/rankDown');
   // A Leer is off; two stages off what it hits into, once per foe.
   assert.equal(pairs('scyther', ['leer', 'x-scissor'])['leer'], 'never/never');
-  assert.equal(pairs('scyther', ['screech', 'x-scissor'])['screech'], 'foeEntered/never');
+  assert.equal(pairs('scyther', ['screech', 'x-scissor'])['screech'], 'oncePerFoe/never');
 });
 
 test('the field is set where it helps: weather for its attacks, screens for the attacker they stop', options, () => {

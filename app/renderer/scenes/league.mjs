@@ -162,6 +162,7 @@ export function leagueScene({ session, onLeave, onCrowned }) {
         session,
         foes,
         trainer: round,
+        boss: true,
         backdrop: backdropForLeagueRound(index, rounds.length),
         music: gameData().bgm.cues[last ? 'battleChampion' : 'battleEliteFour'],
         onFinish: (result) => {

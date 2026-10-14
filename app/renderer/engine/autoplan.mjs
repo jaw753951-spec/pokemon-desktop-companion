@@ -19,7 +19,7 @@
  * - A heal waits for half health; a fast, frail Pokémon, which gets its heal
  *   in before the next hit, holds out to a third.
  * - Sleep goes on a foe still healthy; an unreliable one is tried once per
- *   foe. Paralysis is for a foe that is faster, a burn for a foe that hits
+ *   foe, on the first turn nothing else needs. Paralysis is for a foe that is faster, a burn for a foe that hits
  *   physically, and the slow conditions — poison, Leech Seed — are for a
  *   Pokémon bulky enough to wait for them to work.
  * - A boost that feeds its own attacks is used once a battle, and again after
@@ -69,6 +69,13 @@ const MOMENT_ATTACKS = {
   'dream-eater': ['foeAsleep', 'never'],
   // Only works while its user sleeps.
   snore: ['selfStatus', 'never'],
+  // Twice the power with nothing held.
+  acrobatics: ['noItem', 'always'],
+  // Twice the power on a sleeping foe.
+  'wake-up-slap': ['foeAsleep', 'always'],
+  // Never miss in the rain.
+  thunder: ['rainy', 'always'],
+  hurricane: ['rainy', 'always'],
 };
 
 /** Moves that only matter with something to cure. */
@@ -267,6 +274,8 @@ function planAttack(slug, move, profile) {
   if (slug === 'last-resort') return otherAttacks(slug, profile, 1).length ? OFF : use(RANK.attack, 'always');
 
   const others = otherAttacks(slug, profile).length > 0;
+  // A Solar Beam needs no charging turn in the sun.
+  if (slug === 'solar-beam' || slug === 'solar-blade') return use(RANK.moment, 'sunny', others ? 'never' : 'always');
   // Two turns standing still, or one recharging, or a sharp fall in the stat
   // it attacks with: worth it to finish a foe, when something else can do
   // the rest of the work.
@@ -316,29 +325,29 @@ function planAilment(slug, move, profile) {
     case 'sleep':
       // A reliable sleep goes on any foe with the health left to be worth
       // it, again when it wakes; an unreliable one is tried once per foe.
-      return accuracy >= 85 ? use(RANK.disable, 'foeHpAboveHalf') : use(RANK.disable, 'foeEntered');
+      return accuracy >= 85 ? use(RANK.disable, 'foeHpAboveHalf') : use(RANK.disable, 'oncePerFoe');
     case 'yawn':
-      return use(RANK.disable, 'foeEntered');
+      return use(RANK.disable, 'oncePerFoe');
     case 'paralysis':
       // Taking the first move away is the point; a fast Pokémon has it.
       if (!profile.fast) return use(RANK.disable, 'slower');
-      return profile.bulky ? use(RANK.disable, 'foeEntered') : OFF;
+      return profile.bulky ? use(RANK.disable, 'oncePerFoe') : OFF;
     case 'burn':
       // Halves a physical attacker's hits.
       return use(RANK.disable, 'foePhysical');
     case 'poison':
       // Slow damage: for something that will be there to see it work.
       if (!profile.bulky) return OFF;
-      return slug === 'toxic' ? use(RANK.wear, 'foeHpAboveHalf') : use(RANK.wear, 'foeEntered');
+      return slug === 'toxic' ? use(RANK.wear, 'foeHpAboveHalf') : use(RANK.wear, 'oncePerFoe');
     case 'leech-seed':
-      return use(RANK.wear, profile.bulky ? 'foeHpAboveHalf' : 'foeEntered');
+      return use(RANK.wear, profile.bulky ? 'foeHpAboveHalf' : 'oncePerFoe');
     case 'confusion':
       // Only a sure one, and only on something that can wait out the turns.
-      return accuracy >= 90 && profile.bulky && slug !== 'swagger' && slug !== 'flatter' ? use(RANK.wear, 'foeEntered') : OFF;
+      return accuracy >= 90 && profile.bulky && slug !== 'swagger' && slug !== 'flatter' ? use(RANK.wear, 'oncePerFoe') : OFF;
     case 'nightmare':
-      return use(RANK.wear, 'foeStatus');
+      return use(RANK.wear, 'foeAsleep');
     case 'tar-shot':
-      return profile.attacks.some(({ move: attack }) => attack.type === 'fire' && attack.power) ? use(RANK.wear, 'foeEntered') : OFF;
+      return profile.attacks.some(({ move: attack }) => attack.type === 'fire' && attack.power) ? use(RANK.wear, 'oncePerFoe') : OFF;
     default:
       // Attract, a trap, a Disable, a Torment, a Perish Song: nothing a
       // single battle reliably gains from.
@@ -388,9 +397,9 @@ function planStats(slug, move, profile) {
     if (!sharp) return OFF;
     // Two stages off what its own attacks hit into, once per foe.
     const opens = (sharp.stat === 'def' && profile.fed.has('physical')) || (sharp.stat === 'spd' && profile.fed.has('special'));
-    if (opens) return use(RANK.boost, 'foeEntered');
+    if (opens) return use(RANK.boost, 'oncePerFoe');
     // Two off the foe's attack, for something built to take the hits.
-    if ((sharp.stat === 'atk' || sharp.stat === 'spa') && profile.bulky) return use(RANK.boost, 'foeEntered');
+    if ((sharp.stat === 'atk' || sharp.stat === 'spa') && profile.bulky) return use(RANK.boost, 'oncePerFoe');
     // Two off its Speed, for something slower.
     if (sharp.stat === 'spe' && !profile.fast) return use(RANK.boost, 'slower');
   }

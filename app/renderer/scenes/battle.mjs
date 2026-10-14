@@ -141,6 +141,7 @@ const PLAYER_SPOT = { x: Math.round(FIELD_WIDTH * 0.26), y: MESSAGE_TOP - 3 };
  *   foes: import('../engine/pokemon.mjs').Pokemon[],
  *   trainer?: {name: {ko: string, en: string}, portrait?: string|null, kind?: string}|null,
  *   leader?: boolean,
+ *   boss?: boolean,
  *   backdrop?: string|null,
  *   music?: string|null,
  *   weather?: string|null,
@@ -148,7 +149,7 @@ const PLAYER_SPOT = { x: Math.round(FIELD_WIDTH * 0.26), y: MESSAGE_TOP - 3 };
  * }} options
  * @returns {import('../core/app.mjs').Scene}
  */
-export function battleScene({ session, foes, trainer = null, leader = false, backdrop = null, music = null, weather = undefined, onFinish }) {
+export function battleScene({ session, foes, trainer = null, leader = false, boss = leader, backdrop = null, music = null, weather = undefined, onFinish }) {
   const battle = new Battle({
     rng: session.rng,
     player: session.active,
@@ -161,6 +162,8 @@ export function battleScene({ session, foes, trainer = null, leader = false, bac
     },
     trainerBattle: Boolean(trainer),
     firstRun: session.firstRun,
+    // A gym leader or a League round.
+    bossBattle: boss,
     // The sky the place is under, unless the caller names one of its own.
     weather: weather === undefined ? weatherForArea(session.area) : weather,
     // And the ground, for a Camouflage.
