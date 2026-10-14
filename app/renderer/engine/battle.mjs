@@ -32,6 +32,7 @@ import {
   Field,
   FIELD_MOVES,
   FIELD_TURNS,
+  HAZARD_LAYERS,
   hazardToll,
   TERRAIN,
   terrainBlocksPriority,
@@ -2359,13 +2360,16 @@ export class Battle {
     // itself (see `shrugsOff`): a sound at a Soundproof, an Electric move into
     // a Volt Absorb. And nothing the screen already rules out, untried (see
     // `visiblyUseless`): a Toxic at a Steel type, a Spore at a Pokémon already
-    // asleep, a Thunder Wave behind a substitute.
+    // asleep, a Thunder Wave behind a substitute. Nor anything whose whole
+    // effect is already in place (see `alreadyInPlace`): a Rain Dance in the
+    // rain, a Reflect already up, a third layer of Spikes's fourth.
     const firstTurn = this.firstTurnOut(attacker);
     // And nothing already seen to do nothing to this very target.
     const wasted = attacker.marks.wasted?.target === target ? attacker.marks.wasted.moves : null;
     const working = left.filter((slot) =>
       !(FIRST_TURN_ONLY.has(slot.move) && !firstTurn) && !boundToFail(this, attacker, target, slot.move) &&
-      !wasted?.has(slot.move) && !this.visiblyUseless(attacker, target, slot.move));
+      !wasted?.has(slot.move) && !this.visiblyUseless(attacker, target, slot.move) &&
+      !this.alreadyInPlace(attacker, target, slot.move));
     if (working.length > 0) left = working;
     if (hasVolatile(attacker, VOLATILE.DISABLE)) {
       left = left.filter((slot) => slot.move !== attacker.volatile.disabledMove);
@@ -3198,6 +3202,127 @@ export class Battle {
     }
     if (slug === 'leech-seed') return Boolean(defender.volatile.leechSeed) || types.includes('grass');
     return false;
+  }
+
+  /**
+   * Whether a status move would do nothing because what it puts in place is
+   * already there: the weather, the terrain, a screen or a Tailwind already
+   * up, a hazard laid as deep as it goes, a Substitute standing, a Taunt
+   * already on the target. Each is the very check the move's own effect makes
+   * before it fails, read ahead of choosing it, so a policy that calls for it
+   * on a condition passes it over for the next move rather than spending the
+   * turn on "But it failed!".
+   *
+   * A Trick Room and the other rooms count as in place too: called again
+   * while one stands, they take it down, which is undoing the move's own
+   * work rather than doing any.
+   *
+   * @param {Combatant} attacker
+   * @param {Combatant|null} defender
+   * @param {string} slug
+   */
+  alreadyInPlace(attacker, defender, slug) {
+    const move = moveOf(slug);
+    if (!move || move.damageClass !== 'status') return false;
+    const field = this.field;
+    const mine = attacker.volatile;
+
+    const set = FIELD_MOVES[slug];
+    if (set) {
+      if (set.weather) return field.weather === set.weather;
+      if (set.terrain) return field.terrain === set.terrain;
+      if (set.screen) {
+        const kinds = set.screen === 'both' ? ['physical', 'special'] : [set.screen];
+        return kinds.every((kind) => field.screens[attacker.side][kind] > 0);
+      }
+      if (set.room) return field.trickRoom > 0;
+      if (set.tailwind) return field.tailwind[attacker.side] > 0;
+      if (set.hazard) {
+        return Boolean(defender) && (field.hazards[defender.side][set.hazard] ?? 0) >= (HAZARD_LAYERS[set.hazard] ?? 1);
+      }
+    }
+
+    switch (slug) {
+      // The side's own clocks, and the field's.
+      case 'mist':
+        return field.sides[attacker.side].mist > 0;
+      case 'safeguard':
+        return field.sides[attacker.side].safeguard > 0;
+      case 'lucky-chant':
+        return field.sides[attacker.side].luckyChant > 0;
+      case 'gravity':
+        return field.gravity > 0;
+      case 'wonder-room':
+        return field.wonderRoom > 0;
+      case 'magic-room':
+        return field.magicRoom > 0;
+      case 'water-sport':
+        return field.waterSport > 0;
+      case 'mud-sport':
+        return field.mudSport > 0;
+      case 'wish':
+        return Boolean(field.wish[attacker.side]);
+      // What the user does to itself.
+      case 'substitute':
+        return mine.substitute > 0 || attacker.pokemon.hp <= Math.floor(attacker.maxHp / 4);
+      case 'aqua-ring':
+        return Boolean(mine.aquaRing);
+      case 'ingrain':
+        return Boolean(mine.ingrain);
+      case 'focus-energy':
+        return Boolean(mine.focusEnergy);
+      case 'magnet-rise':
+        return mine.magnetRise > 0 || field.gravity > 0;
+      case 'stockpile':
+        return (mine.stockpile ?? 0) >= 3;
+      case 'no-retreat':
+        return Boolean(mine.noRetreat);
+      case 'belly-drum':
+        return attacker.pokemon.hp <= Math.floor(attacker.maxHp / 2) || attacker.stages.atk >= 6;
+      case 'rest':
+        return attacker.pokemon.hp >= attacker.maxHp || attacker.pokemon.status === 'slp';
+      case 'refresh':
+      case 'heal-bell':
+      case 'aromatherapy':
+        return !attacker.pokemon.status;
+      case 'haze':
+        return Boolean(defender) &&
+          [attacker, defender].every((combatant) => Object.values(combatant.stages).every((stage) => stage === 0));
+      default:
+        break;
+    }
+
+    if (!defender || defender === attacker) return false;
+    const theirs = defender.volatile;
+    // A move that takes a move away, on a target already without it — or, for
+    // a Disable or an Encore, one with no last move to take.
+    const lock = LOCK_MOVES[slug];
+    if (lock) {
+      if (hasVolatile(defender, lock.state)) return true;
+      return (slug === 'disable' || slug === 'encore') && !defender.lastMove;
+    }
+    switch (slug) {
+      case 'attract':
+        return hasVolatile(defender, VOLATILE.INFATUATION) || !oppositeGenders(attacker.pokemon, defender.pokemon);
+      case 'yawn':
+        return Boolean(theirs.yawn) || Boolean(defender.pokemon.status);
+      case 'nightmare':
+        return Boolean(theirs.nightmare) || defender.pokemon.status !== 'slp';
+      case 'heal-block':
+        return theirs.healBlock > 0;
+      case 'embargo':
+        return theirs.embargo > 0;
+      case 'gastro-acid':
+        return Boolean(theirs.gastroAcid);
+      case 'octolock':
+        return Boolean(theirs.octolock);
+      case 'curse':
+        return this.typesOf(attacker).includes('ghost') && Boolean(theirs.cursed);
+      case 'topsy-turvy':
+        return Object.values(defender.stages).every((stage) => stage === 0);
+      default:
+        return false;
+    }
   }
 
   /**

@@ -15,6 +15,7 @@ import {
   STATUS,
 } from '../../app/renderer/engine/battle.mjs';
 import { createPokemon, maxHp, setMove } from '../../app/renderer/engine/pokemon.mjs';
+import { WEATHER } from '../../app/renderer/engine/field.mjs';
 import { defaultAutoBattle, normalizeAutoBattle } from '../../app/renderer/engine/session.mjs';
 import { computeStat, experienceForLevel, levelForExperience, stageMultiplier } from '../../app/renderer/engine/stats.mjs';
 
@@ -293,6 +294,35 @@ test('a move used on the first turn goes every two turns from there', options, (
     picks.push(log.find((entry) => entry.kind === 'move' && entry.side === 'player')?.data?.move);
   }
   assert.deepEqual(picks, ['growl', 'tackle', 'growl', 'tackle', 'growl']);
+});
+
+test('a move whose effect is already in place is passed over, whatever its condition', options, () => {
+  // Each move is set to go first on any turn; the Tackle beside it is what is
+  // left when it would do nothing.
+  const pick = (move, setUp) => {
+    const player = makeFixed(CHARIZARD, 50, [move, 'tackle']);
+    const battle = new Battle({
+      rng: new Rng(2),
+      player,
+      foes: [makeFixed(VENUSAUR, 50, ['tackle'])],
+      policy: { ...defaultAutoBattle(), moves: { [move]: 'everyTwoTurns' }, second: { [move]: 'always' } },
+    });
+    battle.player.turnsTaken = 1;
+    setUp?.(battle);
+    return battle.chooseMove(battle.player, /** @type {any} */ (battle.foe));
+  };
+
+  assert.equal(pick('rain-dance'), 'rain-dance');
+  assert.equal(pick('rain-dance', (battle) => battle.field.setWeather(WEATHER.RAIN)), 'tackle', 'already raining');
+  assert.equal(pick('reflect'), 'reflect');
+  assert.equal(pick('reflect', (battle) => battle.field.setScreen('player', 'physical')), 'tackle', 'already up');
+  assert.equal(pick('spikes', (battle) => { for (let layer = 0; layer < 2; layer++) battle.field.addHazard('foe', 'spikes'); }), 'spikes', 'room for a third layer');
+  assert.equal(pick('spikes', (battle) => { for (let layer = 0; layer < 3; layer++) battle.field.addHazard('foe', 'spikes'); }), 'tackle', 'three layers deep');
+  assert.equal(pick('substitute', (battle) => { battle.player.volatile.substitute = 30; }), 'tackle', 'one already standing');
+  assert.equal(pick('substitute', (battle) => { battle.player.pokemon.hp = Math.floor(battle.player.maxHp / 4); }), 'tackle', 'not the health for one');
+  assert.equal(pick('taunt', (battle) => { battle.foe.volatile.taunt = 2; }), 'tackle', 'already taunted');
+  assert.equal(pick('focus-energy', (battle) => { battle.player.volatile.focusEnergy = true; }), 'tackle');
+  assert.equal(pick('refresh'), 'tackle', 'nothing to cure');
 });
 
 test('a move can wait for the foe to be weak to it', options, () => {
