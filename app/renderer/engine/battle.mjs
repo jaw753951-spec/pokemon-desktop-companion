@@ -10,6 +10,7 @@
 import { COMPANION_DAMAGE_TAKEN, COMPANION_WEAKNESS } from '../../shared/constants.mjs';
 import { gameData, itemOf, moveOf, speciesOf, typeEffectiveness } from '../core/data.mjs';
 import { ABILITIES, abilityEffect, abilityName, afterBattle, auraMultiplier, hasSecondary } from './abilities.mjs';
+import { chooseFoeMove } from './foeai.mjs';
 import { formeFor, heldForme, SIGNATURE_MOVES, signatureType, standingForme, START_FORMES } from './forms.mjs';
 import {
   AFTER_HIT,
@@ -32,6 +33,7 @@ import {
   Field,
   FIELD_MOVES,
   FIELD_TURNS,
+  HAZARD_LAYERS,
   hazardToll,
   TERRAIN,
   terrainBlocksPriority,
@@ -72,6 +74,8 @@ import { stageMultiplier } from './stats.mjs';
  * @property {boolean} flinched
  * @property {string|null} lockedMove the move a Choice item has it committed to
  * @property {number} turnsTaken
+ * @property {Record<string, number>} [usedOn] the turn, counted in its own
+ *   turns from one, that it last used each move on
  * @property {number} [enteredTurn] the battle turn it came out on
  * @property {'player'|'foe'} side
  * @property {Record<string, any>} marks what an ability or item has left on it
@@ -321,6 +325,13 @@ export class Battle {
     /** Whether the companion's turn went on a run that failed. */
     this.playerSpent = false;
     this.trainerBattle = trainerBattle;
+    /**
+     * The companion's moves the other side has watched it use. A trainer
+     * keeps them in mind for the rest of the battle, whichever of their
+     * Pokémon is out; a wild Pokémon pays them no attention (see `foeai.mjs`).
+     * @type {Set<string>}
+     */
+    this.seenMoves = new Set();
 
     this.player = makeCombatant(player, 'player');
     this.foeQueue = foes.map((foe) => makeCombatant(foe, 'foe'));
@@ -1194,6 +1205,15 @@ export class Battle {
       /** @param {Combatant} combatant */
       /** The ability a combatant has right now. @param {Combatant} combatant */
       abilitySlug: (combatant) => battle.abilitySlugOf(combatant),
+
+      /**
+       * A line of the ability's own, naming its holder and the ability.
+       * @param {string} key
+       * @param {Record<string, any>} [data]
+       */
+      say(key, data = {}) {
+        log.push({ kind: 'message', side: self.side, data: { key, ability: battle.abilitySlugOf(self), ...data } });
+      },
 
       /** An Anticipation: a shudder if the other side knows something to fear. */
       anticipate() {
@@ -2203,7 +2223,8 @@ export class Battle {
    *
    * The four Ruin abilities each weigh on one stat of everything on the field
    * but their own holder, which is why this is asked of the other side rather
-   * than of the Pokémon whose stat it is.
+   * than of the Pokémon whose stat it is — and not on another holder of the
+   * same one, as the games have it.
    *
    * @param {Combatant} combatant whose stat is being read
    * @param {string} stat
@@ -2211,7 +2232,8 @@ export class Battle {
   ruinFactor(combatant, stat) {
     const other = combatant === this.player ? this.foe : this.player;
     const ruin = other ? this.abilityOf(other)?.ruin : null;
-    return ruin?.stat === stat ? ruin.multiplier : 1;
+    if (ruin?.stat !== stat) return 1;
+    return this.abilityOf(combatant)?.ruin?.stat === stat ? 1 : ruin.multiplier;
   }
 
   /**
@@ -2324,12 +2346,13 @@ export class Battle {
       if (attacks.length > 0) usable = attacks;
     }
 
-    // The player's side follows the policy the user configured; the opponent
-    // plays a simple best-damage game, as the games' trainers broadly do.
+    // The player's side follows the policy the user configured; the other
+    // side reads the board for itself (see `foeai.mjs`).
     const chosen =
       attacker.side === 'player' && this.policy
         ? choosePolicyMove(this, attacker, defender, usable)
-        : bestDamageMove(this, attacker, defender, usable)
+        : (attacker.side === 'foe' ? chooseFoeMove(this, attacker, defender, usable) : null)
+          ?? bestDamageMove(this, attacker, defender, usable)
           ?? this.rng.pick(movesWorthUsing(attacker, defender, usable)).move;
 
     if (restriction?.lock) attacker.lockedMove = chosen;
@@ -2357,13 +2380,16 @@ export class Battle {
     // itself (see `shrugsOff`): a sound at a Soundproof, an Electric move into
     // a Volt Absorb. And nothing the screen already rules out, untried (see
     // `visiblyUseless`): a Toxic at a Steel type, a Spore at a Pokémon already
-    // asleep, a Thunder Wave behind a substitute.
+    // asleep, a Thunder Wave behind a substitute. Nor anything whose whole
+    // effect is already in place (see `alreadyInPlace`): a Rain Dance in the
+    // rain, a Reflect already up, a third layer of Spikes's fourth.
     const firstTurn = this.firstTurnOut(attacker);
     // And nothing already seen to do nothing to this very target.
     const wasted = attacker.marks.wasted?.target === target ? attacker.marks.wasted.moves : null;
     const working = left.filter((slot) =>
       !(FIRST_TURN_ONLY.has(slot.move) && !firstTurn) && !boundToFail(this, attacker, target, slot.move) &&
-      !wasted?.has(slot.move) && !this.visiblyUseless(attacker, target, slot.move));
+      !wasted?.has(slot.move) && !this.visiblyUseless(attacker, target, slot.move) &&
+      !this.alreadyInPlace(attacker, target, slot.move));
     if (working.length > 0) left = working;
     if (hasVolatile(attacker, VOLATILE.DISABLE)) {
       left = left.filter((slot) => slot.move !== attacker.volatile.disabledMove);
@@ -2477,6 +2503,8 @@ export class Battle {
     let moveName = attacker.charging ?? this.pendingMoves?.get(attacker) ?? this.chooseMove(attacker, defender);
     let base = moveName === 'struggle' ? STRUGGLE : moveOf(moveName);
     attacker.turnsTaken++;
+    // What the auto-battle's "every so many turns" counts from.
+    (attacker.usedOn ??= {})[moveName] = attacker.turnsTaken;
 
     if (!base) {
       log.push({ kind: 'move', side: attacker.side, data: { move: moveName } });
@@ -2552,7 +2580,24 @@ export class Battle {
       if (slot) slot.pp = Math.max(0, slot.pp - 1);
     }
 
+    // An Aegislash draws its blade to strike and raises its shield to guard,
+    // before the move is announced — "Changed to Blade Forme!", then the
+    // move — as the games show it. A move another calls takes its stance in
+    // turn, before it is announced in its own right.
+    const takeStance = (/** @type {any} */ used, /** @type {string} */ usedName) => {
+      if (!this.abilityOf(attacker)?.stanceChange) return;
+      const stance = used.damageClass !== 'status' ? 'blade' : usedName === 'kings-shield' ? 'shield' : null;
+      if (!stance || (attacker.marks.stance ?? 'shield') === stance) return;
+      attacker.marks.stance = stance;
+      const before = log.length;
+      if (this.applyForme(attacker, this.formeState(attacker), log)) {
+        log.splice(before, 0, { kind: 'ability', side: attacker.side, data: { ability: this.abilitySlugOf(attacker) } });
+      }
+    };
+    takeStance(move, moveName);
+
     log.push({ kind: 'move', side: attacker.side, data: reappears ? { move: moveName, reveal: true } : { move: moveName } });
+    if (attacker.side === 'player') this.seenMoves.add(moveName);
     const moveLogStart = log.length;
 
     // A move that calls another uses that one in its place: a Metronome, a
@@ -2572,24 +2617,12 @@ export class Battle {
       move = this.effectiveMove(attacker, defender, base, called);
       // A Me First hits half again as hard as the move it took.
       if (caller === 'me-first' && move.power) move = { ...move, power: Math.floor(move.power * 1.5) };
+      takeStance(move, called);
       log.push({ kind: 'move', side: attacker.side, data: { move: called } });
     }
     this.lastMoveUsed = moveName;
     // A Sunsteel Strike or a Photon Geyser ignores the ability in its way.
     attacker.marks.moldBreaking = Boolean(move.rules?.ignoreAbility);
-
-    // An Aegislash draws its blade to strike and raises its shield to guard,
-    // before the move goes off.
-    if (this.abilityOf(attacker)?.stanceChange) {
-      const stance = move.damageClass !== 'status' ? 'blade' : moveName === 'kings-shield' ? 'shield' : null;
-      if (stance && (attacker.marks.stance ?? 'shield') !== stance) {
-        attacker.marks.stance = stance;
-        const before = log.length;
-        if (this.applyForme(attacker, this.formeState(attacker), log)) {
-          log.splice(before, 0, { kind: 'ability', side: attacker.side, data: { ability: this.abilitySlugOf(attacker) } });
-        }
-      }
-    }
 
     // A Snatch lying in wait takes a move that would have helped its user,
     // and uses it for itself.
@@ -3027,8 +3060,11 @@ export class Battle {
    * @param {Combatant} attacker
    * @param {Combatant} defender
    * @param {any} move
+   * @param {string} [slug]
+   * @param {{peek?: boolean}} [options] `peek` looks without deciding
+   *   anything the use would: a Present is not opened
    */
-  effectiveMove(attacker, defender, move, slug = this.slugOf(move)) {
+  effectiveMove(attacker, defender, move, slug = this.slugOf(move), { peek = false } = {}) {
     move = { ...move, slug };
     // A Crowned Zacian's Iron Head is a Behemoth Blade, a Crowned
     // Zamazenta's a Behemoth Bash.
@@ -3060,7 +3096,7 @@ export class Battle {
     // An Ion Deluge charges every Normal move for the rest of the turn.
     if (this.field.ionDeluge === this.turn && move.type === 'normal') move = { ...move, type: 'electric' };
     // A Present decides what it is when it is opened.
-    if (move.slug === 'present') {
+    if (move.slug === 'present' && !peek) {
       const roll = this.rng.next();
       attacker.marks.present = roll < 0.4 ? 40 : roll < 0.7 ? 80 : roll < 0.8 ? 120 : 0;
     }
@@ -3187,6 +3223,127 @@ export class Battle {
     }
     if (slug === 'leech-seed') return Boolean(defender.volatile.leechSeed) || types.includes('grass');
     return false;
+  }
+
+  /**
+   * Whether a status move would do nothing because what it puts in place is
+   * already there: the weather, the terrain, a screen or a Tailwind already
+   * up, a hazard laid as deep as it goes, a Substitute standing, a Taunt
+   * already on the target. Each is the very check the move's own effect makes
+   * before it fails, read ahead of choosing it, so a policy that calls for it
+   * on a condition passes it over for the next move rather than spending the
+   * turn on "But it failed!".
+   *
+   * A Trick Room and the other rooms count as in place too: called again
+   * while one stands, they take it down, which is undoing the move's own
+   * work rather than doing any.
+   *
+   * @param {Combatant} attacker
+   * @param {Combatant|null} defender
+   * @param {string} slug
+   */
+  alreadyInPlace(attacker, defender, slug) {
+    const move = moveOf(slug);
+    if (!move || move.damageClass !== 'status') return false;
+    const field = this.field;
+    const mine = attacker.volatile;
+
+    const set = FIELD_MOVES[slug];
+    if (set) {
+      if (set.weather) return field.weather === set.weather;
+      if (set.terrain) return field.terrain === set.terrain;
+      if (set.screen) {
+        const kinds = set.screen === 'both' ? ['physical', 'special'] : [set.screen];
+        return kinds.every((kind) => field.screens[attacker.side][kind] > 0);
+      }
+      if (set.room) return field.trickRoom > 0;
+      if (set.tailwind) return field.tailwind[attacker.side] > 0;
+      if (set.hazard) {
+        return Boolean(defender) && (field.hazards[defender.side][set.hazard] ?? 0) >= (HAZARD_LAYERS[set.hazard] ?? 1);
+      }
+    }
+
+    switch (slug) {
+      // The side's own clocks, and the field's.
+      case 'mist':
+        return field.sides[attacker.side].mist > 0;
+      case 'safeguard':
+        return field.sides[attacker.side].safeguard > 0;
+      case 'lucky-chant':
+        return field.sides[attacker.side].luckyChant > 0;
+      case 'gravity':
+        return field.gravity > 0;
+      case 'wonder-room':
+        return field.wonderRoom > 0;
+      case 'magic-room':
+        return field.magicRoom > 0;
+      case 'water-sport':
+        return field.waterSport > 0;
+      case 'mud-sport':
+        return field.mudSport > 0;
+      case 'wish':
+        return Boolean(field.wish[attacker.side]);
+      // What the user does to itself.
+      case 'substitute':
+        return mine.substitute > 0 || attacker.pokemon.hp <= Math.floor(attacker.maxHp / 4);
+      case 'aqua-ring':
+        return Boolean(mine.aquaRing);
+      case 'ingrain':
+        return Boolean(mine.ingrain);
+      case 'focus-energy':
+        return Boolean(mine.focusEnergy);
+      case 'magnet-rise':
+        return mine.magnetRise > 0 || field.gravity > 0;
+      case 'stockpile':
+        return (mine.stockpile ?? 0) >= 3;
+      case 'no-retreat':
+        return Boolean(mine.noRetreat);
+      case 'belly-drum':
+        return attacker.pokemon.hp <= Math.floor(attacker.maxHp / 2) || attacker.stages.atk >= 6;
+      case 'rest':
+        return attacker.pokemon.hp >= attacker.maxHp || attacker.pokemon.status === 'slp';
+      case 'refresh':
+      case 'heal-bell':
+      case 'aromatherapy':
+        return !attacker.pokemon.status;
+      case 'haze':
+        return Boolean(defender) &&
+          [attacker, defender].every((combatant) => Object.values(combatant.stages).every((stage) => stage === 0));
+      default:
+        break;
+    }
+
+    if (!defender || defender === attacker) return false;
+    const theirs = defender.volatile;
+    // A move that takes a move away, on a target already without it — or, for
+    // a Disable or an Encore, one with no last move to take.
+    const lock = LOCK_MOVES[slug];
+    if (lock) {
+      if (hasVolatile(defender, lock.state)) return true;
+      return (slug === 'disable' || slug === 'encore') && !defender.lastMove;
+    }
+    switch (slug) {
+      case 'attract':
+        return hasVolatile(defender, VOLATILE.INFATUATION) || !oppositeGenders(attacker.pokemon, defender.pokemon);
+      case 'yawn':
+        return Boolean(theirs.yawn) || Boolean(defender.pokemon.status);
+      case 'nightmare':
+        return Boolean(theirs.nightmare) || defender.pokemon.status !== 'slp';
+      case 'heal-block':
+        return theirs.healBlock > 0;
+      case 'embargo':
+        return theirs.embargo > 0;
+      case 'gastro-acid':
+        return Boolean(theirs.gastroAcid);
+      case 'octolock':
+        return Boolean(theirs.octolock);
+      case 'curse':
+        return this.typesOf(attacker).includes('ghost') && Boolean(theirs.cursed);
+      case 'topsy-turvy':
+        return Object.values(defender.stages).every((stage) => stage === 0);
+      default:
+        return false;
+    }
   }
 
   /**
@@ -5066,6 +5223,7 @@ function makeCombatant(pokemon, side) {
     flinched: false,
     lockedMove: null,
     turnsTaken: 0,
+    usedOn: {},
     side,
     marks: {},
     volatile: freshVolatile(),
@@ -5281,6 +5439,26 @@ function movesWorthUsing(attacker, defender, usable) {
 }
 
 /**
+ * Each move entry's slug, by the entry itself, for the table that is loaded
+ * now. Looking one up by walking the whole table was most of the time a
+ * battle took.
+ *
+ * @type {WeakMap<object, Map<any, string>>}
+ */
+const ENTRY_SLUGS = new WeakMap();
+
+/** @param {any} move */
+function slugOfEntry(move) {
+  const table = gameData().moves;
+  let slugs = ENTRY_SLUGS.get(table);
+  if (!slugs) {
+    slugs = new Map(Object.entries(table).map(([slug, entry]) => [entry, slug]));
+    ENTRY_SLUGS.set(table, slugs);
+  }
+  return slugs.get(move) ?? '';
+}
+
+/**
  * Average damage a move would do, ignoring the random spread — enough to rank
  * moves without rolling dice.
  *
@@ -5290,7 +5468,7 @@ function movesWorthUsing(attacker, defender, usable) {
  */
 export function expectedDamage(attacker, defender, move) {
   // The fixed-damage moves are worth what they take.
-  const slug = Object.entries(gameData().moves).find(([, entry]) => entry === move)?.[0] ?? '';
+  const slug = slugOfEntry(move);
   const fixed = estimatedFixedDamage(attacker, defender, move, slug);
   if (fixed !== null) return fixed * ((move.accuracy ?? 100) / 100);
   const weighed = weightPower(
@@ -5343,9 +5521,9 @@ function estimatedFixedDamage(attacker, defender, move, slug) {
 }
 
 /**
- * The condition a move is used under: its own, where the player has set one,
- * or else the one its kind starts with — the policy's `conditions`, which a
- * save from before the moves had their own keeps as it was set.
+ * The condition a move is used under first: its own, where the player has set
+ * one, or else the one its kind starts with — the policy's `conditions`, which
+ * a save from before the moves had their own keeps as it was set.
  *
  * @param {{conditions?: Record<string, string>, moves?: Record<string, string>}} policy
  * @param {string} slug
@@ -5359,20 +5537,32 @@ export function moveCondition(policy, slug) {
 }
 
 /**
+ * The condition a move is used under second, looked at only once no move's
+ * first has come round. A move starts with none, which reads as `never`.
+ *
+ * @param {{second?: Record<string, string>}} policy
+ * @param {string} slug
+ * @returns {string}
+ */
+export function secondCondition(policy, slug) {
+  return policy.second?.[slug] || 'never';
+}
+
+/**
  * Choose a move from the player's auto-battle policy.
  *
- * Each move is used under a condition of its own, and the moves are tried in
- * the order they sit in their slots. A move whose condition names a moment —
- * a third of health left, the first turn, a foe nearly beaten — is used the
- * moment it holds, before anything else, the first such in slot order. A move
- * left at `always` is only allowed, and `never` takes it out of the fight.
+ * Each move has two conditions, a first and a second, and the moves are tried
+ * in the order they sit in their slots. A condition that names a moment — a
+ * third of health left, every other turn, a foe nearly beaten — is answered
+ * the moment it holds, before anything else: every move's first condition is
+ * looked at before any move's second, and within each, the first move in slot
+ * order wins. A move with `always` in either is only allowed, and `never` in
+ * both takes it out of the fight.
  *
- * What is left — the moves allowed always — goes by the `mode`, over the
- * slots: `damageFirst` takes the hardest-hitting attack, `repeatAll` goes
- * round the slots a turn at a time, and `repeatLast` goes through them once
- * and holds on the last. A move that cannot land, or one its condition keeps
- * out, hands its turn to the next. Anything none of this decides falls
- * through to the strongest attack that can land.
+ * When no moment has come, the moves allowed always are left, and of those
+ * the hardest-hitting attack is used — or, with no attack among them, the
+ * first in slot order. Anything none of this decides falls through to the
+ * strongest attack that can land.
  *
  * @param {Battle} battle
  * @param {Combatant} attacker
@@ -5383,45 +5573,31 @@ export function moveCondition(policy, slug) {
 export function choosePolicyMove(battle, attacker, defender, usable) {
   const policy = battle.policy;
 
-  /** What the policy allows this turn, each with its condition, in slot order. */
-  const allowed = [];
+  /** What the policy could use this turn, each with its two conditions, in slot order. */
+  const candidates = [];
   for (const slot of usable) {
     const move = moveOf(slot.move);
     if (!move) continue;
     // What cannot do anything in a battle of one against one, or would end it
     // unwon, is never reached for by the policy.
     if (neverAutomatic(slot.move)) continue;
-    const category = categoryOf(move);
-    const condition = moveCondition(policy, slot.move);
-    if (!conditionHolds(condition, battle, attacker, defender)) continue;
-    if (!worthReachingFor(move, category, attacker, defender)) continue;
-    allowed.push({ move: slot.move, category, condition });
+    if (!worthReachingFor(move, categoryOf(move), attacker, defender)) continue;
+    candidates.push({ move: slot.move, first: moveCondition(policy, slot.move), second: secondCondition(policy, slot.move) });
   }
 
-  // A condition that names a moment is answered as soon as it comes, the
-  // first in slot order: the order is the player's to set.
-  const triggered = allowed.find((entry) => entry.condition !== 'always');
-  if (triggered) return triggered.move;
+  // A condition that names a moment is answered as soon as it comes: the
+  // firsts before the seconds, and each in slot order, which is the player's
+  // to set.
+  for (const rank of /** @type {const} */ (['first', 'second'])) {
+    const triggered = candidates.find((entry) =>
+      entry[rank] !== 'always' && conditionHolds(entry[rank], battle, attacker, defender, entry.move));
+    if (triggered) return triggered.move;
+  }
 
-  const pool = allowed.map((entry) => entry.move);
+  const pool = candidates.filter((entry) => entry.first === 'always' || entry.second === 'always').map((entry) => entry.move);
   if (pool.length) {
-    if (policy.mode === 'damageFirst') {
-      const attacks = usable.filter((slot) => pool.includes(slot.move) && categoryOf(moveOf(slot.move)) === 'damage');
-      return bestDamageMove(battle, attacker, defender, attacks) ?? pool[0];
-    }
-    const slots = usable.map((slot) => slot.move);
-    const turn = attacker.turnsTaken;
-    /** The slots in the order this turn tries them. */
-    const steps = [];
-    if (policy.mode === 'repeatLast') {
-      for (let index = Math.min(turn, slots.length - 1); index < slots.length; index++) steps.push(slots[index]);
-      // Past the end, the last that can still be used is the one held on.
-      steps.push(...[...pool].reverse());
-    } else {
-      for (let step = 0; step < slots.length; step++) steps.push(slots[(turn + step) % slots.length]);
-    }
-    const next = steps.find((move) => pool.includes(move));
-    if (next) return next;
+    const attacks = usable.filter((slot) => pool.includes(slot.move) && categoryOf(moveOf(slot.move)) === 'damage');
+    return bestDamageMove(battle, attacker, defender, attacks) ?? pool[0];
   }
 
   // Nothing the policy allows applies this turn. Rather than stand there
@@ -5473,16 +5649,17 @@ export function categoryOf(move) {
  * Whether a move may be used this turn.
  *
  * `never` takes a move out of the fight altogether, `always` lets it be used
- * whenever the mode picks it, and the rest name the moment it is used ahead
- * of everything else — the companion's own health or stat ranks, or the
- * foe's.
+ * whenever nothing else comes first, and the rest name the moment it is used
+ * ahead of everything else — the turn, the companion's own health or stat
+ * ranks, or the foe's.
  *
  * @param {string} condition
  * @param {Battle} battle
  * @param {Combatant} attacker
  * @param {Combatant} defender
+ * @param {string} slug the move it is the condition of
  */
-function conditionHolds(condition, battle, attacker, defender) {
+function conditionHolds(condition, battle, attacker, defender, slug) {
   const health = () => attacker.pokemon.hp / Math.max(1, maxHp(attacker.pokemon));
   const foeHealth = () => defender.pokemon.hp / Math.max(1, maxHp(defender.pokemon));
 
@@ -5491,10 +5668,64 @@ function conditionHolds(condition, battle, attacker, defender) {
       return false;
     case 'firstTurn':
       return attacker.turnsTaken === 0;
+    // The foe's first turn out: the start of a wild battle, and each of a
+    // trainer's Pokémon as it comes out.
+    case 'foeEntered':
+      return battle.firstTurnOut(defender);
+    case 'oncePerBattle':
+      return !attacker.usedOn?.[slug];
+    // Every so many turns, counted from the turn the move was last used,
+    // however it came to be: one not yet used counts from before the first
+    // turn, so every two is the second, fourth, sixth — and one used on the
+    // first turn goes on the third, fifth, seventh. A turn something else
+    // took leaves it due on the next.
+    case 'everyTwoTurns':
+      return turnsSinceUsed(attacker, slug) >= 2;
+    case 'everyThreeTurns':
+      return turnsSinceUsed(attacker, slug) >= 3;
+    case 'everyFourTurns':
+      return turnsSinceUsed(attacker, slug) >= 4;
+    // Super effective or better against the foe as it stands: its types now,
+    // and the move's as it would leave — an ability retyping it, the field, a
+    // mask or a plate behind it. A move that deals no damage never is.
+    case 'superEffective': {
+      const move = moveOf(slug);
+      if (!move || move.damageClass === 'status') return false;
+      const used = battle.effectiveMove(attacker, defender, move, slug, { peek: true });
+      return battle.effectivenessOf(attacker, used, defender) > 1;
+    }
+    // Who moves first on Speed alone, a Trick Room turning it round; a
+    // priority move is not counted.
+    case 'faster':
+    case 'slower': {
+      const mine = battle.speedOf(attacker);
+      const theirs = battle.speedOf(defender);
+      const ahead = battle.field.trickRoom > 0 ? mine < theirs : mine > theirs;
+      const behind = battle.field.trickRoom > 0 ? mine > theirs : mine < theirs;
+      return condition === 'faster' ? ahead : behind;
+    }
+    // This move, as it would land now, looks enough to finish the foe.
+    case 'canFinish': {
+      const move = moveOf(slug);
+      if (!move || move.damageClass === 'status' || cannotTouch(defender, move)) return false;
+      return expectedDamage(attacker, defender, move) >= defender.pokemon.hp;
+    }
+    case 'foePhysical':
+      return battle.stat(defender, 'atk') >= battle.stat(defender, 'spa');
+    case 'foeSpecial':
+      return battle.stat(defender, 'atk') < battle.stat(defender, 'spa');
+    case 'trainerBattle':
+      return battle.trainerBattle;
+    case 'wildBattle':
+      return !battle.trainerBattle;
     case 'noStatus':
       return !defender.pokemon.status;
     case 'foeStatus':
       return Boolean(defender.pokemon.status);
+    case 'selfStatus':
+      return Boolean(attacker.pokemon.status);
+    case 'hasField':
+      return battle.field ? !battle.field.quiet : false;
     case 'noField':
       // Now that there is weather and terrain, this asks what it always read
       // as: reach for a field move when there is no field effect already.
@@ -5509,6 +5740,10 @@ function conditionHolds(condition, battle, attacker, defender) {
       return Object.values(defender.stages).some((stage) => stage > 0);
     case 'foeRankDown':
       return Object.values(defender.stages).some((stage) => stage < 0);
+    case 'hpFull':
+      return health() >= 1;
+    case 'hpAboveHalf':
+      return health() > 1 / 2;
     case 'hpTwoThirds':
       return health() <= 2 / 3;
     // `lowHp` is what half health was called before the fractions were named.
@@ -5519,6 +5754,10 @@ function conditionHolds(condition, battle, attacker, defender) {
       return health() <= 1 / 3;
     case 'hpQuarter':
       return health() <= 1 / 4;
+    case 'foeHpFull':
+      return foeHealth() >= 1;
+    case 'foeHpAboveHalf':
+      return foeHealth() > 1 / 2;
     case 'foeHpTwoThirds':
       return foeHealth() <= 2 / 3;
     case 'foeHpHalf':
@@ -5531,6 +5770,17 @@ function conditionHolds(condition, battle, attacker, defender) {
     default:
       return true;
   }
+}
+
+/**
+ * How many of its own turns this one is past the one a move was last used on,
+ * this turn included.
+ *
+ * @param {Combatant} attacker
+ * @param {string} slug
+ */
+function turnsSinceUsed(attacker, slug) {
+  return attacker.turnsTaken + 1 - (attacker.usedOn?.[slug] ?? 0);
 }
 
 /**

@@ -64,14 +64,20 @@ test('Stance Change draws the blade to strike', options, () => {
   const battle = fight(aegislash, make('chansey', 80, ['splash']));
   assert.equal(battle.player.marks.forme ?? null, null, 'it walks in guarding');
   const guarding = battle.stat(battle.player, 'atk');
-  battle.takeTurn();
+  const log = battle.takeTurn();
   assert.equal(battle.player.marks.forme, 'aegislash-blade');
   assert.ok(battle.stat(battle.player, 'atk') > guarding * 2);
+  // The stance is taken before the move is announced, as the games show it.
+  const mine = log.map((entry, index) => ({ ...entry, index })).filter((entry) => entry.side === 'player');
+  const changed = mine.find((entry) => entry.kind === 'ability')?.index ?? Infinity;
+  const used = mine.find((entry) => entry.kind === 'move')?.index ?? -1;
+  assert.ok(changed < used, `ability at ${changed}, move at ${used}`);
 });
 
 test('Hunger Switch turns Morpeko every turn, and its Aura Wheel with it', options, () => {
   const morpeko = make('morpeko', 50, ['aura-wheel'], 'hunger-switch');
-  const battle = fight(morpeko, make('chansey', 80, ['splash']));
+  // Something that will still be standing after two turns of it.
+  const battle = fight(morpeko, make('blissey', 100, ['splash']));
   battle.takeTurn();
   assert.equal(battle.player.marks.forme, 'morpeko-hangry');
   assert.equal(battle.effectiveMove(battle.player, battle.foe, moveOf('aura-wheel')).type, 'dark');
@@ -206,4 +212,19 @@ test("a critical hit is counted for a Farfetch'd", options, () => {
   battle.player.marks.critStages = 3;
   battle.takeTurn();
   assert.ok((battle.player.marks.crits ?? 0) >= 1);
+});
+
+test('a Ruin ability says so as its holder comes out, and spares a holder of the same', options, () => {
+  const battle = fight(make('wo-chien', 50, ['tackle'], 'tablets-of-ruin'), make('chansey', 50, ['splash']));
+  const mine = battle.opening.filter((entry) => entry.side === 'player');
+  assert.deepEqual(mine.map((entry) => entry.kind), ['ability', 'message']);
+  assert.equal(mine[1].data.key, 'ability.ruin');
+  assert.equal(mine[1].data.stat, 'atk');
+  assert.equal(mine[1].data.ability, 'tablets-of-ruin');
+  assert.equal(battle.ruinFactor(battle.foe, 'atk'), 0.75, 'the other side is weakened');
+  assert.equal(battle.ruinFactor(battle.player, 'atk'), 1, 'its holder is not');
+
+  const both = fight(make('wo-chien', 50, ['tackle'], 'tablets-of-ruin'), make('wo-chien', 50, ['tackle'], 'tablets-of-ruin'));
+  assert.equal(both.ruinFactor(both.foe, 'atk'), 1, 'two Tablets of Ruin leave each other be');
+  assert.equal(both.ruinFactor(both.player, 'atk'), 1);
 });

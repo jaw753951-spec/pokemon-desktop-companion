@@ -1,13 +1,14 @@
 /**
  * Auto-battle settings.
  *
- * Two things decide what the companion does on its turn. Each move it has is
- * used under a condition of its own, and one whose condition names a moment
- * is used the moment it holds, before anything else — the first such in the
- * order the moves sit in their slots. The mode then decides among what is
- * left, over the same slots. So the screen keeps the mode on top, picked at a
- * glance, and the moves below it in their order, each with its condition,
- * where a press on a move picks it up and a press on another puts it there.
+ * Each move the companion has is used under two conditions of its own, a
+ * first and a second. One that names a moment is used the moment it holds,
+ * before anything else: every move's first ahead of any move's second, and
+ * within each, the first in the order the moves sit in their slots. When no
+ * moment has come, the moves allowed always are left, and the hardest hit
+ * among them is used. So the screen is the moves in their order, each with its
+ * two conditions beside it, where a press on a move picks it up and a press
+ * on another puts it there.
  *
  * Everything here edits the policy the battle engine reads, and the moves'
  * own order, so the effect of a change is immediate.
@@ -15,40 +16,41 @@
 import { moveOf } from '../core/data.mjs';
 import { button, el, scrollable, setChildren } from '../core/dom.mjs';
 import { name as localized, t } from '../core/i18n.mjs';
-import { moveCondition } from '../engine/battle.mjs';
-import { chooseFromList } from './dialog.mjs';
+import { moveCondition, secondCondition } from '../engine/battle.mjs';
+import { suggestPolicy } from '../engine/autoplan.mjs';
+import { confirm, mountModal } from './dialog.mjs';
 import { typeChip } from './typechip.mjs';
 
-/** Exactly one of these is active, as the brief requires. */
-const MODES = ['repeatAll', 'repeatLast', 'damageFirst'];
-
 /**
- * When a move may be used, in the order the picker lists them.
+ * When a move may be used, in groups, in the order the picker shows them.
  *
  * `never` is one of them rather than a separate switch: a move that is never
  * used and a move used only under some condition are the same decision. The
  * rank and health ones come in pairs — the companion's own, and the foe's.
+ * Twenty-odd conditions in one list was a scroll through a keyhole, so the
+ * picker shows one group at a time beside the names of the others.
  */
-const CONDITIONS = [
-  'never',
-  'always',
-  'firstTurn',
-  'noStatus',
-  'foeStatus',
-  'noField',
-  'rankUp',
-  'rankDown',
-  'foeRankUp',
-  'foeRankDown',
-  'hpTwoThirds',
-  'hpHalf',
-  'hpThird',
-  'hpQuarter',
-  'foeHpTwoThirds',
-  'foeHpHalf',
-  'foeHpThird',
-  'foeHpQuarter',
+const CONDITION_GROUPS = [
+  { key: 'basic', conditions: ['never', 'always'] },
+  { key: 'turn', conditions: ['firstTurn', 'foeEntered', 'oncePerBattle', 'everyTwoTurns', 'everyThreeTurns', 'everyFourTurns'] },
+  { key: 'matchup', conditions: ['canFinish', 'superEffective', 'faster', 'slower'] },
+  { key: 'battle', conditions: ['foePhysical', 'foeSpecial', 'trainerBattle', 'wildBattle'] },
+  { key: 'status', conditions: ['noStatus', 'foeStatus', 'selfStatus', 'noField', 'hasField'] },
+  { key: 'rank', conditions: ['rankUp', 'rankDown', 'foeRankUp', 'foeRankDown'] },
+  { key: 'hp', conditions: ['hpFull', 'hpAboveHalf', 'hpTwoThirds', 'hpHalf', 'hpThird', 'hpQuarter'] },
+  { key: 'foeHp', conditions: ['foeHpFull', 'foeHpAboveHalf', 'foeHpTwoThirds', 'foeHpHalf', 'foeHpThird', 'foeHpQuarter'] },
 ];
+
+/** Every condition, flat, in picker order. */
+export const CONDITIONS = CONDITION_GROUPS.flatMap((group) => group.conditions);
+
+/**
+ * The group a condition belongs to, which also colours its chip.
+ * @param {string} condition
+ */
+function groupOf(condition) {
+  return CONDITION_GROUPS.find((group) => group.conditions.includes(condition)) ?? CONDITION_GROUPS[0];
+}
 
 /**
  * @param {{session: import('../engine/session.mjs').Session, onClose: () => void}} options
@@ -66,11 +68,23 @@ export function autoBattleScene({ session, onClose }) {
 
       const rebuild = () => {
         setChildren(body, [
-          el('div.auto-tier.auto-tier-1', {}, [modeRow(app, session, rebuild)]),
-          el('div.auto-tier.auto-tier-3', {}, [
-            el('div.section-title', { text: t(state.moving === null ? 'auto.moves' : 'auto.moveTarget') }),
+          el('div.auto-tier', {}, [
+            el('div.auto-tier-head', {}, [
+              el('div.section-title', { text: t(state.moving === null ? 'auto.moves' : 'auto.moveTarget') }),
+              el('span.spacer'),
+              optimizeButton(app, session, () => {
+                state.moving = null;
+                rebuild();
+              }),
+            ]),
+            el('div.auto-move-row.auto-move-head', {}, [
+              el('span.auto-move-head-move'),
+              el('span.auto-move-head-rank', { text: t('auto.first') }),
+              el('span.auto-move-head-rank', { text: t('auto.second') }),
+            ]),
             el('div.auto-moves', {}, session.active.moves.map((slot, index) => moveRow(app, session, state, index, rebuild))),
           ]),
+          el('p.auto-order', { text: t('auto.order') }),
         ]);
       };
       rebuild();
@@ -91,35 +105,52 @@ export function autoBattleScene({ session, onClose }) {
 }
 
 /**
+ * The one-press setup: each move's conditions and the order, set by the
+ * rules in `autoplan.mjs`, after asking.
+ *
  * @param {import('../core/app.mjs').App} app
  * @param {import('../engine/session.mjs').Session} session
- * @param {() => void} rebuild
+ * @param {() => void} applied
  */
-function modeRow(app, session, rebuild) {
-  const policy = session.autoBattle;
-  return el('div.auto-modes', {}, MODES.map((mode) =>
-      el('button.chip', {
-        type: 'button',
-        text: t(`auto.${mode}`),
-        'aria-pressed': String(policy.mode === mode),
-        onClick: () => {
-          app.audio.blip('select');
-          // Only one may be active, so selecting replaces rather than toggles.
-          policy.mode = mode;
-          rebuild();
-        },
-      }),
-    ));
+function optimizeButton(app, session, applied) {
+  return button(t('auto.optimize'), async () => {
+    app.audio.blip('select');
+    const pokemon = session.active;
+    if (!(await confirm(app, t('auto.optimizeConfirm')))) return;
+    if (session.active !== pokemon) return;
+    apply(session, suggestPolicy(pokemon));
+    applied();
+  }, { className: 'small', title: t('auto.optimizeHint') });
 }
 
 /**
- * One of the companion's moves, in its place in the order, with its
- * condition beside it.
+ * Give the companion's moves the conditions and the order a plan names.
+ * Other Pokémon's moves keep what they had.
+ *
+ * @param {import('../engine/session.mjs').Session} session
+ * @param {{order: string[], moves: Record<string, string>, second: Record<string, string>}} plan
+ */
+function apply(session, plan) {
+  const pokemon = session.active;
+  const policy = session.autoBattle;
+  policy.moves = { ...(policy.moves ?? {}), ...plan.moves };
+  policy.second = { ...(policy.second ?? {}), ...plan.second };
+  const bySlug = new Map(pokemon.moves.map((slot) => [slot.move, slot]));
+  const ordered = plan.order.map((slug) => bySlug.get(slug)).filter(Boolean);
+  // Anything the plan did not name (a move the data does not know) stays at the end.
+  const rest = pokemon.moves.filter((slot) => !plan.order.includes(slot.move));
+  // In place, as the swap on this screen does, for anything holding the list.
+  pokemon.moves.splice(0, pokemon.moves.length, ...ordered, ...rest);
+}
+
+/**
+ * One of the companion's moves, in its place in the order, with its two
+ * conditions beside it.
  *
  * The move itself is the handle for the order: pressed, it is picked up, and
  * pressed again on another move, the two change places — the box's way of
- * moving a Pokémon. Pressing the one picked up puts it back down. The chip is
- * its condition, `never` included.
+ * moving a Pokémon. Pressing the one picked up puts it back down. The chips
+ * are its first and second conditions, `never` included.
  *
  * @param {import('../core/app.mjs').App} app
  * @param {import('../engine/session.mjs').Session} session
@@ -130,9 +161,9 @@ function modeRow(app, session, rebuild) {
 function moveRow(app, session, state, index, rebuild) {
   const policy = session.autoBattle;
   policy.moves = policy.moves ?? {};
+  policy.second = policy.second ?? {};
   const slug = session.active.moves[index].move;
   const move = moveOf(slug);
-  const condition = moveCondition(policy, slug);
 
   const picked = state.moving === index;
   const handle = el(`button.auto-move${picked ? '.moving' : ''}${state.moving !== null && !picked ? '.target' : ''}`, {
@@ -161,27 +192,110 @@ function moveRow(app, session, state, index, rebuild) {
     move?.type ? typeChip(move.type, true) : null,
   ]);
 
-  return el('div.auto-move-row', {}, [
-    handle,
-    el(`button.chip${condition === 'never' ? '.off' : ''}`, {
+  /**
+   * One of the move's two conditions, and the picker it is chosen in.
+   * @param {Record<string, string>} stored
+   * @param {string} condition
+   * @param {string} label
+   */
+  const conditionChip = (stored, condition, label) =>
+    el(`button.chip.auto-condition${condition === 'never' ? '.off' : ''}`, {
       type: 'button',
-      text: t(`auto.condition.${condition}`),
-      title: t('auto.condition'),
+      title: `${label} ${t('auto.condition')}: ${t(`auto.condition.${condition}`)}`,
       onClick: async () => {
         app.audio.blip('select');
-        const chosen = await chooseFromList(
-          app,
-          localized(move?.name, slug),
-          CONDITIONS.map((value) => ({
-            value,
-            label: t(`auto.condition.${value}`),
-            detail: value === condition ? t('auto.current') : '',
-          })),
-        );
+        const chosen = await chooseCondition(app, `${localized(move?.name, slug)} · ${label}`, condition);
         if (chosen === null) return;
-        policy.moves[slug] = chosen;
+        stored[slug] = chosen;
         rebuild();
       },
-    }),
+    }, [
+      el(`i.cond-dot.cond-${groupOf(condition).key}`, { 'aria-hidden': 'true' }),
+      el('span.auto-condition-label', { text: t(`auto.condition.${condition}`) }),
+    ]);
+
+  return el('div.auto-move-row', {}, [
+    handle,
+    conditionChip(policy.moves, moveCondition(policy, slug), t('auto.first')),
+    conditionChip(policy.second, secondCondition(policy, slug), t('auto.second')),
   ]);
+}
+
+/**
+ * Choose a condition: the groups down the left, the one open on the right,
+ * and what the one under the pointer means along the bottom. A press on a
+ * condition takes it.
+ *
+ * @param {import('../core/app.mjs').App} app
+ * @param {string} title
+ * @param {string} current
+ * @returns {Promise<string|null>} null when cancelled
+ */
+export function chooseCondition(app, title, current) {
+  return new Promise((resolve) => {
+    mountModal(app, (dismiss) => {
+      const finish = (/** @type {string|null} */ value) => {
+        dismiss();
+        resolve(value);
+      };
+      let open = groupOf(current);
+
+      const help = el('p.cond-help');
+      /** @param {string} condition */
+      const explain = (condition) => {
+        help.replaceChildren(
+          el('b', { text: t(`auto.condition.${condition}`) }),
+          ' ',
+          t(`auto.help.${condition}`),
+        );
+      };
+
+      const tabs = el('div.cond-groups');
+      const options = el('div.cond-options');
+      const draw = () => {
+        setChildren(tabs, CONDITION_GROUPS.map((group) =>
+          el(`button.cond-group${group === open ? '.open' : ''}`, {
+            type: 'button',
+            onClick: () => {
+              if (group === open) return;
+              app.audio.blip('select');
+              open = group;
+              draw();
+            },
+          }, [
+            el(`i.cond-dot.cond-${group.key}`, { 'aria-hidden': 'true' }),
+            el('span', { text: t(`auto.group.${group.key}`) }),
+            group.conditions.includes(current) ? el('i.cond-here', { 'aria-hidden': 'true' }) : null,
+          ])));
+        setChildren(options, open.conditions.map((condition) =>
+          el(`button.cond-option${condition === current ? '.current' : ''}`, {
+            type: 'button',
+            onMouseEnter: () => explain(condition),
+            onFocus: () => explain(condition),
+            onClick: () => {
+              app.audio.blip('confirm');
+              finish(condition);
+            },
+          }, [
+            el('span', { text: t(`auto.condition.${condition}`) }),
+            condition === current ? el('span.cond-current', { text: t('auto.current') }) : null,
+          ])));
+        explain(open.conditions.includes(current) ? current : open.conditions[0]);
+      };
+      draw();
+
+      return el('div.panel.cond-picker', {}, [
+        el('p.cond-title', { text: title }),
+        el('div.cond-body', {}, [tabs, options]),
+        help,
+        el('div.cond-actions', {}, [
+          el('span.spacer'),
+          button(t('common.cancel'), () => {
+            app.audio.blip('cancel');
+            finish(null);
+          }, { className: 'small' }),
+        ]),
+      ]);
+    });
+  });
 }

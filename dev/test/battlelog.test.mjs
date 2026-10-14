@@ -101,7 +101,7 @@ const makeBattle = (options = {}) =>
     rng: new Rng(3),
     player: options.player ?? makeOne(1),
     foes: options.foes ?? [makeOne(2)],
-    policy: { mode: 'repeatAll', conditions: {} },
+    policy: { conditions: {} },
     items: { choose: () => null, throw: () => false },
     ...options,
   });

@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 
 import { setGameData } from '../../app/renderer/core/data.mjs';
 import { Sprite } from '../../app/renderer/core/assets.mjs';
-import { ACTOR_SCALE, actorHeight, actorScale, POKEMON_SCALE } from '../../app/renderer/render/field.mjs';
+import { ACTOR_SCALE, actorHeight, actorScale, POKEMON_SCALE, TRAINER_SCALE } from '../../app/renderer/render/field.mjs';
 import { BATTLE_SCALE } from '../../app/renderer/render/battler.mjs';
 import { companionArmour } from '../../app/renderer/engine/battle.mjs';
 import { treeFor } from '../../app/renderer/scenes/fieldevents.mjs';
@@ -45,6 +45,11 @@ test('every Pokémon is drawn at one scale, so all of them share one size of pix
   // And a whole number of screen pixels per art pixel: one, the sprite as it
   // is, rather than a copy with half its pixels thrown away.
   assert.equal(POKEMON_SCALE * FIELD_ZOOM, 1);
+});
+
+test('a trainer on the road is drawn larger than its sheet, in whole screen pixels', () => {
+  assert.ok(TRAINER_SCALE > ACTOR_SCALE);
+  assert.ok(Number.isInteger(TRAINER_SCALE * FIELD_ZOOM));
 });
 
 test('a bigger Pokémon is bigger because its art is', () => {

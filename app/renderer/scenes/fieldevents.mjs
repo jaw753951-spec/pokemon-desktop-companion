@@ -18,7 +18,7 @@ import { createPokemon, levelOf } from '../engine/pokemon.mjs';
 import { signatureFind } from '../engine/items.mjs';
 import { callingFind, rollRare } from '../engine/rare.mjs';
 import {
-  ACTOR_SCALE,
+  TRAINER_SCALE,
   actorScale,
   behindRoof,
   COMPANION_X,
@@ -1121,11 +1121,11 @@ function drawProp(context, state, screenX) {
     return;
   }
 
-  // A trainer waiting on the path, at the size the props are drawn at — or a
+  // A trainer waiting on the path, half again as big as its sheet — or a
   // Swimmer in the water beside it.
   sprite.draw(context, screenX, groundY() + (prop.drop ?? 0), {
     frame: sprite.frameAt(lookClock(state)),
-    scale: ACTOR_SCALE,
+    scale: TRAINER_SCALE,
   });
 }
 

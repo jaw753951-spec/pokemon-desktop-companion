@@ -2,7 +2,7 @@
 /**
  * Capture the running game, for checking screens without a desktop.
  *
- *   xvfb-run -a npx electron tools/screenshot.mjs [--out shots] [--wait 4000]
+ *   xvfb-run -a npx electron tools/screenshot.mjs [--out shots] [--wait 4000] [--until 15-auto-condition]
  *
  * This is an alternative Electron entry point that boots the real main process
  * modules, then drives the renderer through a short script of clicks so each
@@ -32,6 +32,8 @@ const option = (flag, fallback) => {
 
 const OUT_DIR = option('--out', join(process.cwd(), 'shots'));
 const SETTLE_MS = Number(option('--wait', '2500'));
+/** The last step to photograph, for a run after one screen in particular. */
+const UNTIL = option('--until', null);
 
 /** How long a screen is left to settle before it is photographed. */
 const SETTLE_AFTER_MS = 1200;
@@ -74,7 +76,9 @@ const STEPS = [
   { name: '14-auto-battle', script: 'clickText("button.tab", ["포켓몬", "Pokémon"]) && await wait(250) && clickText("button", ["자동전투", "Auto-battle"])' },
   // The list behind one of those conditions, which is where a kind is switched
   // off as well as gated.
-  { name: '15-auto-condition', script: 'clickText("button.chip", ["체력 1/2 이하", "HP at half or less"]) && await wait(400)' },
+  // The one-press setup, taken: its question answered yes.
+  { name: '14b-auto-optimized', script: 'clickText("button", ["자동 최적화", "Optimize"]) && await wait(300) && clickText(".modal button", ["예", "Yes"])' },
+  { name: '15-auto-condition', script: 'clickText("button.auto-condition", []) && await wait(400)' },
   { name: '16-pokedex', script: 'closeAll() && clickText("button", ["도감", "Pokédex"])' },
   // Charmander, because the starter is the one species this run has certainly
   // caught: an entry only seen shows a silhouette and no description.
@@ -91,6 +95,8 @@ const STEPS = [
   { name: '22-event-center', script: 'closeAll() && await forceEvent("heal") && await waitFor(() => walkStopped(1), 25000, 100)', settle: 0 },
   { name: '23-event-center-inside', script: 'await wait(900)', settle: 0 },
   { name: '24-event-center-out', script: 'await wait(4700)', settle: 0 },
+  // A trainer waiting on the road, at the size they stand at, before the battle.
+  { name: '24b-event-trainer', script: 'closeAll() && await forceEvent("trainer") && await waitFor(() => walkStopped(1), 25000, 100)', settle: 300 },
   // A level-5 starter loses every wild battle it is thrown into, which left
   // the tray and capture shots empty. Levelling it first makes the whole tail
   // of the run — win, tray, capture screen — actually reachable.
@@ -156,6 +162,7 @@ app.whenReady().then(async () => {
     const image = await window.webContents.capturePage();
     await writeFile(join(OUT_DIR, `${step.name}.png`), image.toPNG());
     console.log(`captured ${step.name}`);
+    if (step.name === UNTIL) break;
   }
 
   app.quit();

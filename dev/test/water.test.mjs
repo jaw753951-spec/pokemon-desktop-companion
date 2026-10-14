@@ -15,12 +15,12 @@ const withData = { skip: ready ? false : NEEDS_ASSETS };
 
 test('water beside the lane is laid out the way the strip is', () => {
   // Four blocks of two pixels, water a row out from the last one: the band,
-  // then its mirror less the edge columns, then again.
+  // then its mirror, then again.
   const runs = stripRuns([null, null, null, 1], 2, 20);
-  // band: ......WW  mirror (less edges): W.....  → ......WWW.....  twice
-  assert.deepEqual(runs, [[6, 9, 1], [20, 23, 1]]);
+  // band: ......WW  mirror: WW......  → ......WWWW......  twice
+  assert.deepEqual(runs, [[6, 10, 1], [22, 26, 1]]);
   // Runs of different rows are kept apart.
-  assert.deepEqual(stripRuns([1, -1], 1, 1), [[0, 1, 1], [1, 2, -1]]);
+  assert.deepEqual(stripRuns([1, -1], 1, 1), [[0, 1, 1], [1, 3, -1], [3, 4, 1]]);
 });
 
 test('a lane up on a bridge deck walks over the top layer, one below it walks under', () => {

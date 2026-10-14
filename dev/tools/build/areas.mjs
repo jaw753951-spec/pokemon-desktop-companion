@@ -8,7 +8,7 @@ import { fetchBuffer, fetchJson, writeOut } from '../lib/http.mjs';
 import { decodePng, encodePng } from '../lib/png.mjs';
 import { METATILE_SIZE } from '../lib/gba-gfx.mjs';
 import { openMaps } from '../lib/maps.mjs';
-import { crop, gradeTime, makeSeamless, pickWalkPath, repeatToWidth, TIME_KEYS } from '../lib/image.mjs';
+import { crop, gradeTime, makeSeamless, overlay, pickLoopEnds, pickWalkPath, repeatToWidth, TIME_KEYS } from '../lib/image.mjs';
 import { nameBundle } from '../lib/poke.mjs';
 import { AREAS, BACKGROUND_HEIGHT, EMERALD, FIELD_WIDTH, FIRERED, POKEAPI } from '../sources.mjs';
 
@@ -47,7 +47,7 @@ export async function buildAreas({ assetDir, dataDir, log, pool }) {
     const game = area.game ?? 'emerald';
     const maps = await mapsFor(game);
     const encounters = await encountersFor(game);
-    const { map, layout, blockdata, image: rendered, over, isWater, isLongGrass, isTallGrass, isWarp } = await maps.render(area.dir);
+    const { map, layout, blockdata, image: rendered, over, isWater, isLongGrass, isTallGrass, isWarp, signs } = await maps.render(area.dir);
     const grass = await grassFor(game);
     // Two of the thirty maps are shorter than the window; they give what they
     // have and the field fills the remainder from their own top row.
@@ -65,15 +65,25 @@ export async function buildAreas({ assetDir, dataDir, log, pool }) {
     if (area.bandDrop) {
       path.bandRow = Math.max(0, Math.min(layout.height - bandBlocks, path.laneRow, path.bandRow + area.bandDrop));
     }
-    // And shortened at its ends where something outside it reaches over them.
-    if (area.bandTrim) {
-      const [left, right] = Array.isArray(area.bandTrim) ? area.bandTrim : [area.bandTrim, area.bandTrim];
-      const spare = path.columns - 1;
-      const fromLeft = Math.min(left, spare);
-      const fromRight = Math.min(right, spare - fromLeft);
-      path.column += fromLeft;
-      path.columns -= fromLeft + fromRight;
+    // And cut to the stretch of the run whose ends mirror into the map going
+    // on, or to the one the area names: see `pickLoopEnds`.
+    if (area.loop && (area.loop[0] < path.column || area.loop[1] >= path.column + path.columns || area.loop[0] > area.loop[1])) {
+      throw new Error(`${area.id}: loop ${area.loop} is not within the walkable run ${path.column}-${path.column + path.columns - 1}`);
     }
+    const ends = area.loop
+      ? { column: area.loop[0], columns: area.loop[1] - area.loop[0] + 1 }
+      : pickLoopEnds(overlay(rendered, over), layout.width, path.bandRow, bandBlocks, path.column, path.columns, METATILE_SIZE);
+    path.column = ends.column;
+    path.columns = ends.columns;
+    // The sign boards in the band, kept readable in its mirror image.
+    const upright = signs
+      .filter(({ x, y }) => x >= path.column && x < path.column + path.columns && y >= path.bandRow && y < path.bandRow + bandBlocks)
+      .map(({ x, y }) => ({
+        x: (x - path.column) * METATILE_SIZE,
+        y: (y - path.bandRow) * METATILE_SIZE,
+        width: METATILE_SIZE,
+        height: METATILE_SIZE,
+      }));
     const band = crop(
       rendered,
       path.column * METATILE_SIZE,
@@ -81,7 +91,7 @@ export async function buildAreas({ assetDir, dataDir, log, pool }) {
       path.columns * METATILE_SIZE,
       bandBlocks * METATILE_SIZE,
     );
-    const strip = repeatToWidth(makeSeamless(band), FIELD_WIDTH * 2);
+    const strip = repeatToWidth(makeSeamless(band, upright), FIELD_WIDTH * 2);
     // Where the companion's feet go within the strip: the bottom edge of the
     // lane whose blocks are clear, rather than a fixed fraction of the window.
     const groundY = Math.min(strip.height, (path.laneRow - path.bandRow + 1) * METATILE_SIZE);
@@ -115,7 +125,7 @@ export async function buildAreas({ assetDir, dataDir, log, pool }) {
       blockdata.readUInt16LE((path.laneRow * layout.width + path.column + index) * 2) >> 12,
     );
     const overhead = keepOverLane(overBand, groundY, aboveTopLayer(laneElevations));
-    const overStrip = overhead ? repeatToWidth(makeSeamless(overhead.overlay), FIELD_WIDTH * 2) : null;
+    const overStrip = overhead ? repeatToWidth(makeSeamless(overhead.overlay, upright), FIELD_WIDTH * 2) : null;
     // Only what hides the companion whole — a bridge, a roof — keeps events
     // from starting under it; a tree top over its feet does not. A roof is
     // marked as one: it is a house's width, not a road's, and the room a
@@ -418,9 +428,8 @@ const WATER_ROWS = [1, -1, 2, -2];
 /**
  * A value per block column of the walked band, as `[from, to, value]` pixel
  * runs of the finished strip — laid out the way the band itself is: the band,
- * then its mirror image less the two edge columns (`makeSeamless`), repeated
- * until the strip is `minWidth` wide (`repeatToWidth`). Columns whose value
- * is null are left out.
+ * then its mirror image (`makeSeamless`), repeated until the strip is
+ * `minWidth` wide (`repeatToWidth`). Columns whose value is null are left out.
  *
  * @template T
  * @param {Array<T|null>} values one per block column of the band
@@ -430,7 +439,7 @@ const WATER_ROWS = [1, -1, 2, -2];
  */
 export function stripRuns(values, blockSize, minWidth) {
   const band = values.flatMap((value) => new Array(blockSize).fill(value));
-  const seamless = band.length < 3 ? band : [...band, ...[...band].reverse().slice(1, band.length - 1)];
+  const seamless = [...band, ...[...band].reverse()];
   const copies = seamless.length >= minWidth ? 1 : Math.ceil(minWidth / seamless.length);
   const strip = new Array(copies).fill(seamless).flat();
 

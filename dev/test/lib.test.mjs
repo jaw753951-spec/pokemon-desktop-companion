@@ -10,6 +10,7 @@ import {
   makeSeamless,
   mirrorX,
   opaqueBounds,
+  pickLoopEnds,
   pickWalkPath,
   resampleFrames,
 } from '../tools/lib/image.mjs';
@@ -56,14 +57,41 @@ test('concatX joins rasters left to right', () => {
   assert.equal(out.data[2 * 4], 2);
 });
 
-test('makeSeamless loops without a duplicated edge column', () => {
+test('makeSeamless loops by mirroring the whole band, joins on its edges', () => {
   const band = raster(5, 1, (x) => [x * 10, 0, 0, 255]);
   const strip = makeSeamless(band);
-  assert.equal(strip.width, 8); // 5 + (5 - 2)
+  assert.equal(strip.width, 10);
   const column = (i) => strip.data[i * 4];
   // The band runs forward, then mirrors back, and wrapping past the end lands
-  // on the band's first column again — no repeated pixel at either join.
-  assert.deepEqual([0, 1, 2, 3, 4, 5, 6, 7].map(column), [0, 10, 20, 30, 40, 30, 20, 10]);
+  // on the band's first column again: each join is between a column and its
+  // own mirror image, so nothing is folded into the end column.
+  assert.deepEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(column), [0, 10, 20, 30, 40, 40, 30, 20, 10, 0]);
+});
+
+test('makeSeamless keeps a sign the right way round in the mirror image', () => {
+  const band = raster(6, 1, (x) => [x * 10, 0, 0, 255]);
+  // A sign two pixels wide at x 1-2.
+  const strip = makeSeamless(band, [{ x: 1, y: 0, width: 2, height: 1 }]);
+  const column = (i) => strip.data[i * 4];
+  // Mirrored, it lands at 9-10; it reads 10, 20 there, not 20, 10.
+  assert.deepEqual([6, 7, 8, 9, 10, 11].map(column), [50, 40, 30, 10, 20, 0]);
+});
+
+test('pickLoopEnds keeps a mirror join off anything that would double into something new', () => {
+  const block = 16;
+  // Open ground, but for something in the left half of the blocks at either
+  // end of the walkable run, columns 2 and 21.
+  const width = 24;
+  const map = raster(width * block, block, (x) =>
+    [2, 21].includes(Math.floor(x / block)) && x % block < block / 2 ? [250, 250, 250, 255] : [40, 160, 80, 255],
+  );
+  // Ending the band on either of them, or on the block beside one, puts it
+  // against its own mirror image: a shape the map does not have. The band is
+  // cut in to the open ground past them.
+  assert.deepEqual(pickLoopEnds(map, width, 0, 1, 2, 20, block), { column: 4, columns: 16 });
+  // With nothing in the way, the whole run is kept, short of the map's edge.
+  const open = raster(width * block, block, () => [40, 160, 80, 255]);
+  assert.deepEqual(pickLoopEnds(open, width, 0, 1, 0, width, block), { column: 1, columns: 22 });
 });
 
 test('gradeTime darkens night and leaves day untouched', () => {
