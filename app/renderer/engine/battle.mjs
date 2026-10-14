@@ -325,6 +325,13 @@ export class Battle {
     /** Whether the companion's turn went on a run that failed. */
     this.playerSpent = false;
     this.trainerBattle = trainerBattle;
+    /**
+     * The companion's moves the other side has watched it use. A trainer
+     * keeps them in mind for the rest of the battle, whichever of their
+     * Pokémon is out; a wild Pokémon pays them no attention (see `foeai.mjs`).
+     * @type {Set<string>}
+     */
+    this.seenMoves = new Set();
 
     this.player = makeCombatant(player, 'player');
     this.foeQueue = foes.map((foe) => makeCombatant(foe, 'foe'));
@@ -2590,6 +2597,7 @@ export class Battle {
     takeStance(move, moveName);
 
     log.push({ kind: 'move', side: attacker.side, data: reappears ? { move: moveName, reveal: true } : { move: moveName } });
+    if (attacker.side === 'player') this.seenMoves.add(moveName);
     const moveLogStart = log.length;
 
     // A move that calls another uses that one in its place: a Metronome, a

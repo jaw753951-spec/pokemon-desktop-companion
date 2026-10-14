@@ -11,8 +11,11 @@
  * knock-out when one is there, reach for a priority move when about to go
  * down first, put a sleep or a paralysis on something healthy before trading
  * blows with it, set up while there is time and health to, and heal when the
- * health has run low rather than at the last sliver. It sees the companion's
- * moves, as a trainer who has watched it fight would; it does not see dice.
+ * health has run low rather than at the last sliver. It knows the companion's
+ * moves only as far as they have been shown: a wild Pokémon goes by what
+ * the companion plainly is — its types, its build — and a trainer adds to
+ * that every move it has watched the companion use this battle (see
+ * `expectedThreat`). It does not see dice.
  *
  * What the move filter already rules out — a status at something already
  * suffering one, a Rain Dance in the rain, an attack the type chart says
@@ -23,7 +26,7 @@ import { categoryOf, cannotTouch, companionArmour, expectedDamage } from './batt
 import { FIELD_MOVES } from './field.mjs';
 import { neverAutomatic } from './moveeffects.mjs';
 import { PROTECT_MOVES } from './volatile.mjs';
-import { maxHp } from './pokemon.mjs';
+import { levelOf, maxHp } from './pokemon.mjs';
 
 /**
  * How close to the best score a move has to come to be in the running. Ten
@@ -98,20 +101,9 @@ export function sizeUp(battle, attacker, defender, usable) {
     dealt.set(slot.move, (expectedDamage(attacker, defender, move) * armour) / left);
   }
 
-  // The worst the other side can do back, and with what.
-  let threat = 0;
-  /** @type {string|null} */
-  let threatClass = null;
-  const own = Math.max(1, attacker.pokemon.hp);
-  for (const slot of battle.movesOf(defender)) {
-    const move = moveOf(slot.move);
-    if (!move || slot.pp <= 0 || move.damageClass === 'status' || cannotTouch(attacker, move)) continue;
-    const share = expectedDamage(defender, attacker, move) / own;
-    if (share > threat) {
-      threat = share;
-      threatClass = move.damageClass;
-    }
-  }
+  // The worst the other side can do back, and with what — as far as can be
+  // told from here.
+  const { threat, threatClass } = expectedThreat(battle, attacker, defender);
 
   const trickRoom = battle.field.trickRoom > 0;
   const mine = battle.speedOf(attacker);
@@ -137,6 +129,55 @@ export function sizeUp(battle, attacker, defender, usable) {
     theirHealth: defender.pokemon.hp / maxHp(defender.pokemon),
     early: attacker.turnsTaken < 2,
   };
+}
+
+/**
+ * How hard the companion can be expected to hit back, as a share of the
+ * health the attacker has left, and with which kind of attack.
+ *
+ * Nothing on the other side is told the companion's moves. What anyone can
+ * see is its types and its build, so the guess is an attack of its own type
+ * from whichever of its attacking stats is the stronger, as strong as a
+ * Pokémon of its level tends to have. A trainer also remembers what it has
+ * watched the companion use and weighs those moves too — so a Water type's
+ * Thunderbolt, once shown, is not forgotten for the rest of the battle.
+ *
+ * @param {import('./battle.mjs').Battle} battle
+ * @param {import('./battle.mjs').Combatant} attacker the one weighing it up
+ * @param {import('./battle.mjs').Combatant} defender the companion
+ * @returns {{threat: number, threatClass: string|null}}
+ */
+export function expectedThreat(battle, attacker, defender) {
+  const physical = battle.stat(defender, 'atk') >= battle.stat(defender, 'spa');
+  const power = Math.min(90, Math.round(40 + levelOf(defender.pokemon) * 0.6));
+  /** @type {any[]} */
+  const moves = battle.typesOf(defender).map((type) => ({
+    id: -1,
+    type,
+    power,
+    accuracy: 100,
+    damageClass: physical ? 'physical' : 'special',
+  }));
+  if (battle.trainerBattle) {
+    for (const slug of battle.seenMoves) {
+      const move = moveOf(slug);
+      if (move && move.damageClass !== 'status') moves.push(move);
+    }
+  }
+
+  let threat = 0;
+  /** @type {string|null} */
+  let threatClass = null;
+  const own = Math.max(1, attacker.pokemon.hp);
+  for (const move of moves) {
+    if (cannotTouch(attacker, move)) continue;
+    const share = expectedDamage(defender, attacker, move) / own;
+    if (share > threat) {
+      threat = share;
+      threatClass = move.damageClass;
+    }
+  }
+  return { threat, threatClass };
 }
 
 /**

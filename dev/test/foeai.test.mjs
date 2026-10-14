@@ -10,6 +10,7 @@ import { NEEDS_ASSETS, useRealGameData } from './helpers/data.mjs';
 import { Rng } from '../../app/renderer/core/rng.mjs';
 import { speciesIdBySlug } from '../../app/renderer/core/data.mjs';
 import { Battle, STATUS } from '../../app/renderer/engine/battle.mjs';
+import { expectedThreat } from '../../app/renderer/engine/foeai.mjs';
 import { createPokemon, maxHp, setMove } from '../../app/renderer/engine/pokemon.mjs';
 import { defaultAutoBattle } from '../../app/renderer/engine/session.mjs';
 
@@ -27,8 +28,9 @@ function make(slug, level, moves) {
   return pokemon;
 }
 
-/** @param {any} player @param {any} foe */
-const fight = (player, foe) => new Battle({ rng: new Rng(3), player, foes: [foe], policy: defaultAutoBattle() });
+/** @param {any} player @param {any} foe @param {boolean} [trainerBattle] */
+const fight = (player, foe, trainerBattle = false) =>
+  new Battle({ rng: new Rng(3), player, foes: [foe], policy: defaultAutoBattle(), trainerBattle });
 
 /** @param {Battle} battle */
 const foePicks = (battle) => battle.chooseMove(/** @type {any} */ (battle.foe), battle.player);
@@ -78,4 +80,23 @@ test('it sets up while there is time, and stops once it has', options, () => {
 test('an Explosion waits for the end, and a trap for the companion is never laid', options, () => {
   const battle = fight(make('charmander', 25, ['ember']), make('geodude', 25, ['rock-throw', 'self-destruct', 'stealth-rock']));
   assert.equal(foePicks(battle), 'rock-throw');
+});
+
+test('the companion\'s moves are not known until shown, and only a trainer remembers them', options, () => {
+  const vaporeon = () => make('vaporeon', 40, ['water-gun', 'thunderbolt']);
+  const gyarados = () => make('gyarados', 40, ['waterfall']);
+
+  // What anyone can see is a Water type, and Water does little to Gyarados.
+  const wild = fight(vaporeon(), gyarados());
+  const guessed = expectedThreat(wild, /** @type {any} */ (wild.foe), wild.player).threat;
+  wild.takeTurn();
+  assert.ok(wild.seenMoves.size > 0);
+  wild.foe.pokemon.hp = maxHp(wild.foe.pokemon);
+  assert.equal(expectedThreat(wild, /** @type {any} */ (wild.foe), wild.player).threat, guessed, 'a wild Pokémon pays it no mind');
+
+  // A trainer that has watched the Thunderbolt land knows better.
+  const trainer = fight(vaporeon(), gyarados(), true);
+  assert.equal(expectedThreat(trainer, /** @type {any} */ (trainer.foe), trainer.player).threat, guessed);
+  trainer.seenMoves.add('thunderbolt');
+  assert.ok(expectedThreat(trainer, /** @type {any} */ (trainer.foe), trainer.player).threat > guessed * 3);
 });
