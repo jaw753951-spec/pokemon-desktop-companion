@@ -433,6 +433,7 @@
   "stat.notLowered": "{name}'s {stat} was not lowered!",
   "ability.anticipation": "{name} shuddered!",
   "ability.forewarn": "{move} was revealed to be one of the moves {target} knows!",
+  "ability.ruin": "{name}'s {ability} weakened the {stat} of all surrounding Pokémon!",
   "items.takeBack": "Take",
   "battle.failed": "But it failed!",
   "battle.cannotMove": "{name} cannot move!",

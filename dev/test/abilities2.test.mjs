@@ -212,3 +212,18 @@ test("a critical hit is counted for a Farfetch'd", options, () => {
   battle.takeTurn();
   assert.ok((battle.player.marks.crits ?? 0) >= 1);
 });
+
+test('a Ruin ability says so as its holder comes out, and spares a holder of the same', options, () => {
+  const battle = fight(make('wo-chien', 50, ['tackle'], 'tablets-of-ruin'), make('chansey', 50, ['splash']));
+  const mine = battle.opening.filter((entry) => entry.side === 'player');
+  assert.deepEqual(mine.map((entry) => entry.kind), ['ability', 'message']);
+  assert.equal(mine[1].data.key, 'ability.ruin');
+  assert.equal(mine[1].data.stat, 'atk');
+  assert.equal(mine[1].data.ability, 'tablets-of-ruin');
+  assert.equal(battle.ruinFactor(battle.foe, 'atk'), 0.75, 'the other side is weakened');
+  assert.equal(battle.ruinFactor(battle.player, 'atk'), 1, 'its holder is not');
+
+  const both = fight(make('wo-chien', 50, ['tackle'], 'tablets-of-ruin'), make('wo-chien', 50, ['tackle'], 'tablets-of-ruin'));
+  assert.equal(both.ruinFactor(both.foe, 'atk'), 1, 'two Tablets of Ruin leave each other be');
+  assert.equal(both.ruinFactor(both.player, 'atk'), 1);
+});

@@ -583,10 +583,13 @@ export const ABILITIES = {
 
   // ---- The four that weigh on everything but their holder.
 
-  'vessel-of-ruin': { ruin: { stat: 'spa', multiplier: 0.75 } },
-  'sword-of-ruin': { ruin: { stat: 'def', multiplier: 0.75 } },
-  'tablets-of-ruin': { ruin: { stat: 'atk', multiplier: 0.75 } },
-  'beads-of-ruin': { ruin: { stat: 'spd', multiplier: 0.75 } },
+  // The four Ruin abilities say so as their holder comes out — "Ting-Lu's
+  // Vessel of Ruin weakened the Sp. Atk of all surrounding Pokémon!" — and
+  // from then on weigh on that stat of everything but a holder of the same.
+  'vessel-of-ruin': { ruin: { stat: 'spa', multiplier: 0.75 }, start: (ctx) => ctx.say('ability.ruin', { stat: 'spa' }) },
+  'sword-of-ruin': { ruin: { stat: 'def', multiplier: 0.75 }, start: (ctx) => ctx.say('ability.ruin', { stat: 'def' }) },
+  'tablets-of-ruin': { ruin: { stat: 'atk', multiplier: 0.75 }, start: (ctx) => ctx.say('ability.ruin', { stat: 'atk' }) },
+  'beads-of-ruin': { ruin: { stat: 'spd', multiplier: 0.75 }, start: (ctx) => ctx.say('ability.ruin', { stat: 'spd' }) },
 
   // And the one that helps itself to whatever the other side worked for.
   opportunist: { copiesRaises: true },

@@ -1198,6 +1198,15 @@ export class Battle {
       /** The ability a combatant has right now. @param {Combatant} combatant */
       abilitySlug: (combatant) => battle.abilitySlugOf(combatant),
 
+      /**
+       * A line of the ability's own, naming its holder and the ability.
+       * @param {string} key
+       * @param {Record<string, any>} [data]
+       */
+      say(key, data = {}) {
+        log.push({ kind: 'message', side: self.side, data: { key, ability: battle.abilitySlugOf(self), ...data } });
+      },
+
       /** An Anticipation: a shudder if the other side knows something to fear. */
       anticipate() {
         const types = battle.typesOf(self);
@@ -2206,7 +2215,8 @@ export class Battle {
    *
    * The four Ruin abilities each weigh on one stat of everything on the field
    * but their own holder, which is why this is asked of the other side rather
-   * than of the Pokémon whose stat it is.
+   * than of the Pokémon whose stat it is — and not on another holder of the
+   * same one, as the games have it.
    *
    * @param {Combatant} combatant whose stat is being read
    * @param {string} stat
@@ -2214,7 +2224,8 @@ export class Battle {
   ruinFactor(combatant, stat) {
     const other = combatant === this.player ? this.foe : this.player;
     const ruin = other ? this.abilityOf(other)?.ruin : null;
-    return ruin?.stat === stat ? ruin.multiplier : 1;
+    if (ruin?.stat !== stat) return 1;
+    return this.abilityOf(combatant)?.ruin?.stat === stat ? 1 : ruin.multiplier;
   }
 
   /**

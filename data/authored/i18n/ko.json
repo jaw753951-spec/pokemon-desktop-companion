@@ -433,6 +433,7 @@
   "stat.notLowered": "{name}의 {stat}은(는) 떨어지지 않는다!",
   "ability.anticipation": "{name}은(는) 몸을 떨었다!",
   "ability.forewarn": "{target}의 {move}을(를) 간파했다!",
+  "ability.ruin": "{name}의 {ability}에 의해 주위의 {stat}이(가) 약해졌다!",
   "items.takeBack": "가져온다",
   "battle.failed": "하지만 실패했다!",
   "battle.cannotMove": "{name}은(는) 움직일 수 없다!",
