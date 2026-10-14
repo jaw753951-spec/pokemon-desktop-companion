@@ -10,7 +10,7 @@
 import { COMPANION_DAMAGE_TAKEN, COMPANION_WEAKNESS } from '../../shared/constants.mjs';
 import { gameData, itemOf, moveOf, speciesOf, typeEffectiveness } from '../core/data.mjs';
 import { ABILITIES, abilityEffect, abilityName, afterBattle, auraMultiplier, hasSecondary } from './abilities.mjs';
-import { chooseFoeMove } from './foeai.mjs';
+import { chooseFoeMove, goingDownFirst } from './foeai.mjs';
 import { formeFor, heldForme, SIGNATURE_MOVES, signatureType, standingForme, START_FORMES } from './forms.mjs';
 import {
   AFTER_HIT,
@@ -332,6 +332,8 @@ export class Battle {
      * @type {Set<string>}
      */
     this.seenMoves = new Set();
+    /** And the other way round: what the foes have used, which the companion keeps in mind. @type {Set<string>} */
+    this.foeMovesSeen = new Set();
 
     this.player = makeCombatant(player, 'player');
     this.foeQueue = foes.map((foe) => makeCombatant(foe, 'foe'));
@@ -2597,7 +2599,7 @@ export class Battle {
     takeStance(move, moveName);
 
     log.push({ kind: 'move', side: attacker.side, data: reappears ? { move: moveName, reveal: true } : { move: moveName } });
-    if (attacker.side === 'player') this.seenMoves.add(moveName);
+    (attacker.side === 'player' ? this.seenMoves : this.foeMovesSeen).add(moveName);
     const moveLogStart = log.length;
 
     // A move that calls another uses that one in its place: a Metronome, a
@@ -5439,6 +5441,26 @@ function movesWorthUsing(attacker, defender, usable) {
 }
 
 /**
+ * Each move entry's slug, by the entry itself, for the table that is loaded
+ * now. Looking one up by walking the whole table was most of the time a
+ * battle took.
+ *
+ * @type {WeakMap<object, Map<any, string>>}
+ */
+const ENTRY_SLUGS = new WeakMap();
+
+/** @param {any} move */
+function slugOfEntry(move) {
+  const table = gameData().moves;
+  let slugs = ENTRY_SLUGS.get(table);
+  if (!slugs) {
+    slugs = new Map(Object.entries(table).map(([slug, entry]) => [entry, slug]));
+    ENTRY_SLUGS.set(table, slugs);
+  }
+  return slugs.get(move) ?? '';
+}
+
+/**
  * Average damage a move would do, ignoring the random spread — enough to rank
  * moves without rolling dice.
  *
@@ -5448,7 +5470,7 @@ function movesWorthUsing(attacker, defender, usable) {
  */
 export function expectedDamage(attacker, defender, move) {
   // The fixed-damage moves are worth what they take.
-  const slug = Object.entries(gameData().moves).find(([, entry]) => entry === move)?.[0] ?? '';
+  const slug = slugOfEntry(move);
   const fixed = estimatedFixedDamage(attacker, defender, move, slug);
   if (fixed !== null) return fixed * ((move.accuracy ?? 100) / 100);
   const weighed = weightPower(
@@ -5684,6 +5706,19 @@ function conditionHolds(condition, battle, attacker, defender, slug) {
       const behind = battle.field.trickRoom > 0 ? mine > theirs : mine < theirs;
       return condition === 'faster' ? ahead : behind;
     }
+    // This move, as it would land now, looks enough to finish the foe.
+    case 'canFinish': {
+      const move = moveOf(slug);
+      if (!move || move.damageClass === 'status' || cannotTouch(defender, move)) return false;
+      return expectedDamage(attacker, defender, move) >= defender.pokemon.hp;
+    }
+    // The foe looks able to finish the companion this turn, moving first.
+    case 'inDanger':
+      return goingDownFirst(battle, attacker, defender);
+    case 'foePhysical':
+      return battle.stat(defender, 'atk') >= battle.stat(defender, 'spa');
+    case 'foeSpecial':
+      return battle.stat(defender, 'atk') < battle.stat(defender, 'spa');
     case 'trainerBattle':
       return battle.trainerBattle;
     case 'wildBattle':

@@ -1871,7 +1871,13 @@ canvas {
   background: rgba(56, 74, 99, 0.03);
 }
 
-/* The heading, with the one-press setup at its end. */
+/* The heading, with the one-press setup at its end, which counts its trial
+   up while it runs. */
+.auto-tier-head .btn.busy {
+  cursor: progress;
+  opacity: 0.75;
+}
+
 .auto-tier-head {
   display: flex;
   align-items: center;
@@ -1992,6 +1998,7 @@ canvas {
 .cond-dot.cond-basic { background: #9099a1; }
 .cond-dot.cond-turn { background: #4d90d5; }
 .cond-dot.cond-matchup { background: #ab6ac8; }
+.cond-dot.cond-battle { background: #5a5465; }
 .cond-dot.cond-status { background: #e0a030; }
 .cond-dot.cond-rank { background: #63bb5b; }
 .cond-dot.cond-hp { background: #d8443c; }
@@ -2002,7 +2009,9 @@ canvas {
 .modal .panel.cond-picker {
   width: 440px;
   max-width: calc(100vw - 32px);
-  gap: 6px;
+  max-height: calc(100vh - 12px);
+  padding: 7px 10px;
+  gap: 4px;
   text-align: left;
 }
 
@@ -2014,7 +2023,6 @@ canvas {
 .cond-body {
   display: flex;
   gap: 6px;
-  min-height: 128px;
 }
 
 .cond-groups {
@@ -2022,7 +2030,7 @@ canvas {
   width: 92px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
 }
 
 .cond-group {
@@ -2030,7 +2038,7 @@ canvas {
   display: flex;
   align-items: center;
   gap: 5px;
-  padding: 2px 6px;
+  padding: 1px 6px;
   border: 1px solid transparent;
   border-radius: 4px;
   background: transparent;
@@ -2081,8 +2089,8 @@ canvas {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  min-height: 26px;
-  padding: 3px 6px;
+  min-height: 24px;
+  padding: 2px 6px;
   border: 1px solid var(--frame-light);
   border-radius: 4px;
   background: rgba(255, 255, 255, 0.6);
@@ -2110,7 +2118,7 @@ canvas {
 }
 
 .cond-help {
-  min-height: 30px;
+  min-height: 28px;
   margin: 0;
   padding: 4px 6px;
   border-radius: 4px;

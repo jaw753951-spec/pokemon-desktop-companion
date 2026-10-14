@@ -132,19 +132,21 @@ export function sizeUp(battle, attacker, defender, usable) {
 }
 
 /**
- * How hard the companion can be expected to hit back, as a share of the
- * health the attacker has left, and with which kind of attack.
+ * How hard the other side can be expected to hit back, as a share of the
+ * health the one asking has left, and with which kind of attack.
  *
- * Nothing on the other side is told the companion's moves. What anyone can
- * see is its types and its build, so the guess is an attack of its own type
- * from whichever of its attacking stats is the stronger, as strong as a
- * Pokémon of its level tends to have. A trainer also remembers what it has
- * watched the companion use and weighs those moves too — so a Water type's
- * Thunderbolt, once shown, is not forgotten for the rest of the battle.
+ * Nobody is told the other side's moves. What anyone can see is its types
+ * and its build, so the guess is an attack of its own type from whichever of
+ * its attacking stats is the stronger, as strong as a Pokémon of its level
+ * tends to have. Moves seen used are weighed as well: a trainer remembers
+ * what it has watched the companion use, for the rest of the battle — so a
+ * Water type's Thunderbolt, once shown, is not forgotten — and the
+ * companion's own auto-battle remembers what the foes have used on it. A
+ * wild Pokémon pays no such attention.
  *
  * @param {import('./battle.mjs').Battle} battle
  * @param {import('./battle.mjs').Combatant} attacker the one weighing it up
- * @param {import('./battle.mjs').Combatant} defender the companion
+ * @param {import('./battle.mjs').Combatant} defender the one that would hit back
  * @returns {{threat: number, threatClass: string|null}}
  */
 export function expectedThreat(battle, attacker, defender) {
@@ -158,11 +160,10 @@ export function expectedThreat(battle, attacker, defender) {
     accuracy: 100,
     damageClass: physical ? 'physical' : 'special',
   }));
-  if (battle.trainerBattle) {
-    for (const slug of battle.seenMoves) {
-      const move = moveOf(slug);
-      if (move && move.damageClass !== 'status') moves.push(move);
-    }
+  const remembered = defender.side === 'player' ? (battle.trainerBattle ? battle.seenMoves : null) : battle.foeMovesSeen;
+  for (const slug of remembered ?? []) {
+    const move = moveOf(slug);
+    if (move && move.damageClass !== 'status') moves.push(move);
   }
 
   let threat = 0;
@@ -171,13 +172,29 @@ export function expectedThreat(battle, attacker, defender) {
   const own = Math.max(1, attacker.pokemon.hp);
   for (const move of moves) {
     if (cannotTouch(attacker, move)) continue;
-    const share = expectedDamage(defender, attacker, move) / own;
+    const armour = companionArmour(attacker, typeEffectiveness(move.type, battle.typesOf(attacker)));
+    const share = (expectedDamage(defender, attacker, move) * armour) / own;
     if (share > threat) {
       threat = share;
       threatClass = move.damageClass;
     }
   }
   return { threat, threatClass };
+}
+
+/**
+ * Whether the other side looks able to knock this one out this turn, and to
+ * move first doing it — on Speed, a Trick Room turning it round.
+ *
+ * @param {import('./battle.mjs').Battle} battle
+ * @param {import('./battle.mjs').Combatant} attacker
+ * @param {import('./battle.mjs').Combatant} defender
+ */
+export function goingDownFirst(battle, attacker, defender) {
+  const mine = battle.speedOf(attacker);
+  const theirs = battle.speedOf(defender);
+  const outsped = battle.field.trickRoom > 0 ? theirs < mine : theirs > mine;
+  return outsped && expectedThreat(battle, attacker, defender).threat >= 1;
 }
 
 /**

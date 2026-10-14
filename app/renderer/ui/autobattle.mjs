@@ -13,12 +13,12 @@
  * Everything here edits the policy the battle engine reads, and the moves'
  * own order, so the effect of a change is immediate.
  */
-import { moveOf } from '../core/data.mjs';
+import { gameData, moveOf } from '../core/data.mjs';
 import { button, el, scrollable, setChildren } from '../core/dom.mjs';
 import { name as localized, t } from '../core/i18n.mjs';
 import { moveCondition, secondCondition } from '../engine/battle.mjs';
-import { suggestPolicy } from '../engine/autoplan.mjs';
-import { confirm, mountModal } from './dialog.mjs';
+import { tunePolicy } from '../engine/autotune.mjs';
+import { describe, mountModal } from './dialog.mjs';
 import { typeChip } from './typechip.mjs';
 
 /**
@@ -33,7 +33,8 @@ import { typeChip } from './typechip.mjs';
 const CONDITION_GROUPS = [
   { key: 'basic', conditions: ['never', 'always'] },
   { key: 'turn', conditions: ['firstTurn', 'foeEntered', 'oncePerBattle', 'everyTwoTurns', 'everyThreeTurns', 'everyFourTurns'] },
-  { key: 'matchup', conditions: ['superEffective', 'faster', 'slower', 'trainerBattle', 'wildBattle'] },
+  { key: 'matchup', conditions: ['canFinish', 'inDanger', 'superEffective', 'faster', 'slower'] },
+  { key: 'battle', conditions: ['foePhysical', 'foeSpecial', 'trainerBattle', 'wildBattle'] },
   { key: 'status', conditions: ['noStatus', 'foeStatus', 'selfStatus', 'noField', 'hasField'] },
   { key: 'rank', conditions: ['rankUp', 'rankDown', 'foeRankUp', 'foeRankDown'] },
   { key: 'hp', conditions: ['hpFull', 'hpAboveHalf', 'hpTwoThirds', 'hpHalf', 'hpThird', 'hpQuarter'] },
@@ -71,13 +72,10 @@ export function autoBattleScene({ session, onClose }) {
             el('div.auto-tier-head', {}, [
               el('div.section-title', { text: t(state.moving === null ? 'auto.moves' : 'auto.moveTarget') }),
               el('span.spacer'),
-              button(t('auto.optimize'), async () => {
-                app.audio.blip('select');
-                if (!(await confirm(app, t('auto.optimizeConfirm')))) return;
-                optimize(session);
+              optimizeButton(app, session, () => {
                 state.moving = null;
                 rebuild();
-              }, { className: 'small', title: t('auto.optimizeHint') }),
+              }),
             ]),
             el('div.auto-move-row.auto-move-head', {}, [
               el('span.auto-move-head-move'),
@@ -107,14 +105,63 @@ export function autoBattleScene({ session, onClose }) {
 }
 
 /**
- * Set the companion's moves up as `suggestPolicy` would: each one's two
- * conditions, and their order. Other Pokémon's moves keep what they had.
+ * The one-press setup: a trial run against what the area holds (see
+ * `autotune.mjs`), then what it found, to take or leave. The button counts
+ * the trial up while it runs, and the screen stays usable meanwhile.
+ *
+ * @param {import('../core/app.mjs').App} app
+ * @param {import('../engine/session.mjs').Session} session
+ * @param {() => void} applied
+ */
+function optimizeButton(app, session, applied) {
+  let running = false;
+  const node = button(t('auto.optimize'), async () => {
+    if (running) return;
+    running = true;
+    app.audio.blip('select');
+    node.classList.add('busy');
+    const pokemon = session.active;
+    try {
+      const result = await tunePolicy({
+        pokemon,
+        area: session.area,
+        classes: gameData().trainerClasses ?? [],
+        current: session.autoBattle,
+      }, {
+        onProgress: (share) => {
+          node.textContent = t('auto.optimizing', { percent: Math.round(share * 100) });
+        },
+        pause: () => new Promise((resolve) => setTimeout(resolve, 0)),
+      });
+      const percent = (/** @type {{wins: number, battles: number}} */ tally) => Math.round((tally.wins / tally.battles) * 100);
+      const take = await describe(app, {
+        title: t('auto.optimizeTitle'),
+        subtitle: t('auto.optimizeTrial', { battles: result.after.battles, area: localized(session.area?.name, session.area?.id ?? '') }),
+        body: t('auto.optimizeResult', { before: percent(result.before), after: percent(result.after) }),
+        action: { label: t('auto.apply') },
+      });
+      if (take && session.active === pokemon) {
+        apply(session, result);
+        applied();
+      }
+    } finally {
+      running = false;
+      node.classList.remove('busy');
+      node.textContent = t('auto.optimize');
+    }
+  }, { className: 'small', title: t('auto.optimizeHint') });
+  return node;
+}
+
+/**
+ * Give the companion's moves the conditions and the order a plan names.
+ * Other Pokémon's moves keep what they had.
  *
  * @param {import('../engine/session.mjs').Session} session
+ * @param {{order: string[], moves: Record<string, string>, second: Record<string, string>}} plan
  */
-function optimize(session) {
+function apply(session, plan) {
   const pokemon = session.active;
-  const plan = suggestPolicy(pokemon);
   const policy = session.autoBattle;
   policy.moves = { ...(policy.moves ?? {}), ...plan.moves };
   policy.second = { ...(policy.second ?? {}), ...plan.second };

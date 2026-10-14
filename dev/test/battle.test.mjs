@@ -379,6 +379,33 @@ test('the finer conditions: once a battle, the foe just out, speed, the kind of 
   assert.equal(pick(field), 'growl');
 });
 
+test('a move can wait for a knock-out, for the danger of going down first, or for the kind of attacker the foe is', options, () => {
+  const setUp = (condition, foeMoves = ['tackle']) => new Battle({
+    rng: new Rng(2),
+    player: makeFixed(CHARIZARD, 50, ['quick-attack', 'flamethrower']),
+    foes: [makeFixed(VENUSAUR, 50, foeMoves)],
+    policy: { ...defaultAutoBattle(), moves: { 'quick-attack': condition } },
+  });
+  const pick = (/** @type {Battle} */ battle) => battle.chooseMove(battle.player, /** @type {any} */ (battle.foe));
+
+  const finish = setUp('canFinish');
+  assert.equal(pick(finish), 'flamethrower');
+  finish.foe.pokemon.hp = 5;
+  assert.equal(pick(finish), 'quick-attack');
+
+  const danger = setUp('inDanger');
+  assert.equal(pick(danger), 'flamethrower');
+  danger.player.pokemon.hp = 1;
+  danger.foe.stages.spe = 6;
+  assert.equal(pick(danger), 'quick-attack', 'slower, and one hit from going down');
+  danger.foe.stages.spe = -6;
+  assert.equal(pick(danger), 'flamethrower', 'it moves first anyway');
+
+  // Venusaur leans special.
+  assert.equal(pick(setUp('foeSpecial')), 'quick-attack');
+  assert.equal(pick(setUp('foePhysical')), 'flamethrower');
+});
+
 test('a move can wait for the foe to be weak to it', options, () => {
   const pick = (foe, moves = ['slash', 'ember', 'present']) => {
     const player = makeFixed(CHARIZARD, 50, moves);

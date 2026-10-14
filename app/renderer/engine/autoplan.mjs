@@ -1,19 +1,22 @@
 /**
  * A suggested auto-battle setting for one Pokémon's moves.
  *
- * The auto-battle screen's one-press setup: every move is given a first and a
- * second condition from what it is, and the moves are put in an order that
- * lets the urgent ones go first. It is a starting point the player can then
- * adjust, not a solver — it reads only the moves themselves and the Pokémon
- * that knows them, never a particular foe.
+ * The auto-battle screen's one-press setup works in two steps. This module is
+ * the first: every move is given a first and a second condition from what it
+ * is, and the moves are put in an order that lets the urgent ones go first.
+ * It reads only the moves and the Pokémon that knows them. The second step
+ * (`autotune.mjs`) tries the alternatives each move is offered here against
+ * the Pokémon the companion is actually meeting, and keeps what wins more.
  *
- * In brief: attacks are left to the hardest-hit rule, a priority attack is
- * kept for finishing, a heal waits for half health, a sleep or a paralysis
- * goes on a foe still healthy, a boost that helps its own attacks is used
- * once a battle, and the field moves that pay off over several turns are
- * kept for trainers, whose battles last long enough for them. What would
- * waste a turn in a battle of one against one — a Growl, a Protect, a trap
- * for a Pokémon that never switches in — is switched off.
+ * In brief: attacks are left to the hardest-hit rule; a priority attack is
+ * kept for striking before going down, or for a sure finish; a heal waits for
+ * half health; a sleep or a paralysis goes on a foe still healthy; a boost
+ * that feeds its own attacks is used once a battle; a Reflect waits for a
+ * physical attacker and a Light Screen for a special one; and the field
+ * moves that pay off over several turns are kept for trainers, whose battles
+ * last long enough for them. What would waste a turn in a battle of one
+ * against one — a Growl, a Protect, a boost that feeds nothing — is
+ * switched off, unless the trial run finds it earns its turn after all.
  */
 import { moveOf } from '../core/data.mjs';
 import { categoryOf, FIRST_TURN_ONLY } from './battle.mjs';
@@ -41,10 +44,43 @@ const HELPS = {
 const RANK = { heal: 0, disable: 1, wear: 2, boost: 3, field: 4, finisher: 5, attack: 6, off: 9 };
 
 /**
+ * The first-and-second pairs each kind of move is tried with, the suggestion
+ * first. A pair is `[first, second]`.
+ *
+ * @type {Record<string, Array<[string, string]>>}
+ */
+const ALTERNATIVES = {
+  attack: [['always', 'never'], ['never', 'never']],
+  priority: [['inDanger', 'canFinish'], ['canFinish', 'always'], ['inDanger', 'always'], ['always', 'never']],
+  selfdestruct: [['inDanger', 'never'], ['hpQuarter', 'never'], ['never', 'never']],
+  firstTurnOnly: [['foeEntered', 'never'], ['never', 'never']],
+  heal: [['hpHalf', 'never'], ['hpThird', 'never'], ['hpTwoThirds', 'never'], ['never', 'never']],
+  rest: [['hpThird', 'never'], ['hpHalf', 'never'], ['never', 'never']],
+  disable: [['foeHpAboveHalf', 'never'], ['noStatus', 'never'], ['foeEntered', 'never'], ['never', 'never']],
+  wear: [['foeHpAboveHalf', 'never'], ['foeHpFull', 'never'], ['noStatus', 'never'], ['never', 'never']],
+  boost: [['oncePerBattle', 'never'], ['foeEntered', 'never'], ['hpFull', 'never'], ['never', 'never']],
+  screenPhysical: [['foePhysical', 'never'], ['trainerBattle', 'never'], ['never', 'never']],
+  screenSpecial: [['foeSpecial', 'never'], ['trainerBattle', 'never'], ['never', 'never']],
+  field: [['trainerBattle', 'never'], ['foeEntered', 'never'], ['oncePerBattle', 'never'], ['never', 'never']],
+  off: [['never', 'never'], ['oncePerBattle', 'never'], ['foeEntered', 'never']],
+  fixedOff: [['never', 'never']],
+};
+
+/**
+ * @typedef {Object} MovePlan
+ * @property {string} slug
+ * @property {number} rank where it goes in the order
+ * @property {number} power
+ * @property {string} first
+ * @property {string} second
+ * @property {Array<[string, string]>} alternatives the pairs worth trying, its own first
+ */
+
+/**
  * @param {import('./pokemon.mjs').Pokemon} pokemon
- * @returns {{order: string[], moves: Record<string, string>, second: Record<string, string>}}
- *   the moves in their suggested order, and each one's first and second
- *   condition
+ * @returns {{order: string[], moves: Record<string, string>, second: Record<string, string>, plans: MovePlan[]}}
+ *   the moves in their suggested order, each one's first and second
+ *   condition, and the plan behind each
  */
 export function suggestPolicy(pokemon) {
   const slugs = pokemon.moves.map((slot) => slot.move).filter((slug) => moveOf(slug));
@@ -56,69 +92,77 @@ export function suggestPolicy(pokemon) {
   // With both kinds of attack, the one its build favours is what a boost should feed.
   const fed = classes.size > 1 ? new Set([leaning]) : classes;
 
-  /** @type {Array<{slug: string, rank: number, power: number, first: string, second: string}>} */
-  const plan = slugs.map((slug) => ({ slug, power: moveOf(slug).power ?? 0, ...judge(slug, moveOf(slug), fed, attackTypes) }));
-  plan.sort((a, b) => a.rank - b.rank || b.power - a.power);
+  /** @type {MovePlan[]} */
+  const plans = slugs.map((slug) => {
+    const move = moveOf(slug);
+    const { rank, kind } = judge(slug, move, fed, attackTypes);
+    // An attack is only worth switching off with another attack to fall back on.
+    const tries = kind === 'attack' && attacks.length < 2 ? ALTERNATIVES.attack.slice(0, 1) : ALTERNATIVES[kind];
+    const [first, second] = tries[0];
+    return { slug, rank, power: move.power ?? 0, first, second, alternatives: tries };
+  });
+  plans.sort((a, b) => a.rank - b.rank || b.power - a.power);
+  return { ...settingsOf(plans), plans };
+}
 
+/**
+ * The order and the two condition tables a list of plans comes to.
+ *
+ * @param {MovePlan[]} plans
+ */
+export function settingsOf(plans) {
   /** @type {Record<string, string>} */
   const moves = {};
   /** @type {Record<string, string>} */
   const second = {};
-  for (const entry of plan) {
-    moves[entry.slug] = entry.first;
-    second[entry.slug] = entry.second;
+  for (const plan of plans) {
+    moves[plan.slug] = plan.first;
+    second[plan.slug] = plan.second;
   }
-  return { order: plan.map((entry) => entry.slug), moves, second };
+  return { order: plans.map((plan) => plan.slug), moves, second };
 }
 
 /**
- * The place and the two conditions for one move.
+ * What kind of move this is, for its place in the order and the conditions
+ * it is tried with.
  *
  * @param {string} slug
  * @param {any} move
  * @param {Set<string>} fed the attack classes a boost would feed
  * @param {Set<string>} attackTypes
- * @returns {{rank: number, first: string, second: string}}
+ * @returns {{rank: number, kind: keyof typeof ALTERNATIVES}}
  */
 function judge(slug, move, fed, attackTypes) {
-  const off = { rank: RANK.off, first: 'never', second: 'never' };
-  if (neverAutomatic(slug) || PROTECT_MOVES[slug] || RETALIATES.has(slug) || slug === 'bide') return off;
+  if (neverAutomatic(slug) || RETALIATES.has(slug) || slug === 'bide') return { rank: RANK.off, kind: 'fixedOff' };
+  if (PROTECT_MOVES[slug]) return { rank: RANK.off, kind: 'off' };
 
   if (move.damageClass !== 'status') {
-    if (!move.power && !move.rules?.damage && !move.rules?.ohko) {
-      // A fixed-damage move without a number on it (a Super Fang, an
-      // Endeavor) is still an attack; the hardest-hit rule weighs it.
-      return { rank: RANK.attack, first: 'always', second: 'never' };
-    }
-    if (FIRST_TURN_ONLY.has(slug)) return { rank: RANK.finisher, first: 'foeEntered', second: 'never' };
-    if (move.rules?.selfdestruct) return { rank: RANK.finisher, first: 'hpQuarter', second: 'never' };
-    // A priority attack is weaker by design: kept to finish a foe off before
-    // it can answer, and otherwise one more attack among the rest.
-    if ((move.priority ?? 0) > 0) return { rank: RANK.finisher, first: 'foeHpQuarter', second: 'always' };
-    return { rank: RANK.attack, first: 'always', second: 'never' };
+    if (FIRST_TURN_ONLY.has(slug)) return { rank: RANK.finisher, kind: 'firstTurnOnly' };
+    if (move.rules?.selfdestruct) return { rank: RANK.finisher, kind: 'selfdestruct' };
+    // A priority attack is weaker by design: kept to strike before going
+    // down, or to finish a foe before it can answer.
+    if ((move.priority ?? 0) > 0) return { rank: RANK.finisher, kind: 'priority' };
+    return { rank: RANK.attack, kind: 'attack' };
   }
 
   switch (categoryOf(move)) {
     case 'heal':
-      return { rank: RANK.heal, first: slug === 'rest' ? 'hpThird' : 'hpHalf', second: 'never' };
+      return { rank: RANK.heal, kind: slug === 'rest' ? 'rest' : 'heal' };
     case 'status': {
       const ailment = move.meta?.ailment ?? 'none';
       // Only on a foe with the health left to make it worth a turn; one
       // already suffering is passed over by the battle itself.
-      if (DISABLING.has(ailment)) return { rank: RANK.disable, first: 'foeHpAboveHalf', second: 'never' };
-      if (WEARING.has(ailment)) return { rank: RANK.wear, first: 'foeHpAboveHalf', second: 'never' };
-      return off;
+      if (DISABLING.has(ailment)) return { rank: RANK.disable, kind: 'disable' };
+      if (WEARING.has(ailment)) return { rank: RANK.wear, kind: 'wear' };
+      return { rank: RANK.off, kind: 'off' };
     }
     case 'stat': {
-      const changes = move.statChanges ?? [];
-      const own = changes.filter((change) => change.self ?? change.change > 0);
+      const own = (move.statChanges ?? []).filter((change) => change.self ?? change.change > 0);
       const feeds = own.some((change) =>
         change.change > 0 && ((change.stat === 'atk' && fed.has('physical')) || (change.stat === 'spa' && fed.has('special'))));
-      // A boost that makes its own attacks hit harder, once a battle. One
-      // that only toughens it, or only weakens the foe, costs a turn a
-      // short fight does not have.
-      if (feeds) return { rank: RANK.boost, first: 'oncePerBattle', second: 'never' };
-      return off;
+      // A boost that makes its own attacks hit harder. One that only toughens
+      // it, or only weakens the foe, costs a turn a short fight does not have.
+      return feeds ? { rank: RANK.boost, kind: 'boost' } : { rank: RANK.off, kind: 'off' };
     }
     default:
       return judgeField(slug, attackTypes);
@@ -128,17 +172,19 @@ function judge(slug, move, fed, attackTypes) {
 /**
  * @param {string} slug
  * @param {Set<string>} attackTypes
+ * @returns {{rank: number, kind: keyof typeof ALTERNATIVES}}
  */
 function judgeField(slug, attackTypes) {
-  const off = { rank: RANK.off, first: 'never', second: 'never' };
   const set = FIELD_MOVES[slug];
+  const off = { rank: RANK.off, kind: /** @type {const} */ ('off') };
   if (!set) return off;
-  const forTrainers = { rank: RANK.field, first: 'trainerBattle', second: 'never' };
+  if (set.screen === 'physical') return { rank: RANK.field, kind: 'screenPhysical' };
+  if (set.screen === 'special') return { rank: RANK.field, kind: 'screenSpecial' };
   // A trap is laid for the foe's next Pokémon, which only a trainer has.
-  if (set.hazard || set.screen) return forTrainers;
-  // A Trick Room helps or hurts by a Speed comparison no move list can make.
+  if (set.hazard || set.screen || set.tailwind) return { rank: RANK.field, kind: 'field' };
+  // A Trick Room helps or hurts by a Speed comparison no move list can make;
+  // the trial run is left to find out.
   if (set.room) return off;
-  if (set.tailwind) return forTrainers;
   const helped = HELPS[set.weather ?? set.terrain ?? ''] ?? [];
-  return helped.some((type) => attackTypes.has(type)) ? forTrainers : off;
+  return helped.some((type) => attackTypes.has(type)) ? { rank: RANK.field, kind: 'field' } : off;
 }
