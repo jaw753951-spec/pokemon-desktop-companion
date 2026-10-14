@@ -7,7 +7,7 @@
  * of the turn. Battles are fought automatically, so the engine produces a list
  * of log entries per turn which the battle scene plays back as animation.
  */
-import { COMPANION_DAMAGE_TAKEN, COMPANION_WEAKNESS } from '../../shared/constants.mjs';
+import { COMPANION_DAMAGE_TAKEN, COMPANION_WEAKNESS, FIRST_RUN_EXPERIENCE_BONUS, FIRST_RUN_EXPERIENCE_UNTIL } from '../../shared/constants.mjs';
 import { gameData, itemOf, moveOf, speciesOf, typeEffectiveness } from '../core/data.mjs';
 import { ABILITIES, abilityEffect, abilityName, afterBattle, auraMultiplier, hasSecondary } from './abilities.mjs';
 import { chooseFoeMove } from './foeai.mjs';
@@ -303,9 +303,10 @@ export class Battle {
    *   trainerBattle?: boolean,
    *   weather?: string|null,
    *   environment?: string|null,
+   *   firstRun?: boolean,
    * }} options
    */
-  constructor({ rng, player, foes, policy, items = null, trainerBattle = false, weather = null, environment = null }) {
+  constructor({ rng, player, foes, policy, items = null, trainerBattle = false, weather = null, environment = null, firstRun = false }) {
     this.rng = rng;
     this.policy = policy;
     /**
@@ -325,6 +326,8 @@ export class Battle {
     /** Whether the companion's turn went on a run that failed. */
     this.playerSpent = false;
     this.trainerBattle = trainerBattle;
+    /** Whether the save is on its first run, which pays more experience early on. */
+    this.firstRun = firstRun;
     /**
      * The companion's moves the other side has watched it use. A trainer
      * keeps them in mind for the rest of the battle, whichever of their
@@ -5191,12 +5194,14 @@ export class Battle {
   awardExperience(defeated, log) {
     if (this.player.pokemon.hp <= 0) return;
     const species = speciesOf(defeated.pokemon.speciesId);
+    // The first run's early levels pay more (see `FIRST_RUN_EXPERIENCE_BONUS`).
+    const early = this.firstRun && levelOf(this.player.pokemon) < FIRST_RUN_EXPERIENCE_UNTIL ? FIRST_RUN_EXPERIENCE_BONUS : 1;
     const reward = gainFromDefeat(
       this.player.pokemon,
       { baseStats: species.stats, baseExp: species.baseExp, level: levelOf(defeated.pokemon) },
       {
         trainerBattle: this.trainerBattle,
-        experienceMultiplier: heldPassive(this.player.pokemon, 'experience')?.multiplier ?? 1,
+        experienceMultiplier: (heldPassive(this.player.pokemon, 'experience')?.multiplier ?? 1) * early,
       },
     );
     this.rewards.push(reward);

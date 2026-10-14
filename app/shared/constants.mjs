@@ -253,6 +253,15 @@ export const BADGE_LEVELS = [12, 20, 28, 36, 44, 52, 60, 68];
 export const FIRST_RUN_LEADER_STATS = [400, 450, 500];
 
 /**
+ * How much more experience a battle pays on the save's first run, while the
+ * companion is below `FIRST_RUN_EXPERIENCE_UNTIL`: half as much again, as a
+ * Lucky Egg does, and on top of one. The first three badges are the climb a
+ * companion makes alone from level 5; past them it is the usual pace.
+ */
+export const FIRST_RUN_EXPERIENCE_BONUS = 1.5;
+export const FIRST_RUN_EXPERIENCE_UNTIL = 30;
+
+/**
  * How far above a badge's level the leader's ace stands, and how far below
  * each Pokémon the one sent out before it.
  */

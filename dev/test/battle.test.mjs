@@ -17,6 +17,7 @@ import {
 import { createPokemon, maxHp, setMove } from '../../app/renderer/engine/pokemon.mjs';
 import { WEATHER } from '../../app/renderer/engine/field.mjs';
 import { defaultAutoBattle, normalizeAutoBattle } from '../../app/renderer/engine/session.mjs';
+import { FIRST_RUN_EXPERIENCE_BONUS, FIRST_RUN_EXPERIENCE_UNTIL } from '../../app/shared/constants.mjs';
 import { computeStat, experienceForLevel, levelForExperience, stageMultiplier } from '../../app/renderer/engine/stats.mjs';
 
 const ready = await useRealGameData();
@@ -1106,4 +1107,26 @@ test('a Damp keeps an Explosion from going off, and the user standing', options,
   const log = battle.takeTurn();
   assert.ok(battle.player.pokemon.hp > 0);
   assert.ok(log.some((entry) => entry.kind === 'failed' && entry.side === 'player'));
+});
+
+test('on the first run a battle pays more experience until level 30', options, () => {
+  /** @param {number} level @param {boolean} firstRun */
+  const paid = (level, firstRun) => {
+    const battle = new Battle({
+      rng: new Rng(1),
+      player: makeFixed(CHARIZARD, level),
+      foes: [makeFixed(VENUSAUR, level)],
+      policy: defaultAutoBattle(),
+      firstRun,
+    });
+    /** @type {any[]} */
+    const log = [];
+    battle.awardExperience(battle.foe, log);
+    return log.find((entry) => entry.kind === 'experience').data.amount;
+  };
+  for (const level of [10, 29]) {
+    assert.equal(paid(level, true), Math.round(paid(level, false) * FIRST_RUN_EXPERIENCE_BONUS), `level ${level}`);
+  }
+  assert.equal(paid(FIRST_RUN_EXPERIENCE_UNTIL, true), paid(FIRST_RUN_EXPERIENCE_UNTIL, false), 'level 30 is the usual pace');
+  assert.equal(paid(50, true), paid(50, false));
 });

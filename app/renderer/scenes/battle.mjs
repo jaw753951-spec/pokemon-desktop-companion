@@ -160,6 +160,7 @@ export function battleScene({ session, foes, trainer = null, leader = false, bac
       throw: (slug, pokemon, choice) => throwItem(session, slug, pokemon, choice),
     },
     trainerBattle: Boolean(trainer),
+    firstRun: session.firstRun,
     // The sky the place is under, unless the caller names one of its own.
     weather: weather === undefined ? weatherForArea(session.area) : weather,
     // And the ground, for a Camouflage.
