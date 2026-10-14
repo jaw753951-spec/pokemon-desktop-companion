@@ -17,7 +17,8 @@ import { moveOf } from '../core/data.mjs';
 import { button, el, scrollable, setChildren } from '../core/dom.mjs';
 import { name as localized, t } from '../core/i18n.mjs';
 import { moveCondition, secondCondition } from '../engine/battle.mjs';
-import { mountModal } from './dialog.mjs';
+import { suggestPolicy } from '../engine/autoplan.mjs';
+import { confirm, mountModal } from './dialog.mjs';
 import { typeChip } from './typechip.mjs';
 
 /**
@@ -67,7 +68,17 @@ export function autoBattleScene({ session, onClose }) {
       const rebuild = () => {
         setChildren(body, [
           el('div.auto-tier', {}, [
-            el('div.section-title', { text: t(state.moving === null ? 'auto.moves' : 'auto.moveTarget') }),
+            el('div.auto-tier-head', {}, [
+              el('div.section-title', { text: t(state.moving === null ? 'auto.moves' : 'auto.moveTarget') }),
+              el('span.spacer'),
+              button(t('auto.optimize'), async () => {
+                app.audio.blip('select');
+                if (!(await confirm(app, t('auto.optimizeConfirm')))) return;
+                optimize(session);
+                state.moving = null;
+                rebuild();
+              }, { className: 'small', title: t('auto.optimizeHint') }),
+            ]),
             el('div.auto-move-row.auto-move-head', {}, [
               el('span.auto-move-head-move'),
               el('span.auto-move-head-rank', { text: t('auto.first') }),
@@ -93,6 +104,26 @@ export function autoBattleScene({ session, onClose }) {
       ]);
     },
   };
+}
+
+/**
+ * Set the companion's moves up as `suggestPolicy` would: each one's two
+ * conditions, and their order. Other Pokémon's moves keep what they had.
+ *
+ * @param {import('../engine/session.mjs').Session} session
+ */
+function optimize(session) {
+  const pokemon = session.active;
+  const plan = suggestPolicy(pokemon);
+  const policy = session.autoBattle;
+  policy.moves = { ...(policy.moves ?? {}), ...plan.moves };
+  policy.second = { ...(policy.second ?? {}), ...plan.second };
+  const bySlug = new Map(pokemon.moves.map((slot) => [slot.move, slot]));
+  const ordered = plan.order.map((slug) => bySlug.get(slug)).filter(Boolean);
+  // Anything the plan did not name (a move the data does not know) stays at the end.
+  const rest = pokemon.moves.filter((slot) => !plan.order.includes(slot.move));
+  // In place, as the swap on this screen does, for anything holding the list.
+  pokemon.moves.splice(0, pokemon.moves.length, ...ordered, ...rest);
 }
 
 /**

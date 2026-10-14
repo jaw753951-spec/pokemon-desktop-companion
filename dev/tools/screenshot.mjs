@@ -76,7 +76,9 @@ const STEPS = [
   { name: '14-auto-battle', script: 'clickText("button.tab", ["포켓몬", "Pokémon"]) && await wait(250) && clickText("button", ["자동전투", "Auto-battle"])' },
   // The list behind one of those conditions, which is where a kind is switched
   // off as well as gated.
-  { name: '15-auto-condition', script: 'clickText("button.chip", ["전투 시작 시", "On the first turn"]) && await wait(400)' },
+  // The one-press setup, taken: its question answered yes.
+  { name: '14b-auto-optimized', script: 'clickText("button", ["자동 최적화", "Optimize"]) && await wait(300) && clickText(".modal button", ["예", "Yes"])' },
+  { name: '15-auto-condition', script: 'clickText("button.auto-condition", []) && await wait(400)' },
   { name: '16-pokedex', script: 'closeAll() && clickText("button", ["도감", "Pokédex"])' },
   // Charmander, because the starter is the one species this run has certainly
   // caught: an entry only seen shows a silhouette and no description.
