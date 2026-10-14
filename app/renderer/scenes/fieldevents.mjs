@@ -373,7 +373,7 @@ function startBerry(session, spawnAt) {
     .filter(([, item]) => item.pocket === 'berries' && item.sprite)
     .map(([slug]) => slug);
   const berry = session.rng.pick(berries.length ? berries : ['oran-berry']);
-  const count = session.rng.int(BERRY_HARVEST.min, BERRY_HARVEST.max);
+  const count = firstRunSupply(session, session.rng.int(BERRY_HARVEST.min, BERRY_HARVEST.max));
 
   const trees = gameData().actors?.props?.berryTrees ?? {};
   const tree = treeFor(berry, trees);
@@ -502,7 +502,7 @@ function startBall(session, spawnAt) {
   // Now and then, the item the travelling legendary is waiting on, or a key
   // item that leads to a rare Pokémon.
   const item = signatureFind(session) ?? callingFind(session) ?? (pool.length ? session.rng.pick(pool) : 'poke-ball');
-  const count = foundCount(session.rng, item);
+  const count = foundCount(session.rng, item, session.firstRun);
 
   const state = {
     kind: 'ball',
@@ -551,16 +551,59 @@ export const FOUND_BALLS = [
 ];
 
 /**
- * How many of an item one find on the road is.
+ * How many of an item one find on the road is: on the save's first run, more
+ * of the everyday supplies (see `FIRST_RUN_SUPPLY_BONUS`) — but a Master Ball
+ * is still found alone.
  *
  * @param {import('../core/rng.mjs').Rng} rng
  * @param {string} slug
+ * @param {boolean} [firstRun]
  */
-export function foundCount(rng, slug) {
-  if (itemOf(slug)?.pocket !== 'pokeballs') return 1;
+export function foundCount(rng, slug, firstRun = false) {
+  const more = (/** @type {number} */ count) => (firstRun && isSupply(slug) ? withSupplyBonus(count) : count);
+  if (itemOf(slug)?.pocket !== 'pokeballs') return more(1);
   const price = priceOf(slug) ?? Infinity;
   const band = FOUND_BALLS.find((entry) => price <= entry.upTo) ?? FOUND_BALLS[FOUND_BALLS.length - 1];
-  return rng.int(band.min, band.max);
+  const count = rng.int(band.min, band.max);
+  return band.upTo === Infinity ? count : more(count);
+}
+
+/**
+ * How much more of the everyday supplies — the healing items, the balls and
+ * the berries — the save's first run comes by, from the road and the
+ * Pokémon Center alike: half as much again, rounded up, so a find of one is
+ * two. The first trip is the one with no money put by and no idea yet what
+ * the road costs; after a champion it is the usual amounts.
+ */
+export const FIRST_RUN_SUPPLY_BONUS = 1.5;
+
+/** The medicine that counts as a supply: what restores HP, cures, revives or restores PP. */
+const SUPPLY_MEDICINE = new Set(['healing', 'status-cures', 'revival', 'pp-recovery']);
+
+/**
+ * Whether an item is one of the everyday supplies the first run finds more
+ * of. A mint, a Rare Candy or an Ability Capsule is medicine but not one.
+ *
+ * @param {string} slug
+ */
+export function isSupply(slug) {
+  const item = itemOf(slug);
+  if (!item) return false;
+  if (item.pocket === 'pokeballs' || item.pocket === 'berries') return true;
+  return item.pocket === 'medicine' && SUPPLY_MEDICINE.has(item.category);
+}
+
+/** @param {number} count */
+const withSupplyBonus = (count) => Math.ceil(count * FIRST_RUN_SUPPLY_BONUS);
+
+/**
+ * A count of supplies, with the first run's bonus if this is it.
+ *
+ * @param {import('../engine/session.mjs').Session} session
+ * @param {number} count
+ */
+function firstRunSupply(session, count) {
+  return session.firstRun ? withSupplyBonus(count) : count;
 }
 
 /**
@@ -827,9 +870,11 @@ function restAndResupply(session, app) {
 
   const level = levelOf(session.active);
   const supply = SUPPLIES.find((entry) => level < entry.level) ?? SUPPLIES[SUPPLIES.length - 1];
-  session.addItem(supply.item, SUPPLY_COUNT);
+  const potions = firstRunSupply(session, SUPPLY_COUNT);
+  session.addItem(supply.item, potions);
 
   const balls = ballSupply(session.rng, level);
+  balls.count = firstRunSupply(session, balls.count);
   session.addItem(balls.item, balls.count);
 
   app.audio.playJingle(gameData().bgm.cues.heal ?? null);
@@ -838,7 +883,7 @@ function restAndResupply(session, app) {
       t('event.healed'),
       t('event.supplied', {
         name: localized(itemOf(supply.item)?.name, supply.item),
-        count: SUPPLY_COUNT,
+        count: potions,
       }),
       t('event.supplied', {
         name: localized(itemOf(balls.item)?.name, balls.item),

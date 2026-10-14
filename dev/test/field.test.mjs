@@ -19,7 +19,9 @@ import {
   BALL_SIZE,
   ballSupply,
   BERRY_HARVEST,
+  FIRST_RUN_SUPPLY_BONUS,
   foundCount,
+  isSupply,
   CENTER_STEPS,
   centerBeat,
   GYM_STEPS,
@@ -409,6 +411,26 @@ test('a ball found on the road is a handful, a dear one a couple, a Master Ball 
   assert.deepEqual(range('luxury-ball'), [2, 3]);
   assert.deepEqual(range('master-ball'), [1, 1]);
   assert.deepEqual(range('potion'), [1, 1], 'anything but a ball is found one at a time');
+});
+
+test('the first run finds more of the supplies, and the rest as usual', async (t) => {
+  if (!(await useRealGameData())) return t.skip(NEEDS_ASSETS);
+  const rng = new Rng(3);
+  const range = (/** @type {string} */ slug) => {
+    const seen = new Set();
+    for (let roll = 0; roll < 200; roll++) seen.add(foundCount(rng, slug, true));
+    return [Math.min(...seen), Math.max(...seen)];
+  };
+  assert.equal(FIRST_RUN_SUPPLY_BONUS, 1.5);
+  assert.deepEqual(range('poke-ball'), [5, 8]);
+  assert.deepEqual(range('luxury-ball'), [3, 5]);
+  assert.deepEqual(range('master-ball'), [1, 1], 'a Master Ball is still found alone');
+  for (const slug of ['potion', 'full-heal', 'revive', 'ether']) assert.deepEqual(range(slug), [2, 2], slug);
+  for (const slug of ['rare-candy', 'adamant-mint', 'leftovers']) {
+    assert.ok(!isSupply(slug), `${slug} is a supply`);
+    assert.deepEqual(range(slug), [1, 1], slug);
+  }
+  assert.ok(isSupply('oran-berry') && isSupply('great-ball') && isSupply('hyper-potion'));
 });
 
 test('an event is kept off the road under a bridge, and a little way either side', () => {
