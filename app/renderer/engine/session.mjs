@@ -12,6 +12,7 @@ import { gameData, itemOf, speciesOf } from '../core/data.mjs';
 import { Rng } from '../core/rng.mjs';
 import { pocketOrder } from './bagorder.mjs';
 import { EventScheduler } from './events.mjs';
+import { optimizeMoves } from './autoplan.mjs';
 import { ensureAttack, fullyHeal, shinyOddsFor } from './pokemon.mjs';
 import { settleForme } from './forms.mjs';
 import { oneAtATime, STARTING_MONEY } from './shop.mjs';
@@ -33,6 +34,8 @@ export class Session {
     this.rng = new Rng(save.seed);
 
     this.active = save.party.active;
+    // Whoever is travelling has its move settings as the player left them.
+    this.active.travelled = true;
     /** @type {Array<import('./pokemon.mjs').Pokemon|null>} */
     this.box = save.party.box ?? [];
 
@@ -155,6 +158,16 @@ export class Session {
   set champion(value) {
     if (value) this.active.champion = true;
     else delete this.active.champion;
+  }
+
+  /**
+   * Whether the save is on its first time through: none of its Pokémon has
+   * been crowned Champion yet. The first run holds a few things back — the
+   * early gyms' strongest Pokémon, the key items that lead to a legendary — and
+   * makes the legendaries' own items rarer.
+   */
+  get firstRun() {
+    return !this.champion && this.champions.size === 0;
   }
 
   /** @param {string|null|undefined} id */
@@ -380,6 +393,11 @@ export class Session {
 
   /**
    * Swap the travelling Pokémon with one from the box.
+   *
+   * One setting out for the first time starts with its moves set up as the
+   * Optimize button would; one that has travelled before keeps what the
+   * player gave it.
+   *
    * @param {number} index
    */
   switchActive(index) {
@@ -389,6 +407,8 @@ export class Session {
     this.leagueRun = null;
     this.box[index] = this.active;
     this.active = chosen;
+    if (!hasTravelled(chosen)) optimizeMoves(chosen, this.autoBattle);
+    chosen.travelled = true;
     return chosen;
   }
 
@@ -458,10 +478,10 @@ export function defaultAutoBattle() {
     /**
      * The condition each kind of move starts with, until the player gives a
      * move one of its own: an attack always, a hindrance on a foe still
-     * unhurt, a boost on the first turn, a field move on an empty field, a
-     * heal at half health.
+     * unhurt, a boost once a battle, a field move on an empty field, a heal
+     * at half health.
      */
-    conditions: { damage: 'always', status: 'noStatus', stat: 'firstTurn', field: 'noField', heal: 'hpHalf' },
+    conditions: { damage: 'always', status: 'noStatus', stat: 'oncePerBattle', field: 'noField', heal: 'hpHalf' },
     /**
      * When each move may be used first, by the move, `never` included. A
      * condition that names a moment is answered before anything else;
@@ -537,10 +557,23 @@ export function normalizeItemPolicy(policy) {
  * set to one is given instead. "About to go down first" guessed at the foe's
  * moves from what it had used; the companion's setting now reads only what
  * is plain to see, and the nearest plain thing is the foe being faster.
+ * Three turns after a miss was folded into two; "accuracy lowered" is any
+ * stage lowered, which the rank conditions already read, and a move kept for
+ * the fifth turn on was all but never used. The battle's first turn was once
+ * a battle with the chance lost if another move took that turn, and every
+ * four turns seldom came round one against one.
  *
  * @type {Record<string, string>}
  */
-const RETIRED_CONDITIONS = { inDanger: 'slower' };
+const RETIRED_CONDITIONS = {
+  inDanger: 'slower',
+  firstTurn: 'oncePerBattle',
+  everyFourTurns: 'everyThreeTurns',
+  missedThreeTurns: 'missedTwoTurns',
+  accuracyDown: 'rankDown',
+  accuracyShaky: 'lastMissed',
+  longBattle: 'never',
+};
 
 /**
  * Bring a stored policy up to the shape the engine reads.
@@ -560,6 +593,9 @@ export function normalizeAutoBattle(policy) {
   if (!policy) return fresh;
 
   const conditions = { ...fresh.conditions, ...(policy.conditions ?? {}) };
+  for (const [category, condition] of Object.entries(conditions)) {
+    if (RETIRED_CONDITIONS[condition]) conditions[category] = RETIRED_CONDITIONS[condition];
+  }
   for (const category of Object.keys(fresh.conditions)) {
     const off = policy.use ? policy.use[category] === false : (policy.weights?.[category] ?? 1) <= 0;
     if (off) conditions[category] = 'never';
@@ -577,6 +613,17 @@ export function normalizeAutoBattle(policy) {
   };
 
   return { conditions, moves: byMove(policy.moves), second: byMove(policy.second) };
+}
+
+/**
+ * Whether a Pokémon has been the travelling one before: marked so, or — from
+ * a save older than the mark — holding a badge or a title it could only have
+ * won travelling.
+ *
+ * @param {import('./pokemon.mjs').Pokemon} pokemon
+ */
+function hasTravelled(pokemon) {
+  return Boolean(pokemon.travelled || pokemon.champion || pokemon.badges?.length);
 }
 
 /**

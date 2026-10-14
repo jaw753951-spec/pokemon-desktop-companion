@@ -418,7 +418,9 @@ export const STATUS_MOVES = {
     if (user.pokemon.hp >= user.maxHp || user.pokemon.status === 'slp') return false;
     if (!battle.canFallAsleep(user, log)) return false;
     user.pokemon.status = 'slp';
-    user.pokemon.statusTurns = 2;
+    // Exactly two turns asleep, waking to move on the third, as the games
+    // have it; at two it woke on the second.
+    user.pokemon.statusTurns = 3;
     user.pokemon.toxic = false;
     battle.say(user, 'move.rest');
     battle.gainHp(user, user.maxHp, log, { quiet: true });

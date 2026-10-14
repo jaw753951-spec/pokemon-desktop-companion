@@ -7,7 +7,7 @@
  * of the turn. Battles are fought automatically, so the engine produces a list
  * of log entries per turn which the battle scene plays back as animation.
  */
-import { COMPANION_DAMAGE_TAKEN, COMPANION_WEAKNESS } from '../../shared/constants.mjs';
+import { COMPANION_DAMAGE_TAKEN, COMPANION_WEAKNESS, FIRST_RUN_EXPERIENCE_BONUS, FIRST_RUN_EXPERIENCE_UNTIL } from '../../shared/constants.mjs';
 import { gameData, itemOf, moveOf, speciesOf, typeEffectiveness } from '../core/data.mjs';
 import { ABILITIES, abilityEffect, abilityName, afterBattle, auraMultiplier, hasSecondary } from './abilities.mjs';
 import { chooseFoeMove } from './foeai.mjs';
@@ -76,6 +76,13 @@ import { stageMultiplier } from './stats.mjs';
  * @property {number} turnsTaken
  * @property {Record<string, number>} [usedOn] the turn, counted in its own
  *   turns from one, that it last used each move on
+ * @property {Record<string, number>} [missedOn] the turn each move missed on,
+ *   for as long as its last use was that miss
+ * @property {number} [lastMissTurn] the last of its turns any move missed on
+ * @property {{target: Combatant, moves: Set<string>}} [landed] the moves that
+ *   have landed on the foe in front of it
+ * @property {{target: Combatant, moves: Set<string>}} [usedAgainst] the moves
+ *   used on the foe in front of it, hit or miss
  * @property {number} [enteredTurn] the battle turn it came out on
  * @property {'player'|'foe'} side
  * @property {Record<string, any>} marks what an ability or item has left on it
@@ -125,6 +132,9 @@ const STAGE_ALIASES = { accuracy: 'acc', evasion: 'eva' };
 
 /** Status conditions the engine models. */
 export const STATUS = { BURN: 'brn', POISON: 'psn', PARALYSIS: 'par', SLEEP: 'slp', FREEZE: 'frz' };
+
+/** Sleep's counter when it falls: one to three turns asleep (see `inflictStatus`). */
+export const SLEEP_COUNTER = { min: 2, max: 4 };
 
 /**
  * What is left when nothing has PP.
@@ -303,9 +313,11 @@ export class Battle {
    *   trainerBattle?: boolean,
    *   weather?: string|null,
    *   environment?: string|null,
+   *   firstRun?: boolean,
+   *   bossBattle?: boolean,
    * }} options
    */
-  constructor({ rng, player, foes, policy, items = null, trainerBattle = false, weather = null, environment = null }) {
+  constructor({ rng, player, foes, policy, items = null, trainerBattle = false, weather = null, environment = null, firstRun = false, bossBattle = false }) {
     this.rng = rng;
     this.policy = policy;
     /**
@@ -325,6 +337,10 @@ export class Battle {
     /** Whether the companion's turn went on a run that failed. */
     this.playerSpent = false;
     this.trainerBattle = trainerBattle;
+    /** Whether the save is on its first run, which pays more experience early on. */
+    this.firstRun = firstRun;
+    /** A gym leader or a League round, which the auto-battle can save a move for. */
+    this.bossBattle = bossBattle;
     /**
      * The companion's moves the other side has watched it use. A trainer
      * keeps them in mind for the rest of the battle, whichever of their
@@ -2503,8 +2519,11 @@ export class Battle {
     let moveName = attacker.charging ?? this.pendingMoves?.get(attacker) ?? this.chooseMove(attacker, defender);
     let base = moveName === 'struggle' ? STRUGGLE : moveOf(moveName);
     attacker.turnsTaken++;
-    // What the auto-battle's "every so many turns" counts from.
+    // What the auto-battle's "every so many turns" counts from, and its "once
+    // for each foe".
     (attacker.usedOn ??= {})[moveName] = attacker.turnsTaken;
+    if (attacker.usedAgainst?.target !== defender) attacker.usedAgainst = { target: defender, moves: new Set() };
+    attacker.usedAgainst.moves.add(moveName);
 
     if (!base) {
       log.push({ kind: 'move', side: attacker.side, data: { move: moveName } });
@@ -2833,6 +2852,32 @@ export class Battle {
   }
 
   /**
+   * What the auto-battle's miss conditions read off a move just used: whether
+   * it missed — an accuracy roll lost, or a foe out of reach in the sky or
+   * underground — and so is still owed a hit, and whether it landed on the
+   * foe in front of it. A move that was blocked or did nothing has not
+   * landed, but has not missed either.
+   *
+   * @param {Combatant} attacker
+   * @param {Combatant} defender
+   * @param {string} moveName
+   * @param {LogEntry[]} lines this move's lines of the log
+   */
+  noteLanding(attacker, defender, moveName, lines) {
+    const missed = lines.some((entry) => entry.kind === 'miss' && entry.side === attacker.side);
+    const missedOn = (attacker.missedOn ??= {});
+    if (missed) {
+      missedOn[moveName] = attacker.turnsTaken;
+      attacker.lastMissTurn = attacker.turnsTaken;
+    } else {
+      delete missedOn[moveName];
+    }
+    if (attacker.marks.lastFailed) return;
+    if (attacker.landed?.target !== defender) attacker.landed = { target: defender, moves: new Set() };
+    attacker.landed.moves.add(moveName);
+  }
+
+  /**
    * What is left once a move has gone, however it went: the half of its
    * health a Mind Blown costs, the lock an Outrage keeps, whether it failed
    * (which a Stomping Tantrum remembers), and the count an Echoed Voice
@@ -2852,6 +2897,7 @@ export class Battle {
         entry.kind === 'failed' || entry.kind === 'miss' || entry.kind === 'noEffect' || entry.kind === 'protected' ||
         (entry.kind === 'effectiveness' && entry.data?.effectiveness === 0),
     );
+    this.noteLanding(attacker, defender, moveName, lines);
     const move = moveOf(moveName);
     if (move && this.shrugsOff(attacker, defender, move, lines)) {
       // Seen to do nothing to this one, for a reason that will not change
@@ -5030,7 +5076,12 @@ export class Battle {
     }
 
     target.pokemon.status = status;
-    target.pokemon.statusTurns = status === STATUS.SLEEP ? this.rng.int(1, 3) : 0;
+    // Sleep's counter is ticked off each time the sleeper tries to move, and
+    // it wakes — and moves — on the try that empties it (see `canAct`). Two
+    // to four, as the games since Black and White roll it, is one to three
+    // turns asleep; one to three let a third of everything put to sleep wake
+    // at once, never having slept a turn.
+    target.pokemon.statusTurns = status === STATUS.SLEEP ? this.rng.int(SLEEP_COUNTER.min, SLEEP_COUNTER.max) : 0;
     // A Toxic's poison is the bad kind, which bites harder every turn.
     const toxic = status === STATUS.POISON && Boolean(options.toxic);
     target.pokemon.toxic = toxic;
@@ -5191,12 +5242,14 @@ export class Battle {
   awardExperience(defeated, log) {
     if (this.player.pokemon.hp <= 0) return;
     const species = speciesOf(defeated.pokemon.speciesId);
+    // The first run's early levels pay more (see `FIRST_RUN_EXPERIENCE_BONUS`).
+    const early = this.firstRun && levelOf(this.player.pokemon) < FIRST_RUN_EXPERIENCE_UNTIL ? FIRST_RUN_EXPERIENCE_BONUS : 1;
     const reward = gainFromDefeat(
       this.player.pokemon,
       { baseStats: species.stats, baseExp: species.baseExp, level: levelOf(defeated.pokemon) },
       {
         trainerBattle: this.trainerBattle,
-        experienceMultiplier: heldPassive(this.player.pokemon, 'experience')?.multiplier ?? 1,
+        experienceMultiplier: (heldPassive(this.player.pokemon, 'experience')?.multiplier ?? 1) * early,
       },
     );
     this.rewards.push(reward);
@@ -5224,6 +5277,7 @@ function makeCombatant(pokemon, side) {
     lockedMove: null,
     turnsTaken: 0,
     usedOn: {},
+    missedOn: {},
     side,
     marks: {},
     volatile: freshVolatile(),
@@ -5666,14 +5720,17 @@ function conditionHolds(condition, battle, attacker, defender, slug) {
   switch (condition) {
     case 'never':
       return false;
-    case 'firstTurn':
-      return attacker.turnsTaken === 0;
     // The foe's first turn out: the start of a wild battle, and each of a
     // trainer's Pokémon as it comes out.
     case 'foeEntered':
       return battle.firstTurnOut(defender);
     case 'oncePerBattle':
       return !attacker.usedOn?.[slug];
+    // Once against each Pokémon the foe sends out, on whatever turn first
+    // lets it: unlike the foe's first turn out, a turn something else took
+    // does not lose it.
+    case 'oncePerFoe':
+      return !(attacker.usedAgainst?.target === defender && attacker.usedAgainst.moves.has(slug));
     // Every so many turns, counted from the turn the move was last used,
     // however it came to be: one not yet used counts from before the first
     // turn, so every two is the second, fourth, sixth — and one used on the
@@ -5683,8 +5740,24 @@ function conditionHolds(condition, battle, attacker, defender, slug) {
       return turnsSinceUsed(attacker, slug) >= 2;
     case 'everyThreeTurns':
       return turnsSinceUsed(attacker, slug) >= 3;
-    case 'everyFourTurns':
-      return turnsSinceUsed(attacker, slug) >= 4;
+    // A move whose last use missed is owed another try: on the next turn, or
+    // so many of its user's turns on from the miss — two is the turn after
+    // next — or the first turn after that nothing else takes. A use that does
+    // not miss settles it.
+    case 'missedRetry':
+      return Object.hasOwn(attacker.missedOn ?? {}, slug);
+    // `missedThreeTurns` was folded into this one.
+    case 'missedTwoTurns':
+    case 'missedThreeTurns':
+      return Object.hasOwn(attacker.missedOn ?? {}, slug) && turnsSinceUsed(attacker, slug) >= 2;
+    // Until it has landed on the foe in front of it: tried again after a miss
+    // or a block, and again for each Pokémon a trainer sends out.
+    case 'untilHit':
+      return !(attacker.landed?.target === defender && attacker.landed.moves.has(slug));
+    // Whatever the companion used on its last turn missed: when a move that
+    // never misses is worth more than a strong one that might.
+    case 'lastMissed':
+      return attacker.lastMissTurn !== undefined && attacker.lastMissTurn === attacker.turnsTaken;
     // Super effective or better against the foe as it stands: its types now,
     // and the move's as it would leave — an ability retyping it, the field, a
     // mask or a plate behind it. A move that deals no damage never is.
@@ -5718,12 +5791,31 @@ function conditionHolds(condition, battle, attacker, defender, slug) {
       return battle.trainerBattle;
     case 'wildBattle':
       return !battle.trainerBattle;
+    case 'bossBattle':
+      return battle.bossBattle;
+    // The last the foe has: a wild Pokémon always is.
+    case 'lastFoe':
+      return battle.foeQueue.length === 0;
+    case 'foeLevelHigher':
+      return levelOf(defender.pokemon) > levelOf(attacker.pokemon);
+    case 'foeLevelLower':
+      return levelOf(defender.pokemon) < levelOf(attacker.pokemon);
     case 'noStatus':
       return !defender.pokemon.status;
     case 'foeStatus':
       return Boolean(defender.pokemon.status);
     case 'selfStatus':
       return Boolean(attacker.pokemon.status);
+    case 'foeAsleep':
+      return defender.pokemon.status === STATUS.SLEEP;
+    // The sky as it reaches the companion: a Cloud Nine or an Umbrella hides it.
+    case 'sunny':
+      return battle.weatherFor(attacker) === WEATHER.SUN;
+    case 'rainy':
+      return battle.weatherFor(attacker) === WEATHER.RAIN;
+    // Holding nothing: an Acrobatics at double power, or a berry eaten.
+    case 'noItem':
+      return !attacker.pokemon.heldItem;
     case 'hasField':
       return battle.field ? !battle.field.quiet : false;
     case 'noField':

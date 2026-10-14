@@ -249,13 +249,12 @@ const CHARM_ITEMS = {
  * draw instead, one picked at random among the legendaries like any other,
  * for as long as the item is in the bag: ten Ultra Beasts one after another
  * crowded out every other rare Pokémon for most of a day's walking.
- * `afterLeague` holds an item back until the save has a champion, as the
- * games kept the mythical Pokémon's tickets and Looker's card for after the
- * story. Only the items with an official Korean name are here, so the Old Sea
+ * None of them is found before the save has a champion (see `callingFind`).
+ * Only the items with an official Korean name are here, so the Old Sea
  * Map and the Aurora and Mystic Tickets, from a generation never released in
  * Korean, are not.
  *
- * @type {Record<string, {category: string, calls: string[], afterLeague?: boolean, pool?: boolean}>}
+ * @type {Record<string, {category: string, calls: string[], pool?: boolean}>}
  */
 const CALLING_ITEMS = {
   'eon-ticket': { category: 'calls', calls: ['latias', 'latios'] },
@@ -263,14 +262,13 @@ const CALLING_ITEMS = {
   'rainbow-wing': { category: 'calls', calls: ['ho-oh'] },
   'jade-orb': { category: 'calls', calls: ['rayquaza'] },
   'magma-stone': { category: 'calls', calls: ['heatran'] },
-  'member-card': { category: 'calls', calls: ['darkrai'], afterLeague: true },
-  'oaks-letter': { category: 'calls', calls: ['shaymin'], afterLeague: true },
-  'azure-flute': { category: 'calls', calls: ['arceus'], afterLeague: true },
-  'liberty-pass': { category: 'calls', calls: ['victini'], afterLeague: true },
+  'member-card': { category: 'calls', calls: ['darkrai'] },
+  'oaks-letter': { category: 'calls', calls: ['shaymin'] },
+  'azure-flute': { category: 'calls', calls: ['arceus'] },
+  'liberty-pass': { category: 'calls', calls: ['victini'] },
   'enigmatic-card': {
     category: 'calls',
     calls: ['nihilego', 'buzzwole', 'pheromosa', 'xurkitree', 'kartana', 'celesteela', 'guzzlord', 'poipole', 'stakataka', 'blacephalon'],
-    afterLeague: true,
     pool: true,
   },
 };

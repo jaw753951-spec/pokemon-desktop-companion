@@ -12,7 +12,18 @@ import { gameData, speciesIdBySlug, speciesOf } from '../../app/renderer/core/da
 import { Battle } from '../../app/renderer/engine/battle.mjs';
 import { ballBonus, catchValue } from '../../app/renderer/engine/capture.mjs';
 import { EventScheduler } from '../../app/renderer/engine/events.mjs';
-import { battleMedicine, canHold, eventModifiers, heldPassive, itemNeedsChoice, itemSuits, useItem } from '../../app/renderer/engine/items.mjs';
+import {
+  battleMedicine,
+  canHold,
+  eventModifiers,
+  heldPassive,
+  itemNeedsChoice,
+  itemSuits,
+  LEARNABLE_MACHINE_SHARE,
+  learnsMachine,
+  pickFind,
+  useItem,
+} from '../../app/renderer/engine/items.mjs';
 import { createPokemon, gainFromDefeat, maxHp, maxPp, setMove } from '../../app/renderer/engine/pokemon.mjs';
 import { defaultAutoBattle } from '../../app/renderer/engine/session.mjs';
 import { experienceForLevel } from '../../app/renderer/engine/stats.mjs';
@@ -286,3 +297,28 @@ test('the battle bag lists every medicine, greying out what would do nothing', o
   assert.equal(usable().antidote, true);
 });
 
+
+test('on the first run a TM found leans to one the companion can learn, and nothing else changes', options, () => {
+  const pikachu = make('pikachu', 20);
+  const machines = Object.keys(gameData().items).filter((slug) => gameData().items[slug].pocket === 'machines');
+  const pool = [...machines, 'potion', 'poke-ball', 'leftovers'];
+  const natural = machines.filter((slug) => learnsMachine(pikachu, slug)).length / machines.length;
+  assert.ok(natural > 0.05 && natural < 0.5, `Pikachu learns ${natural.toFixed(2)} of the TMs`);
+
+  /** @param {boolean} firstRun */
+  const finds = (firstRun) => {
+    const session = { ...bag({}, pikachu), rng: new Rng(5), firstRun };
+    const found = Array.from({ length: 4000 }, () => /** @type {string} */ (pickFind(session, pool)));
+    const tms = found.filter((slug) => machines.includes(slug));
+    return { tmShare: tms.length / found.length, learnable: tms.filter((slug) => learnsMachine(pikachu, slug)).length / tms.length };
+  };
+  const first = finds(true);
+  const later = finds(false);
+  const expected = LEARNABLE_MACHINE_SHARE + (1 - LEARNABLE_MACHINE_SHARE) * natural;
+  assert.ok(Math.abs(first.learnable - expected) < 0.05, `first run: ${first.learnable.toFixed(2)} learnable, expected ${expected.toFixed(2)}`);
+  assert.ok(Math.abs(later.learnable - natural) < 0.05, `after a champion: ${later.learnable.toFixed(2)} learnable`);
+  // How often a find is a TM at all is the pool's either way.
+  assert.ok(Math.abs(first.tmShare - later.tmShare) < 0.03);
+
+  assert.equal(pickFind({ ...bag({}, pikachu), rng: new Rng(1), firstRun: true }, []), null);
+});

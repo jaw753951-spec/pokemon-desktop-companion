@@ -7,10 +7,12 @@
  * run, any amount longer. Turning the weight up only makes them common. So
  * they come on a clock of their own instead, the way Legends: Arceus's
  * space-time distortions do: the longer since the last one, the likelier the
- * next wild Pokémon is one, until past a ceiling it certainly is.
+ * next wild Pokémon is one, until past a ceiling it certainly is. Not on the
+ * save's first run, though: there they stay at the low odds throughout.
  *
  * And a key item can decide who it is (see `CALLING_ITEMS` in the dex build):
- * the Member Card leads to Darkrai, the Silver Wing to Lugia. The Pokémon an
+ * the Member Card leads to Darkrai, the Silver Wing to Lugia — once the save
+ * has a champion, as none is found on the first run. The Pokémon an
  * item leads to are met no other way, and while one of them is waiting the
  * clock runs to a much shorter ceiling — a ticket found is a meeting soon,
  * not one more name in a draw. The Enigmatic Card is the exception: it puts
@@ -30,12 +32,14 @@ export const RARE_CHANCE = 0.005;
  * How long the wait is, in walking time, before the odds start to climb, and
  * how long before a rare Pokémon is certain.
  *
- * About fifteen wild Pokémon are met an hour, so a fifth of the waits end
- * early on the low odds and most of the rest in the hour after the climb
- * starts: about three hours apart on average, and in practice never past
- * five, as the climb all but makes it certain before the ceiling does.
+ * About fifteen wild Pokémon are met an hour, so a third of the waits end
+ * early on the low odds and most of the rest in the hour or so after the
+ * climb starts: four and a half hours apart on average, and in practice
+ * never past seven, as the climb all but makes it certain before the ceiling
+ * does. It was three hours and six, about three apart, which made a
+ * legendary something met a few times every day.
  */
-export const RARE_CEILING = { soft: 3 * HOUR, hard: 6 * HOUR };
+export const RARE_CEILING = { soft: 5 * HOUR, hard: 10 * HOUR };
 
 /** The same, while a key item has a Pokémon waiting to be met. */
 export const CALLED_CEILING = { soft: 0.5 * HOUR, hard: 1.5 * HOUR };
@@ -43,9 +47,9 @@ export const CALLED_CEILING = { soft: 0.5 * HOUR, hard: 1.5 * HOUR };
 /**
  * How often an item find on the road is a key item that leads somewhere,
  * while there is one still to find: at about fifteen finds an hour, one every
- * two hours or so.
+ * three hours or so. It was one every two.
  */
-export const CALLING_FIND_CHANCE = 0.03;
+export const CALLING_FIND_CHANCE = 0.02;
 
 /**
  * The odds that the next wild Pokémon is a rare one.
@@ -100,11 +104,16 @@ export function calledSpecies(session) {
  * item goes on leading to it, and the draw goes on preferring it, until it is
  * caught — the way the games bring a legendary back after the Elite Four.
  *
+ * The save's first run has no clock: a rare Pokémon is only ever the low
+ * odds, however long the wait. The clock starts from where the save is when
+ * it gets its champion, rather than owing the whole first run at once.
+ *
  * @param {import('./session.mjs').Session} session
  * @returns {number|null} a Pokédex number, or null for an ordinary draw
  */
 export function rollRare(session) {
   const called = calledSpecies(session);
+  if (session.firstRun) session.rareSince = session.playtime;
   const since = Math.max(0, session.playtime - session.rareSince);
   if (!session.rng.chance(rareChance(since, called.length > 0))) return null;
   session.rareSince = session.playtime;
@@ -157,17 +166,17 @@ export function pickRare(rng, area, caught = new Set(), pooled = new Set()) {
 
 /**
  * The key item an item find turns out to be, if it does: one not in the bag
- * that still leads to someone uncaught. The mythical Pokémon's tickets and
- * the Ultra Beasts' card wait until the save has a champion.
+ * that still leads to someone uncaught. None is found on the first run: they
+ * all wait until the save has a champion, as the games kept the mythical
+ * Pokémon's tickets and Looker's card for after the story.
  *
  * @param {import('./session.mjs').Session} session
  * @returns {string|null}
  */
 export function callingFind(session) {
-  const crowned = session.champion || session.champions.size > 0;
+  if (session.firstRun) return null;
   const open = callingItems().filter(
-    ({ slug, item, calls }) =>
-      session.countOf(slug) === 0 && (crowned || !item.afterLeague) && calls.some((id) => !session.caught.has(id)),
+    ({ slug, calls }) => session.countOf(slug) === 0 && calls.some((id) => !session.caught.has(id)),
   );
   if (!open.length || !session.rng.chance(CALLING_FIND_CHANCE)) return null;
   return session.rng.pick(open).slug;

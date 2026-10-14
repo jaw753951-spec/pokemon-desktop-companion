@@ -19,7 +19,7 @@ import {
   standingTypes,
   useFormeItem,
 } from '../../app/renderer/engine/forms.mjs';
-import { itemActions, signatureFind, SIGNATURE_FIND_CHANCE, useItem } from '../../app/renderer/engine/items.mjs';
+import { FIRST_RUN_SIGNATURE_FIND_CHANCE, itemActions, signatureFind, SIGNATURE_FIND_CHANCE, useItem } from '../../app/renderer/engine/items.mjs';
 import { createPokemon, maxHp, setMove } from '../../app/renderer/engine/pokemon.mjs';
 import { defaultAutoBattle, Session } from '../../app/renderer/engine/session.mjs';
 
@@ -208,6 +208,21 @@ test("a legendary's own item is found only while it is the one travelling", opti
   );
   assert.ok(tiers.size > 100);
   for (const item of signatureItems().keys()) assert.ok(!tiers.has(item), `${item} is in the ordinary finds`);
+});
+
+test("a legendary's own item is rarer on the save's first run", options, () => {
+  assert.ok(FIRST_RUN_SIGNATURE_FIND_CHANCE > 0 && FIRST_RUN_SIGNATURE_FIND_CHANCE < SIGNATURE_FIND_CHANCE);
+  /** @param {boolean} firstRun */
+  const askedAt = (firstRun) => {
+    let odds = null;
+    const session = fakeSession({}, make('kyogre'));
+    session.firstRun = firstRun;
+    session.rng.chance = (/** @type {number} */ chance) => ((odds = chance), true);
+    signatureFind(session);
+    return odds;
+  };
+  assert.equal(askedAt(true), FIRST_RUN_SIGNATURE_FIND_CHANCE);
+  assert.equal(askedAt(false), SIGNATURE_FIND_CHANCE);
 });
 
 test('every forme a battle or a bag can reach is named in Korean', options, () => {

@@ -316,7 +316,12 @@ export function fieldScene(session) {
       // A leader lost to does not stand in the road again at the next trainer.
       if (setup.leader) session.leaderRest = LEADER_REST_AFTER_LOSS;
       session.blackOut();
-      app.toast([t(setup.trainer ? 'battle.lost' : 'battle.lostWild'), paid > 0 ? t('money.paid', { amount: formatMoney(paid) }) : null].filter(Boolean).join('\n'));
+      // The wild one is named, or the line read "the wild {name} ran away".
+      const wild = setup.foes[0];
+      const lost = setup.trainer
+        ? t('battle.lost')
+        : t('battle.lostWild', { name: wild?.nickname || localized(speciesOf(wild?.speciesId)?.name, '') });
+      app.toast([lost, paid > 0 ? t('money.paid', { amount: formatMoney(paid) }) : null].filter(Boolean).join('\n'));
       restock(app);
       refreshArt(app);
       return;

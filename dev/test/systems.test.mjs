@@ -34,13 +34,15 @@ import {
   abilitySlot,
   createPokemon,
   evolveInto,
+  levelOf,
   maxHp,
   maxPp,
   pendingEvolution,
   setMove,
   SHINY_ODDS,
 } from '../../app/renderer/engine/pokemon.mjs';
-import { rollWildPokemon } from '../../app/renderer/engine/encounter.mjs';
+import { rollWildPokemon, wildLevelDrop } from '../../app/renderer/engine/encounter.mjs';
+import { FIRST_RUN_WILD_LEVEL_DROP, FIRST_RUN_WILD_UNTIL } from '../../app/shared/constants.mjs';
 import { defaultAutoBattle } from '../../app/renderer/engine/session.mjs';
 
 const ready = await useRealGameData();
@@ -621,3 +623,20 @@ function bag(contents, pokemon) {
     markCaught() {},
   });
 }
+
+test('on the first run a wild Pokémon stands a little lower until level 30', options, () => {
+  const area = { id: 'test', tags: ['grass'], encounters: [{ species: 'rattata' }] };
+  assert.equal(wildLevelDrop(true, fixed(PIKACHU, 5)), FIRST_RUN_WILD_LEVEL_DROP);
+  assert.equal(wildLevelDrop(true, fixed(PIKACHU, FIRST_RUN_WILD_UNTIL - 1)), FIRST_RUN_WILD_LEVEL_DROP);
+  assert.equal(wildLevelDrop(true, fixed(PIKACHU, FIRST_RUN_WILD_UNTIL)), 0, 'level 30 meets the usual');
+  assert.equal(wildLevelDrop(false, fixed(PIKACHU, 5)), 0, 'after a champion, the usual');
+
+  for (const level of [2, 5, 12, 25]) {
+    const companion = fixed(PIKACHU, level);
+    for (let seed = 1; seed <= 30; seed++) {
+      const usual = rollWildPokemon(new Rng(seed), area, companion);
+      const lower = rollWildPokemon(new Rng(seed), area, companion, null, new Set(), undefined, null, wildLevelDrop(true, companion));
+      assert.equal(levelOf(lower), Math.max(1, levelOf(usual) - FIRST_RUN_WILD_LEVEL_DROP), `level ${level}, seed ${seed}`);
+    }
+  }
+});

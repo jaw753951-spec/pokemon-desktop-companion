@@ -17,6 +17,7 @@ import {
 import { createPokemon, maxHp, setMove } from '../../app/renderer/engine/pokemon.mjs';
 import { WEATHER } from '../../app/renderer/engine/field.mjs';
 import { defaultAutoBattle, normalizeAutoBattle } from '../../app/renderer/engine/session.mjs';
+import { FIRST_RUN_EXPERIENCE_BONUS, FIRST_RUN_EXPERIENCE_UNTIL } from '../../app/shared/constants.mjs';
 import { computeStat, experienceForLevel, levelForExperience, stageMultiplier } from '../../app/renderer/engine/stats.mjs';
 
 const ready = await useRealGameData();
@@ -256,13 +257,13 @@ test('moves are sorted into auto-battle categories', options, () => {
   assert.equal(categoryOf({ damageClass: 'status', meta: { ailment: 'none', healing: 0 }, statChanges: [] }), 'field');
 });
 
-test('every two, three or four turns counts from the turn the move was last used', options, () => {
-  const player = makeFixed(CHARIZARD, 50, ['flamethrower', 'ember', 'slash', 'scratch']);
+test('every two or three turns counts from the turn the move was last used', options, () => {
+  const player = makeFixed(CHARIZARD, 50, ['flamethrower', 'ember', 'slash']);
   const battle = new Battle({
     rng: new Rng(2),
     player,
     foes: [makeFixed(VENUSAUR, 90, ['tackle'])],
-    policy: { conditions: {}, moves: { ember: 'everyTwoTurns', slash: 'everyThreeTurns', scratch: 'everyFourTurns' } },
+    policy: { conditions: {}, moves: { ember: 'everyTwoTurns', slash: 'everyThreeTurns' } },
   });
 
   const picks = [];
@@ -272,10 +273,9 @@ test('every two, three or four turns counts from the turn the move was last used
     battle.player.turnsTaken++;
     battle.player.usedOn[pick] = battle.player.turnsTaken;
   }
-  // Scratch, due on the fourth, gives way to Ember and goes on the fifth;
   // Slash, used on the third, is next due on the sixth, where Ember is
   // ahead of it, and so goes on the seventh.
-  assert.deepEqual(picks, ['flamethrower', 'ember', 'slash', 'ember', 'scratch', 'ember', 'slash', 'ember']);
+  assert.deepEqual(picks, ['flamethrower', 'ember', 'slash', 'ember', 'flamethrower', 'ember', 'slash', 'ember']);
 });
 
 test('a move used on the first turn goes every two turns from there', options, () => {
@@ -284,7 +284,7 @@ test('a move used on the first turn goes every two turns from there', options, (
     rng: new Rng(2),
     player,
     foes: [makeFixed(VENUSAUR, 90, ['growl'])],
-    policy: { ...defaultAutoBattle(), moves: { growl: 'firstTurn' }, second: { growl: 'everyTwoTurns' } },
+    policy: { ...defaultAutoBattle(), moves: { growl: 'oncePerBattle' }, second: { growl: 'everyTwoTurns' } },
   });
 
   // Played out, so the battle itself records which turn each move went on.
@@ -489,7 +489,7 @@ test('a move the foe cannot take hands its turn to the next slot', options, () =
     player,
     foes: [makeFixed(92, 12, ['lick'])],
     // Scratch is due every turn it can be, and Gastly cannot take it.
-    policy: { conditions: {}, second: { scratch: 'everyTwoTurns' }, moves: { scratch: 'firstTurn' } },
+    policy: { conditions: {}, second: { scratch: 'everyTwoTurns' }, moves: { scratch: 'oncePerBattle' } },
   });
   const picks = [];
   for (let turn = 0; turn < 3; turn++) {
@@ -559,9 +559,12 @@ test('a condition that names a moment is answered before any attack', options, (
   });
   const pick = () => choosePolicyMove(battle, battle.player, /** @type {any} */ (battle.foe), player.moves);
 
-  // The first turn sets up; after that, it attacks until half health.
+  // It sets up once; after that, it attacks until half health.
   assert.equal(pick(), 'swords-dance');
   battle.player.turnsTaken = 3;
+  assert.equal(pick(), 'swords-dance', 'turns something else took do not lose it');
+  /** @type {Record<string, number>} */ (battle.player.usedOn)['swords-dance'] = 3;
+  battle.player.turnsTaken = 4;
   assert.equal(pick(), 'flamethrower');
   player.hp = Math.floor(maxHp(player) / 2);
   assert.equal(pick(), 'recover');
@@ -1106,4 +1109,211 @@ test('a Damp keeps an Explosion from going off, and the user standing', options,
   const log = battle.takeTurn();
   assert.ok(battle.player.pokemon.hp > 0);
   assert.ok(log.some((entry) => entry.kind === 'failed' && entry.side === 'player'));
+});
+
+test('on the first run a battle pays more experience until level 30', options, () => {
+  /** @param {number} level @param {boolean} firstRun */
+  const paid = (level, firstRun) => {
+    const battle = new Battle({
+      rng: new Rng(1),
+      player: makeFixed(CHARIZARD, level),
+      foes: [makeFixed(VENUSAUR, level)],
+      policy: defaultAutoBattle(),
+      firstRun,
+    });
+    /** @type {any[]} */
+    const log = [];
+    battle.awardExperience(battle.foe, log);
+    return log.find((entry) => entry.kind === 'experience').data.amount;
+  };
+  for (const level of [10, 29]) {
+    assert.equal(paid(level, true), Math.round(paid(level, false) * FIRST_RUN_EXPERIENCE_BONUS), `level ${level}`);
+  }
+  assert.equal(paid(FIRST_RUN_EXPERIENCE_UNTIL, true), paid(FIRST_RUN_EXPERIENCE_UNTIL, false), 'level 30 is the usual pace');
+  assert.equal(paid(50, true), paid(50, false));
+});
+
+test('a move that missed is used again, at once or so many turns on, and a hit settles it', options, () => {
+  const player = makeFixed(CHARIZARD, 50, ['flamethrower', 'fire-blast', 'swift']);
+  const battle = new Battle({
+    rng: new Rng(2),
+    player,
+    foes: [makeFixed(VENUSAUR, 50, ['tackle'])],
+    policy: {
+      ...defaultAutoBattle(),
+      moves: { flamethrower: 'always', 'fire-blast': 'never', swift: 'never' },
+      second: { 'fire-blast': 'missedRetry', swift: 'missedTwoTurns' },
+    },
+  });
+  const me = battle.player;
+  const pick = () => choosePolicyMove(battle, me, /** @type {any} */ (battle.foe), player.moves);
+  const use = (/** @type {string} */ move, /** @type {boolean} */ missed) => {
+    me.turnsTaken++;
+    /** @type {Record<string, number>} */ (me.usedOn)[move] = me.turnsTaken;
+    me.marks.lastFailed = missed;
+    battle.noteLanding(me, /** @type {any} */ (battle.foe), move, missed ? [{ kind: 'miss', side: 'player' }] : []);
+  };
+
+  assert.equal(pick(), 'flamethrower', 'nothing has missed');
+  use('fire-blast', true);
+  assert.equal(pick(), 'fire-blast', 'missed, so tried again at once');
+  use('fire-blast', false);
+  assert.equal(pick(), 'flamethrower', 'and a hit settles it');
+
+  use('swift', true);
+  assert.equal(pick(), 'flamethrower', 'two turns on is not the next turn');
+  use('flamethrower', false);
+  assert.equal(pick(), 'swift', 'but the one after');
+  use('flamethrower', false);
+  assert.equal(pick(), 'swift', 'and stays due until it is used');
+});
+
+test('until it hits each foe, the last move missed, and a foe asleep', options, () => {
+  const player = makeFixed(CHARIZARD, 50, ['flamethrower', 'swift']);
+  const battle = new Battle({
+    rng: new Rng(2),
+    player,
+    foes: [makeFixed(VENUSAUR, 50, ['tackle']), makeFixed(VENUSAUR, 50, ['tackle'])],
+    policy: { ...defaultAutoBattle(), moves: { flamethrower: 'always', swift: 'untilHit' } },
+  });
+  const me = battle.player;
+  const foe = /** @type {any} */ (battle.foe);
+  const pick = (/** @type {any} */ against = foe) => choosePolicyMove(battle, me, against, player.moves);
+
+  assert.equal(pick(), 'swift', 'not yet landed');
+  me.marks.lastFailed = true;
+  battle.noteLanding(me, foe, 'swift', [{ kind: 'protected', side: 'foe' }]);
+  assert.equal(pick(), 'swift', 'a block is not a hit');
+  me.marks.lastFailed = false;
+  battle.noteLanding(me, foe, 'swift', []);
+  assert.equal(pick(), 'flamethrower', 'landed on this foe');
+  assert.equal(pick(/** @type {any} */ ({ ...foe })), 'swift', 'and owed again to the next one sent out');
+
+  battle.policy.moves = { flamethrower: 'always', swift: 'lastMissed' };
+  assert.equal(pick(), 'flamethrower');
+  me.turnsTaken++;
+  battle.noteLanding(me, foe, 'flamethrower', [{ kind: 'miss', side: 'player' }]);
+  assert.equal(pick(), 'swift', 'whatever was used last missed');
+  me.turnsTaken++;
+  assert.equal(pick(), 'flamethrower', 'only for the turn after');
+
+  battle.policy.moves = { flamethrower: 'always', swift: 'foeAsleep' };
+  foe.pokemon.status = STATUS.PARALYSIS;
+  assert.equal(pick(), 'flamethrower', 'another status is not sleep');
+  foe.pokemon.status = STATUS.SLEEP;
+  assert.equal(pick(), 'swift');
+});
+
+test('a miss in a real battle is noted, and a hit clears it', options, () => {
+  let missed = 0;
+  let landed = 0;
+  for (let seed = 1; seed <= 40 && (missed === 0 || landed === 0); seed++) {
+    const player = makeFixed(CHARIZARD, 50, ['zap-cannon']);
+    const battle = new Battle({
+      rng: new Rng(seed),
+      player,
+      foes: [makeFixed(VENUSAUR, 100, ['splash'])],
+      policy: defaultAutoBattle(),
+    });
+    const log = battle.takeTurn();
+    const miss = log.some((entry) => entry.kind === 'miss' && entry.side === 'player');
+    assert.equal(Object.hasOwn(battle.player.missedOn ?? {}, 'zap-cannon'), miss, `seed ${seed}`);
+    assert.equal(battle.player.landed?.moves.has('zap-cannon') ?? false, !miss, `seed ${seed}`);
+    if (miss) missed++;
+    else landed++;
+  }
+  assert.ok(missed > 0 && landed > 0, 'both a miss and a hit were seen');
+});
+
+test('the conditions taken out are read as the nearest ones left', () => {
+  const policy = normalizeAutoBattle({
+    conditions: { stat: 'firstTurn' },
+    moves: { thunder: 'accuracyShaky', swift: 'accuracyDown', ember: 'longBattle', growl: 'firstTurn' },
+    second: { thunder: 'missedThreeTurns', growl: 'everyFourTurns' },
+  });
+  assert.deepEqual(policy.moves, { thunder: 'lastMissed', swift: 'rankDown', ember: 'never', growl: 'oncePerBattle' });
+  assert.deepEqual(policy.second, { thunder: 'missedTwoTurns', growl: 'everyThreeTurns' });
+  assert.equal(policy.conditions.stat, 'oncePerBattle', "a kind's own condition too");
+  assert.equal(normalizeAutoBattle(null).conditions.stat, 'oncePerBattle', 'and a boost starts once a battle');
+});
+
+test('once per foe, a boss, the last foe, levels, the weather and an empty hand', options, () => {
+  const player = makeFixed(CHARIZARD, 50, ['flamethrower', 'swift']);
+  const foes = [makeFixed(VENUSAUR, 50, ['splash']), makeFixed(BLASTOISE, 60, ['splash'])];
+  const battle = new Battle({ rng: new Rng(2), player, foes, policy: { ...defaultAutoBattle(), moves: { flamethrower: 'always' } }, trainerBattle: true });
+  const me = battle.player;
+  const foe = /** @type {any} */ (battle.foe);
+  const when = (/** @type {string} */ condition, /** @type {any} */ against = foe) => {
+    battle.policy.moves.swift = condition;
+    return choosePolicyMove(battle, me, against, player.moves) === 'swift';
+  };
+
+  // Once per foe: owed until used on this one, and owed again to the next.
+  assert.ok(when('oncePerFoe'));
+  me.usedAgainst = { target: foe, moves: new Set(['swift']) };
+  assert.ok(!when('oncePerFoe'));
+  assert.ok(when('oncePerFoe', { ...foe }));
+
+  assert.ok(!when('bossBattle'));
+  battle.bossBattle = true;
+  assert.ok(when('bossBattle'));
+
+  assert.ok(!when('lastFoe'), 'one more to come');
+  battle.foeQueue = [];
+  assert.ok(when('lastFoe'));
+
+  assert.ok(!when('foeLevelHigher') && !when('foeLevelLower'), 'level with it');
+  foe.pokemon = makeFixed(VENUSAUR, 55, ['splash']);
+  assert.ok(when('foeLevelHigher') && !when('foeLevelLower'));
+  foe.pokemon = makeFixed(VENUSAUR, 45, ['splash']);
+  assert.ok(when('foeLevelLower') && !when('foeLevelHigher'));
+
+  assert.ok(!when('sunny') && !when('rainy'));
+  battle.field.weather = WEATHER.SUN;
+  assert.ok(when('sunny') && !when('rainy'));
+  battle.field.weather = WEATHER.RAIN;
+  assert.ok(when('rainy') && !when('sunny'));
+  player.heldItem = 'utility-umbrella';
+  assert.ok(!when('rainy'), 'an Umbrella keeps the rain off');
+
+  assert.ok(!when('noItem'));
+  player.heldItem = null;
+  assert.ok(when('noItem'));
+});
+
+test('a move used counts against the foe in front of it, in a real battle', options, () => {
+  const player = makeFixed(CHARIZARD, 50, ['swift', 'flamethrower']);
+  const battle = new Battle({
+    rng: new Rng(3),
+    player,
+    foes: [makeFixed(VENUSAUR, 100, ['splash'])],
+    policy: { ...defaultAutoBattle(), moves: { swift: 'oncePerFoe', flamethrower: 'always' } },
+  });
+  const used = [battle.takeTurn(), battle.takeTurn()].map((log) =>
+    log.find((entry) => entry.kind === 'move' && entry.side === 'player')?.data?.move);
+  assert.deepEqual(used, ['swift', 'flamethrower']);
+});
+
+test('sleep lasts one to three turns, never none, and a Rest two', options, () => {
+  /** @param {any} battle */
+  const turnsAsleep = (battle) => {
+    let turns = 0;
+    while (!battle.canAct(battle.player, [])) turns++;
+    return turns;
+  };
+  const seen = new Set();
+  for (let seed = 1; seed <= 200; seed++) {
+    const battle = new Battle({ rng: new Rng(seed), player: makeFixed(CHARIZARD, 50, ['ember']), foes: [makeFixed(VENUSAUR, 50, ['tackle'])], policy: defaultAutoBattle() });
+    assert.ok(battle.inflictStatus(battle.player, 'sleep', []));
+    seen.add(turnsAsleep(battle));
+    assert.equal(battle.player.pokemon.status, null, 'awake once it moves');
+  }
+  assert.deepEqual([...seen].sort(), [1, 2, 3]);
+
+  const resting = makeFixed(CHARIZARD, 50, ['rest']);
+  resting.hp = 1;
+  const battle = new Battle({ rng: new Rng(1), player: resting, foes: [makeFixed(VENUSAUR, 50, ['splash'])], policy: defaultAutoBattle() });
+  battle.takeTurn();
+  assert.equal(resting.status, STATUS.SLEEP);
+  assert.equal(turnsAsleep(battle), 2);
 });

@@ -8,8 +8,9 @@ import assert from 'node:assert/strict';
 import { NEEDS_ASSETS, useRealGameData } from './helpers/data.mjs';
 import { Rng } from '../../app/renderer/core/rng.mjs';
 import { speciesIdBySlug } from '../../app/renderer/core/data.mjs';
-import { profileOf, suggestPolicy } from '../../app/renderer/engine/autoplan.mjs';
+import { optimizeMoves, profileOf, suggestPolicy } from '../../app/renderer/engine/autoplan.mjs';
 import { createPokemon, setMove } from '../../app/renderer/engine/pokemon.mjs';
+import { defaultAutoBattle, Session } from '../../app/renderer/engine/session.mjs';
 
 const ready = await useRealGameData();
 const options = { skip: ready ? false : NEEDS_ASSETS };
@@ -45,7 +46,7 @@ test('attacks are left to the hardest hit; the costly ones are kept to finish', 
   assert.equal(plan.flamethrower, 'always/never');
   assert.equal(plan.overheat, 'canFinish/never', 'a sharp fall in its own Sp. Atk');
   assert.equal(plan['hyper-beam'], 'canFinish/never', 'a turn recharging');
-  assert.equal(plan['solar-beam'], 'never/never', 'a turn standing still');
+  assert.equal(plan['solar-beam'], 'sunny/never', 'only in the sun, where it does not stand still a turn');
   // With nothing else to do the work, each is just an attack.
   assert.equal(pairs('charizard', ['overheat'])['overheat'], 'always/never');
   assert.equal(pairs('charizard', ['hyper-beam', 'scratch'])['hyper-beam'], 'always/never');
@@ -60,8 +61,11 @@ test('a weak priority attack finishes or swings last; a strong one is just an at
 test('an attack with a moment of its own is used at it, and is an ordinary attack otherwise', options, () => {
   const plan = pairs('gengar', ['hex', 'dream-eater', 'shadow-ball', 'fake-out']);
   assert.equal(plan.hex, 'foeStatus/always');
-  assert.equal(plan['dream-eater'], 'foeStatus/never');
-  assert.equal(plan['fake-out'], 'foeEntered/never');
+  assert.equal(plan['dream-eater'], 'foeAsleep/never');
+  assert.equal(plan['fake-out'], 'foeEntered/never', 'only on its first turn out');
+  assert.equal(pairs('hawlucha', ['acrobatics', 'close-combat'])['acrobatics'], 'noItem/always');
+  assert.equal(pairs('zapdos', ['thunder', 'drill-peck'])['thunder'], 'rainy/always');
+  assert.equal(pairs('gengar', ['nightmare', 'shadow-ball'])['nightmare'], 'foeAsleep/never');
   const ursaring = pairs('ursaring', ['facade', 'reversal', 'slash', 'counter']);
   assert.equal(ursaring.facade, 'selfStatus/always');
   assert.equal(ursaring.reversal, 'hpQuarter/never');
@@ -80,7 +84,7 @@ test('a heal waits for half health, or a third for something fast and frail', op
 test('each condition goes on the foe it suits', options, () => {
   // A sure sleep on a healthy foe, an unreliable one once per foe.
   assert.equal(pairs('breloom', ['spore', 'seed-bomb'])['spore'], 'foeHpAboveHalf/never');
-  assert.equal(pairs('gengar', ['hypnosis', 'shadow-ball'])['hypnosis'], 'foeEntered/never');
+  assert.equal(pairs('gengar', ['hypnosis', 'shadow-ball'])['hypnosis'], 'oncePerFoe/never');
   // Paralysis for something not fast; a burn for a physical foe.
   assert.equal(pairs('snorlax', ['thunder-wave', 'body-slam'])['thunder-wave'], 'slower/never');
   assert.equal(pairs('gengar', ['will-o-wisp', 'shadow-ball'])['will-o-wisp'], 'foePhysical/never');
@@ -100,7 +104,7 @@ test('a boost is used when it feeds its own attacks, and again after it is lower
   assert.equal(pairs('cloyster', ['iron-defense', 'body-press'])['iron-defense'], 'oncePerBattle/rankDown');
   // A Leer is off; two stages off what it hits into, once per foe.
   assert.equal(pairs('scyther', ['leer', 'x-scissor'])['leer'], 'never/never');
-  assert.equal(pairs('scyther', ['screech', 'x-scissor'])['screech'], 'foeEntered/never');
+  assert.equal(pairs('scyther', ['screech', 'x-scissor'])['screech'], 'oncePerFoe/never');
 });
 
 test('the field is set where it helps: weather for its attacks, screens for the attacker they stop', options, () => {
@@ -121,4 +125,42 @@ test('the order: heal, the foe\'s conditions, boosts, field, moment attacks, the
     ['roost', 'quick-attack', 'outrage', 'dragon-claw']);
   assert.deepEqual(suggestPolicy(make('gengar', ['shadow-ball', 'hex', 'will-o-wisp', 'protect'])).order,
     ['will-o-wisp', 'protect', 'hex', 'shadow-ball']);
+});
+
+test('a Pokémon setting out for the first time starts optimized, and one that has travelled keeps its own', options, () => {
+  const plan = (/** @type {any} */ pokemon) => {
+    const copy = structuredClone(pokemon);
+    const policy = defaultAutoBattle();
+    optimizeMoves(copy, policy);
+    return { order: copy.moves.map((/** @type {any} */ slot) => slot.move), moves: policy.moves, second: policy.second };
+  };
+  const gengar = make('gengar', ['shadow-ball', 'hypnosis', 'dream-eater', 'fake-out']);
+  const blissey = make('blissey', ['soft-boiled', 'body-slam', 'toxic', 'protect']);
+  const veteran = make('alakazam', ['psychic', 'recover']);
+  veteran.badges = ['rock'];
+  const expected = plan(blissey);
+
+  const session = new Session({ slot: 0, save: { seed: 1, party: { active: gengar, box: [blissey, veteran] } } });
+  assert.ok(session.active.travelled, 'whoever is travelling counts as having travelled');
+  session.autoBattle.moves['shadow-ball'] = 'hpHalf';
+
+  session.switchActive(0);
+  assert.equal(session.active, blissey);
+  assert.deepEqual(blissey.moves.map((slot) => slot.move), expected.order);
+  for (const slug of expected.order) {
+    assert.equal(session.autoBattle.moves[slug], expected.moves[slug], `${slug}'s first`);
+    assert.equal(session.autoBattle.second[slug], expected.second[slug], `${slug}'s second`);
+  }
+  assert.ok(blissey.travelled);
+
+  // Back to the one that travelled before: its settings are left alone.
+  session.switchActive(0);
+  assert.equal(session.active, gengar);
+  assert.equal(session.autoBattle.moves['shadow-ball'], 'hpHalf');
+
+  // And one from an older save that won a badge travelling.
+  const before = structuredClone(session.autoBattle);
+  session.switchActive(1);
+  assert.equal(session.active, veteran);
+  assert.deepEqual(session.autoBattle, before);
 });

@@ -17,7 +17,7 @@ import { moveOf } from '../core/data.mjs';
 import { button, el, scrollable, setChildren } from '../core/dom.mjs';
 import { name as localized, t } from '../core/i18n.mjs';
 import { moveCondition, secondCondition } from '../engine/battle.mjs';
-import { suggestPolicy } from '../engine/autoplan.mjs';
+import { optimizeMoves } from '../engine/autoplan.mjs';
 import { confirm, mountModal } from './dialog.mjs';
 import { typeChip } from './typechip.mjs';
 
@@ -32,10 +32,11 @@ import { typeChip } from './typechip.mjs';
  */
 const CONDITION_GROUPS = [
   { key: 'basic', conditions: ['never', 'always'] },
-  { key: 'turn', conditions: ['firstTurn', 'foeEntered', 'oncePerBattle', 'everyTwoTurns', 'everyThreeTurns', 'everyFourTurns'] },
+  { key: 'turn', conditions: ['oncePerBattle', 'oncePerFoe', 'foeEntered', 'everyTwoTurns', 'everyThreeTurns'] },
+  { key: 'miss', conditions: ['missedRetry', 'missedTwoTurns', 'untilHit', 'lastMissed'] },
   { key: 'matchup', conditions: ['canFinish', 'superEffective', 'faster', 'slower'] },
-  { key: 'battle', conditions: ['foePhysical', 'foeSpecial', 'trainerBattle', 'wildBattle'] },
-  { key: 'status', conditions: ['noStatus', 'foeStatus', 'selfStatus', 'noField', 'hasField'] },
+  { key: 'battle', conditions: ['foePhysical', 'foeSpecial', 'trainerBattle', 'wildBattle', 'bossBattle', 'lastFoe', 'foeLevelHigher', 'foeLevelLower'] },
+  { key: 'status', conditions: ['noStatus', 'foeStatus', 'foeAsleep', 'selfStatus', 'noItem', 'noField', 'hasField', 'sunny', 'rainy'] },
   { key: 'rank', conditions: ['rankUp', 'rankDown', 'foeRankUp', 'foeRankDown'] },
   { key: 'hp', conditions: ['hpFull', 'hpAboveHalf', 'hpTwoThirds', 'hpHalf', 'hpThird', 'hpQuarter'] },
   { key: 'foeHp', conditions: ['foeHpFull', 'foeHpAboveHalf', 'foeHpTwoThirds', 'foeHpHalf', 'foeHpThird', 'foeHpQuarter'] },
@@ -118,29 +119,9 @@ function optimizeButton(app, session, applied) {
     const pokemon = session.active;
     if (!(await confirm(app, t('auto.optimizeConfirm')))) return;
     if (session.active !== pokemon) return;
-    apply(session, suggestPolicy(pokemon));
+    optimizeMoves(pokemon, session.autoBattle);
     applied();
   }, { className: 'small', title: t('auto.optimizeHint') });
-}
-
-/**
- * Give the companion's moves the conditions and the order a plan names.
- * Other Pokémon's moves keep what they had.
- *
- * @param {import('../engine/session.mjs').Session} session
- * @param {{order: string[], moves: Record<string, string>, second: Record<string, string>}} plan
- */
-function apply(session, plan) {
-  const pokemon = session.active;
-  const policy = session.autoBattle;
-  policy.moves = { ...(policy.moves ?? {}), ...plan.moves };
-  policy.second = { ...(policy.second ?? {}), ...plan.second };
-  const bySlug = new Map(pokemon.moves.map((slot) => [slot.move, slot]));
-  const ordered = plan.order.map((slug) => bySlug.get(slug)).filter(Boolean);
-  // Anything the plan did not name (a move the data does not know) stays at the end.
-  const rest = pokemon.moves.filter((slot) => !plan.order.includes(slot.move));
-  // In place, as the swap on this screen does, for anything holding the list.
-  pokemon.moves.splice(0, pokemon.moves.length, ...ordered, ...rest);
 }
 
 /**

@@ -1991,6 +1991,7 @@ canvas {
 
 .cond-dot.cond-basic { background: #9099a1; }
 .cond-dot.cond-turn { background: #4d90d5; }
+.cond-dot.cond-miss { background: #3aa7a0; }
 .cond-dot.cond-matchup { background: #ab6ac8; }
 .cond-dot.cond-battle { background: #5a5465; }
 .cond-dot.cond-status { background: #e0a030; }
@@ -2032,7 +2033,7 @@ canvas {
   display: flex;
   align-items: center;
   gap: 5px;
-  padding: 1px 6px;
+  padding: 0 6px;
   border: 1px solid transparent;
   border-radius: 4px;
   background: transparent;

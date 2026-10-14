@@ -6,16 +6,16 @@
  * met along the way rather than something that appeared on top of the player.
  * The runner owns the props and their timing; the field scene owns the walk.
  */
-import { FIELD_HEIGHT, FIELD_WIDTH, leaderLevels, leaderOdds } from '../../shared/constants.mjs';
+import { FIELD_HEIGHT, FIELD_WIDTH, FIRST_RUN_LEADER_STATS, leaderLevels, leaderOdds } from '../../shared/constants.mjs';
 import { loadImage, loadSprite, Sprite } from '../core/assets.mjs';
 import { artOf, gameData, itemOf, speciesOf } from '../core/data.mjs';
 import { name as localized, t } from '../core/i18n.mjs';
 import { BALL_TIERS } from '../../shared/ball-tiers.mjs';
 import { TAG_TYPES } from '../../shared/area-tags.mjs';
 import { alreadyOwned, priceOf } from '../engine/shop.mjs';
-import { capRoster, evolveToLevel, giveTrainerItems, LEADER_PARTY_CAP, rollTrainer, rollWildPokemon } from '../engine/encounter.mjs';
+import { capRoster, evolveToLevel, giveTrainerItems, LEADER_PARTY_CAP, rollTrainer, rollWildPokemon, wildLevelDrop } from '../engine/encounter.mjs';
 import { createPokemon, levelOf } from '../engine/pokemon.mjs';
-import { signatureFind } from '../engine/items.mjs';
+import { pickFind, signatureFind } from '../engine/items.mjs';
 import { callingFind, rollRare } from '../engine/rare.mjs';
 import {
   TRAINER_SCALE,
@@ -373,7 +373,7 @@ function startBerry(session, spawnAt) {
     .filter(([, item]) => item.pocket === 'berries' && item.sprite)
     .map(([slug]) => slug);
   const berry = session.rng.pick(berries.length ? berries : ['oran-berry']);
-  const count = session.rng.int(BERRY_HARVEST.min, BERRY_HARVEST.max);
+  const count = firstRunSupply(session, session.rng.int(BERRY_HARVEST.min, BERRY_HARVEST.max));
 
   const trees = gameData().actors?.props?.berryTrees ?? {};
   const tree = treeFor(berry, trees);
@@ -501,8 +501,8 @@ function startBall(session, spawnAt) {
   );
   // Now and then, the item the travelling legendary is waiting on, or a key
   // item that leads to a rare Pokémon.
-  const item = signatureFind(session) ?? callingFind(session) ?? (pool.length ? session.rng.pick(pool) : 'poke-ball');
-  const count = foundCount(session.rng, item);
+  const item = signatureFind(session) ?? callingFind(session) ?? pickFind(session, pool) ?? 'poke-ball';
+  const count = foundCount(session.rng, item, session.firstRun);
 
   const state = {
     kind: 'ball',
@@ -551,16 +551,59 @@ export const FOUND_BALLS = [
 ];
 
 /**
- * How many of an item one find on the road is.
+ * How many of an item one find on the road is: on the save's first run, more
+ * of the everyday supplies (see `FIRST_RUN_SUPPLY_BONUS`) — but a Master Ball
+ * is still found alone.
  *
  * @param {import('../core/rng.mjs').Rng} rng
  * @param {string} slug
+ * @param {boolean} [firstRun]
  */
-export function foundCount(rng, slug) {
-  if (itemOf(slug)?.pocket !== 'pokeballs') return 1;
+export function foundCount(rng, slug, firstRun = false) {
+  const more = (/** @type {number} */ count) => (firstRun && isSupply(slug) ? withSupplyBonus(count) : count);
+  if (itemOf(slug)?.pocket !== 'pokeballs') return more(1);
   const price = priceOf(slug) ?? Infinity;
   const band = FOUND_BALLS.find((entry) => price <= entry.upTo) ?? FOUND_BALLS[FOUND_BALLS.length - 1];
-  return rng.int(band.min, band.max);
+  const count = rng.int(band.min, band.max);
+  return band.upTo === Infinity ? count : more(count);
+}
+
+/**
+ * How much more of the everyday supplies — the healing items, the balls and
+ * the berries — the save's first run comes by, from the road and the
+ * Pokémon Center alike: half as much again, rounded up, so a find of one is
+ * two. The first trip is the one with no money put by and no idea yet what
+ * the road costs; after a champion it is the usual amounts.
+ */
+export const FIRST_RUN_SUPPLY_BONUS = 1.5;
+
+/** The medicine that counts as a supply: what restores HP, cures, revives or restores PP. */
+const SUPPLY_MEDICINE = new Set(['healing', 'status-cures', 'revival', 'pp-recovery']);
+
+/**
+ * Whether an item is one of the everyday supplies the first run finds more
+ * of. A mint, a Rare Candy or an Ability Capsule is medicine but not one.
+ *
+ * @param {string} slug
+ */
+export function isSupply(slug) {
+  const item = itemOf(slug);
+  if (!item) return false;
+  if (item.pocket === 'pokeballs' || item.pocket === 'berries') return true;
+  return item.pocket === 'medicine' && SUPPLY_MEDICINE.has(item.category);
+}
+
+/** @param {number} count */
+const withSupplyBonus = (count) => Math.ceil(count * FIRST_RUN_SUPPLY_BONUS);
+
+/**
+ * A count of supplies, with the first run's bonus if this is it.
+ *
+ * @param {import('../engine/session.mjs').Session} session
+ * @param {number} count
+ */
+function firstRunSupply(session, count) {
+  return session.firstRun ? withSupplyBonus(count) : count;
 }
 
 /**
@@ -827,9 +870,11 @@ function restAndResupply(session, app) {
 
   const level = levelOf(session.active);
   const supply = SUPPLIES.find((entry) => level < entry.level) ?? SUPPLIES[SUPPLIES.length - 1];
-  session.addItem(supply.item, SUPPLY_COUNT);
+  const potions = firstRunSupply(session, SUPPLY_COUNT);
+  session.addItem(supply.item, potions);
 
   const balls = ballSupply(session.rng, level);
+  balls.count = firstRunSupply(session, balls.count);
   session.addItem(balls.item, balls.count);
 
   app.audio.playJingle(gameData().bgm.cues.heal ?? null);
@@ -838,7 +883,7 @@ function restAndResupply(session, app) {
       t('event.healed'),
       t('event.supplied', {
         name: localized(itemOf(supply.item)?.name, supply.item),
-        count: SUPPLY_COUNT,
+        count: potions,
       }),
       t('event.supplied', {
         name: localized(itemOf(balls.item)?.name, balls.item),
@@ -863,6 +908,7 @@ function startWild(session, spawnAt) {
     boxed(session),
     session.shinyOdds,
     rollRare(session),
+    wildLevelDrop(session.firstRun, session.active),
   );
   session.lastWildSpecies = wild.speciesId;
   session.markSeen(wild.speciesId);
@@ -1038,38 +1084,59 @@ function pickLeader(session) {
 /**
  * A leader's party: the species they are known for, at the levels of the
  * badge they hold (see `leaderLevels`) — whoever challenges them, as the
- * League is.
+ * League is. On the save's first run the first three leaders keep under their
+ * gym's ceiling (see `FIRST_RUN_LEADER_STATS`).
  *
  * @param {import('../engine/session.mjs').Session} session
  * @param {any} leader
  */
 export function leaderParty(session, leader) {
-  const roster = (leader.party ?? []).filter((id) => speciesOf(id));
+  const ceiling = leaderCeiling(session);
+  const roster = (leader.party ?? []).filter((id) => speciesOf(id) && totalStats(speciesOf(id)) <= ceiling);
 
   const species = roster.length
     ? capRoster(roster, LEADER_PARTY_CAP)
     : // No roster on file: fall back to strong members of the leader's type.
-      pickTypeRoster(session, leader.type, LEADER_PARTY_CAP);
+      pickTypeRoster(session, leader.type, LEADER_PARTY_CAP, ceiling);
 
   const levels = leaderLevels(session.badges.length, species.length);
-  const party = species.map((id, index) =>
-    createPokemon(session.rng, evolveToLevel(id, levels[index]), levels[index], { ivFloor: 10 }),
-  );
+  const party = species.map((id, index) => {
+    // Grown to its level, unless that takes it over the ceiling: a Magikarp
+    // drawn for an early gym stays a Magikarp.
+    const grown = evolveToLevel(id, levels[index]);
+    const kept = totalStats(speciesOf(grown)) <= ceiling ? grown : id;
+    return createPokemon(session.rng, kept, levels[index], { ivFloor: 10 });
+  });
   return giveTrainerItems(session.rng, party, 'leader');
 }
 
 /**
- * The highest-statted non-legendary species of a type, which is what a gym
- * leader would plausibly have trained.
+ * The most base stats the next leader's Pokémon may have: the gym's ceiling
+ * on the save's first run, and no limit otherwise.
+ *
+ * @param {import('../engine/session.mjs').Session} session
+ */
+function leaderCeiling(session) {
+  return session.firstRun ? FIRST_RUN_LEADER_STATS[session.badges.length] ?? Infinity : Infinity;
+}
+
+/**
+ * The highest-statted non-legendary species of a type, within the ceiling,
+ * which is what a gym leader would plausibly have trained. A type with
+ * nothing under the ceiling goes without it.
  *
  * @param {import('../engine/session.mjs').Session} session
  * @param {string} type
  * @param {number} count
+ * @param {number} [ceiling]
  * @returns {number[]}
  */
-function pickTypeRoster(session, type, count) {
-  const candidates = Object.values(gameData().species)
-    .filter((entry) => !entry.isLegendary && !entry.isMythical && entry.types.includes(type))
+function pickTypeRoster(session, type, count, ceiling = Infinity) {
+  const ofType = Object.values(gameData().species).filter(
+    (entry) => !entry.isLegendary && !entry.isMythical && entry.types.includes(type),
+  );
+  const within = ofType.filter((entry) => totalStats(entry) <= ceiling);
+  const candidates = (within.length ? within : ofType)
     .sort((a, b) => totalStats(b) - totalStats(a))
     .slice(0, 24)
     .map((entry) => entry.id);

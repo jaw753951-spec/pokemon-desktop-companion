@@ -3,7 +3,11 @@
  *
  * Laid out like Pokémon GO's: the target in the middle, the balls you actually
  * hold along the bottom with their real odds printed underneath, and the
- * throws you have left counted in the corner. Three throws, then it flees.
+ * throws you have left counted in the corner. Three throws, then it flees —
+ * and it flees as soon as the last ball has missed, or when the screen is
+ * left after a ball has been thrown. One left untried is kept in the tray for
+ * later, and so is one the screen opened on with no ball in the bag: it says
+ * so and goes straight back.
  */
 import { CAPTURE_ATTEMPTS, FIELD_HEIGHT, FIELD_WIDTH, timeOfDay, VIEW_HEIGHT, VIEW_WIDTH } from '../../shared/constants.mjs';
 import { loadSprite } from '../core/assets.mjs';
@@ -48,6 +52,8 @@ export function captureScene({ session, target, onFinish }) {
   let fed = null;
   let busy = false;
   let settled = false;
+  /** Whether the screen has reported how it ended, which it does once. */
+  let finished = false;
 
   /** @type {Battler|null} */
   let battler = null;
@@ -172,6 +178,9 @@ export function captureScene({ session, target, onFinish }) {
       renderCounter();
       renderBalls(app);
       renderBerries(app);
+      // Nothing to throw at all: said so, and back to the road, the Pokémon
+      // still in the tray for when there is a ball.
+      if (session.balls().length === 0) turnBack(app);
 
       return el('div.screen.capture-screen', {}, [
         counter,
@@ -179,7 +188,15 @@ export function captureScene({ session, target, onFinish }) {
         tray,
         message,
         el('div.capture-close', {}, [
-          button(t('common.cancel'), () => finish(app, false), { className: 'small ghost' }),
+          button(t('common.cancel'), () => {
+            // Once it is caught or gone there is nothing to call off, and a
+            // ball in the air is seen through.
+            if (settled || busy) return;
+            // Left untried, it waits in the tray; a ball thrown at it, and it
+            // is off.
+            if (attempts < CAPTURE_ATTEMPTS) runOff(app, 'capture.fled');
+            else finish(app, false);
+          }, { className: 'small ghost' }),
         ]),
       ]);
     },
@@ -413,11 +430,12 @@ export function captureScene({ session, target, onFinish }) {
     }
 
     if (attempts <= 0) {
-      settled = true;
-      message.textContent = t('capture.fled', { name: label() });
-      app.audio.blip('cancel');
-      await wait(1200);
-      finish(app, false, true);
+      await runOff(app, 'capture.fled');
+      return;
+    }
+    // Throws left but no ball to throw: it gets away as it would at the last.
+    if (session.balls().length === 0) {
+      await runOff(app, 'capture.outOfBalls');
       return;
     }
 
@@ -427,12 +445,45 @@ export function captureScene({ session, target, onFinish }) {
   }
 
   /**
+   * No ball in the bag to begin with: nothing was tried, so the Pokémon stays
+   * in the tray and the screen closes after saying why.
+   *
+   * @param {import('../core/app.mjs').App} app
+   */
+  async function turnBack(app) {
+    settled = true;
+    busy = true;
+    message.textContent = t('capture.noBallsHeld');
+    await wait(1200);
+    finish(app, false);
+  }
+
+  /**
+   * The catch has failed for good: the Pokémon runs off, said so for a
+   * moment, and is not kept in the tray — after the last throw, when there is
+   * no ball left to throw, or when the screen is left after a throw.
+   *
+   * @param {import('../core/app.mjs').App} app
+   * @param {string} line what is said as it goes
+   */
+  async function runOff(app, line) {
+    if (settled) return;
+    settled = true;
+    busy = true;
+    message.textContent = t(line, { name: label() });
+    await wait(1400);
+    finish(app, false, true);
+  }
+
+  /**
    * @param {import('../core/app.mjs').App} app
    * @param {boolean} caught
    * @param {boolean} [fled] whether it ran rather than being let go, which is
    *   the difference between losing the chance and keeping it for later
    */
   function finish(app, caught, fled = false) {
+    if (finished) return;
+    finished = true;
     if (!caught) app.audio.blip('cancel');
     onFinish({ caught, fled });
   }

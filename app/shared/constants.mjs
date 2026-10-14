@@ -240,6 +240,35 @@ export const BADGES_FOR_LEAGUE = 8;
 export const BADGE_LEVELS = [12, 20, 28, 36, 44, 52, 60, 68];
 
 /**
+ * The most base stats, all six summed, a Pokémon of the first, second and
+ * third leaders' teams may have on the save's first run.
+ *
+ * A leader with no roster on file sends the strongest of their type, which
+ * put a level-12 Tyranitar in front of a starter that had barely evolved. So
+ * on the first run the early gyms field what their badge's level can stand
+ * up to — a Graveler or an Onix for the first, a Golem at most by the third —
+ * and from the fourth on, or once the save has a champion, the strongest
+ * again.
+ */
+export const FIRST_RUN_LEADER_STATS = [400, 450, 500];
+
+/**
+ * How much more experience a battle pays on the save's first run, while the
+ * companion is below `FIRST_RUN_EXPERIENCE_UNTIL`: half as much again, as a
+ * Lucky Egg does, and on top of one. The first three badges are the climb a
+ * companion makes alone from level 5; past them it is the usual pace.
+ */
+export const FIRST_RUN_EXPERIENCE_BONUS = 1.5;
+export const FIRST_RUN_EXPERIENCE_UNTIL = 30;
+
+/**
+ * How many levels lower a wild Pokémon stands on the save's first run, while
+ * the companion is below the level after it: two, floored at level 1.
+ */
+export const FIRST_RUN_WILD_LEVEL_DROP = 2;
+export const FIRST_RUN_WILD_UNTIL = 30;
+
+/**
  * How far above a badge's level the leader's ace stands, and how far below
  * each Pokémon the one sent out before it.
  */

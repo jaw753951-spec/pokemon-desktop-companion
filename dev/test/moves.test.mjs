@@ -88,7 +88,7 @@ test('a move bound to fail is passed over, and taken up again once it would work
 
   // Its moment come round, too: the turn steps past it.
   const ordered = fight(fixed(GOLURK, 60, ['poltergeist', 'shadow-claw']), target(), {
-    policy: { ...defaultAutoBattle(), moves: { poltergeist: 'firstTurn' } },
+    policy: { ...defaultAutoBattle(), moves: { poltergeist: 'oncePerBattle' } },
   });
   assert.equal(ordered.chooseMove(ordered.player, /** @type {any} */ (ordered.foe)), 'shadow-claw');
 

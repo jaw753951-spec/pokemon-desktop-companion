@@ -14,7 +14,7 @@ import { button, el, setChildren, shinyMark, statusMark } from '../core/dom.mjs'
 import { name as localized, t } from '../core/i18n.mjs';
 import { chooseFromList } from '../ui/dialog.mjs';
 import { Battle } from '../engine/battle.mjs';
-import { battleMedicine, healingItemFor, restoreHeldItem, shedAfterEvolving, throwItem } from '../engine/items.mjs';
+import { battleMedicine, healingItemFor, pickFind, restoreHeldItem, shedAfterEvolving, throwItem } from '../engine/items.mjs';
 import {
   evolveInto,
   friendshipForLevels,
@@ -141,6 +141,7 @@ const PLAYER_SPOT = { x: Math.round(FIELD_WIDTH * 0.26), y: MESSAGE_TOP - 3 };
  *   foes: import('../engine/pokemon.mjs').Pokemon[],
  *   trainer?: {name: {ko: string, en: string}, portrait?: string|null, kind?: string}|null,
  *   leader?: boolean,
+ *   boss?: boolean,
  *   backdrop?: string|null,
  *   music?: string|null,
  *   weather?: string|null,
@@ -148,7 +149,7 @@ const PLAYER_SPOT = { x: Math.round(FIELD_WIDTH * 0.26), y: MESSAGE_TOP - 3 };
  * }} options
  * @returns {import('../core/app.mjs').Scene}
  */
-export function battleScene({ session, foes, trainer = null, leader = false, backdrop = null, music = null, weather = undefined, onFinish }) {
+export function battleScene({ session, foes, trainer = null, leader = false, boss = leader, backdrop = null, music = null, weather = undefined, onFinish }) {
   const battle = new Battle({
     rng: session.rng,
     player: session.active,
@@ -160,6 +161,9 @@ export function battleScene({ session, foes, trainer = null, leader = false, bac
       throw: (slug, pokemon, choice) => throwItem(session, slug, pokemon, choice),
     },
     trainerBattle: Boolean(trainer),
+    firstRun: session.firstRun,
+    // A gym leader or a League round.
+    bossBattle: boss,
     // The sky the place is under, unless the caller names one of its own.
     weather: weather === undefined ? weatherForArea(session.area) : weather,
     // And the ground, for a Camouflage.
@@ -1300,7 +1304,7 @@ export function battleScene({ session, foes, trainer = null, leader = false, bac
     session.active.toxic = false;
     if (battle.outcome === 'won' && abilityName(session.active) === 'pickup' && session.rng.chance(PICKUP_CHANCE)) {
       const pool = (gameData().itemTiers?.['poke-ball'] ?? []).filter((slug) => !alreadyOwned(session, slug));
-      const found = pool.length ? session.rng.pick(pool) : null;
+      const found = pickFind(session, pool);
       if (found) {
         session.addItem(found);
         app.toast(t('battle.pickup', { name: nameOf(session.active), item: localized(gameData().items[found]?.name, found) }), 3200);
