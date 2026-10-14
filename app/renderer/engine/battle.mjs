@@ -5725,9 +5725,6 @@ function conditionHolds(condition, battle, attacker, defender, slug) {
     // does not lose it.
     case 'oncePerFoe':
       return !(attacker.usedAgainst?.target === defender && attacker.usedAgainst.moves.has(slug));
-    // From the companion's fifth turn on: a fight that has gone on.
-    case 'longBattle':
-      return attacker.turnsTaken >= LONG_BATTLE_TURNS - 1;
     // Every so many turns, counted from the turn the move was last used,
     // however it came to be: one not yet used counts from before the first
     // turn, so every two is the second, fourth, sixth — and one used on the
@@ -5753,15 +5750,10 @@ function conditionHolds(condition, battle, attacker, defender, slug) {
     // or a block, and again for each Pokémon a trainer sends out.
     case 'untilHit':
       return !(attacker.landed?.target === defender && attacker.landed.moves.has(slug));
-    // When a move that never misses is worth more than a strong one that
-    // might: whatever the companion used on its last turn missed, its own
-    // accuracy is lowered, or the foe's evasion raised. `lastMissed` and
-    // `accuracyDown` were these two halves, apart.
-    case 'accuracyShaky':
+    // Whatever the companion used on its last turn missed: when a move that
+    // never misses is worth more than a strong one that might.
     case 'lastMissed':
-    case 'accuracyDown':
-      return (attacker.lastMissTurn !== undefined && attacker.lastMissTurn === attacker.turnsTaken) ||
-        (attacker.stages.acc ?? 0) < 0 || (defender.stages.eva ?? 0) > 0;
+      return attacker.lastMissTurn !== undefined && attacker.lastMissTurn === attacker.turnsTaken;
     // Super effective or better against the foe as it stands: its types now,
     // and the move's as it would leave — an ability retyping it, the field, a
     // mask or a plate behind it. A move that deals no damage never is.
@@ -5867,9 +5859,6 @@ function conditionHolds(condition, battle, attacker, defender, slug) {
       return true;
   }
 }
-
-/** The companion's turn from which a battle counts as having gone on (`longBattle`). */
-export const LONG_BATTLE_TURNS = 5;
 
 /**
  * How many of its own turns this one is past the one a move was last used on,

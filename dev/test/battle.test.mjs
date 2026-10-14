@@ -7,7 +7,6 @@ import { moveOf, typeEffectiveness } from '../../app/renderer/core/data.mjs';
 import {
   Battle,
   categoryOf,
-  LONG_BATTLE_TURNS,
   choosePolicyMove,
   moveCondition,
   secondCondition,
@@ -1167,7 +1166,7 @@ test('a move that missed is used again, at once or so many turns on, and a hit s
   assert.equal(pick(), 'swift', 'and stays due until it is used');
 });
 
-test('until it hits, accuracy at risk, and a foe asleep', options, () => {
+test('until it hits each foe, the last move missed, and a foe asleep', options, () => {
   const player = makeFixed(CHARIZARD, 50, ['flamethrower', 'swift']);
   const battle = new Battle({
     rng: new Rng(2),
@@ -1188,19 +1187,13 @@ test('until it hits, accuracy at risk, and a foe asleep', options, () => {
   assert.equal(pick(), 'flamethrower', 'landed on this foe');
   assert.equal(pick(/** @type {any} */ ({ ...foe })), 'swift', 'and owed again to the next one sent out');
 
-  battle.policy.moves = { flamethrower: 'always', swift: 'accuracyShaky' };
+  battle.policy.moves = { flamethrower: 'always', swift: 'lastMissed' };
   assert.equal(pick(), 'flamethrower');
   me.turnsTaken++;
   battle.noteLanding(me, foe, 'flamethrower', [{ kind: 'miss', side: 'player' }]);
   assert.equal(pick(), 'swift', 'whatever was used last missed');
   me.turnsTaken++;
   assert.equal(pick(), 'flamethrower', 'only for the turn after');
-  me.stages.acc = -1;
-  assert.equal(pick(), 'swift', 'its own accuracy lowered');
-  me.stages.acc = 0;
-  foe.stages.eva = 1;
-  assert.equal(pick(), 'swift', "the foe's evasion raised");
-  foe.stages.eva = 0;
 
   battle.policy.moves = { flamethrower: 'always', swift: 'foeAsleep' };
   foe.pokemon.status = STATUS.PARALYSIS;
@@ -1230,13 +1223,16 @@ test('a miss in a real battle is noted, and a hit clears it', options, () => {
   assert.ok(missed > 0 && landed > 0, 'both a miss and a hit were seen');
 });
 
-test('the old miss conditions a save may hold are read as the ones they were folded into', () => {
-  const policy = normalizeAutoBattle({ moves: { thunder: 'lastMissed', swift: 'accuracyDown' }, second: { thunder: 'missedThreeTurns' } });
-  assert.deepEqual(policy.moves, { thunder: 'accuracyShaky', swift: 'accuracyShaky' });
+test('the conditions taken out are read as the nearest ones left', () => {
+  const policy = normalizeAutoBattle({
+    moves: { thunder: 'accuracyShaky', swift: 'accuracyDown', ember: 'longBattle' },
+    second: { thunder: 'missedThreeTurns' },
+  });
+  assert.deepEqual(policy.moves, { thunder: 'lastMissed', swift: 'rankDown', ember: 'never' });
   assert.deepEqual(policy.second, { thunder: 'missedTwoTurns' });
 });
 
-test('once per foe, a long battle, a boss, the last foe, levels, the weather and an empty hand', options, () => {
+test('once per foe, a boss, the last foe, levels, the weather and an empty hand', options, () => {
   const player = makeFixed(CHARIZARD, 50, ['flamethrower', 'swift']);
   const foes = [makeFixed(VENUSAUR, 50, ['splash']), makeFixed(BLASTOISE, 60, ['splash'])];
   const battle = new Battle({ rng: new Rng(2), player, foes, policy: { ...defaultAutoBattle(), moves: { flamethrower: 'always' } }, trainerBattle: true });
@@ -1252,10 +1248,6 @@ test('once per foe, a long battle, a boss, the last foe, levels, the weather and
   me.usedAgainst = { target: foe, moves: new Set(['swift']) };
   assert.ok(!when('oncePerFoe'));
   assert.ok(when('oncePerFoe', { ...foe }));
-
-  assert.ok(!when('longBattle'));
-  me.turnsTaken = LONG_BATTLE_TURNS - 1;
-  assert.ok(when('longBattle'), 'the fifth turn');
 
   assert.ok(!when('bossBattle'));
   battle.bossBattle = true;

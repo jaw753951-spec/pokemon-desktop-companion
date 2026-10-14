@@ -557,16 +557,18 @@ export function normalizeItemPolicy(policy) {
  * set to one is given instead. "About to go down first" guessed at the foe's
  * moves from what it had used; the companion's setting now reads only what
  * is plain to see, and the nearest plain thing is the foe being faster.
- * Three of the miss conditions were folded together: three turns after a
- * miss into two, and "the last move missed" and "accuracy lowered" into one.
+ * Three turns after a miss was folded into two; "accuracy lowered" is any
+ * stage lowered, which the rank conditions already read, and a move kept for
+ * the fifth turn on was all but never used.
  *
  * @type {Record<string, string>}
  */
 const RETIRED_CONDITIONS = {
   inDanger: 'slower',
   missedThreeTurns: 'missedTwoTurns',
-  lastMissed: 'accuracyShaky',
-  accuracyDown: 'accuracyShaky',
+  accuracyDown: 'rankDown',
+  accuracyShaky: 'lastMissed',
+  longBattle: 'never',
 };
 
 /**
