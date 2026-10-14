@@ -1293,3 +1293,27 @@ test('a move used counts against the foe in front of it, in a real battle', opti
     log.find((entry) => entry.kind === 'move' && entry.side === 'player')?.data?.move);
   assert.deepEqual(used, ['swift', 'flamethrower']);
 });
+
+test('sleep lasts one to three turns, never none, and a Rest two', options, () => {
+  /** @param {any} battle */
+  const turnsAsleep = (battle) => {
+    let turns = 0;
+    while (!battle.canAct(battle.player, [])) turns++;
+    return turns;
+  };
+  const seen = new Set();
+  for (let seed = 1; seed <= 200; seed++) {
+    const battle = new Battle({ rng: new Rng(seed), player: makeFixed(CHARIZARD, 50, ['ember']), foes: [makeFixed(VENUSAUR, 50, ['tackle'])], policy: defaultAutoBattle() });
+    assert.ok(battle.inflictStatus(battle.player, 'sleep', []));
+    seen.add(turnsAsleep(battle));
+    assert.equal(battle.player.pokemon.status, null, 'awake once it moves');
+  }
+  assert.deepEqual([...seen].sort(), [1, 2, 3]);
+
+  const resting = makeFixed(CHARIZARD, 50, ['rest']);
+  resting.hp = 1;
+  const battle = new Battle({ rng: new Rng(1), player: resting, foes: [makeFixed(VENUSAUR, 50, ['splash'])], policy: defaultAutoBattle() });
+  battle.takeTurn();
+  assert.equal(resting.status, STATUS.SLEEP);
+  assert.equal(turnsAsleep(battle), 2);
+});

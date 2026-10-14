@@ -133,6 +133,9 @@ const STAGE_ALIASES = { accuracy: 'acc', evasion: 'eva' };
 /** Status conditions the engine models. */
 export const STATUS = { BURN: 'brn', POISON: 'psn', PARALYSIS: 'par', SLEEP: 'slp', FREEZE: 'frz' };
 
+/** Sleep's counter when it falls: one to three turns asleep (see `inflictStatus`). */
+export const SLEEP_COUNTER = { min: 2, max: 4 };
+
 /**
  * What is left when nothing has PP.
  *
@@ -5073,7 +5076,12 @@ export class Battle {
     }
 
     target.pokemon.status = status;
-    target.pokemon.statusTurns = status === STATUS.SLEEP ? this.rng.int(1, 3) : 0;
+    // Sleep's counter is ticked off each time the sleeper tries to move, and
+    // it wakes — and moves — on the try that empties it (see `canAct`). Two
+    // to four, as the games since Black and White roll it, is one to three
+    // turns asleep; one to three let a third of everything put to sleep wake
+    // at once, never having slept a turn.
+    target.pokemon.statusTurns = status === STATUS.SLEEP ? this.rng.int(SLEEP_COUNTER.min, SLEEP_COUNTER.max) : 0;
     // A Toxic's poison is the bad kind, which bites harder every turn.
     const toxic = status === STATUS.POISON && Boolean(options.toxic);
     target.pokemon.toxic = toxic;
