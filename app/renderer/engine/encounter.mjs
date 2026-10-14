@@ -8,6 +8,7 @@
  * have become a Pelipper.
  */
 import { TAG_TYPES } from '../../shared/area-tags.mjs';
+import { FIRST_RUN_WILD_LEVEL_DROP, FIRST_RUN_WILD_UNTIL } from '../../shared/constants.mjs';
 import { gameData, speciesIdBySlug, speciesOf } from '../core/data.mjs';
 import { createPokemon, levelOf, rollWildHeldItem } from './pokemon.mjs';
 
@@ -98,10 +99,11 @@ export function spreadFor(level) {
  * @param {number} [shinyOdds] better than the usual with a Shiny Charm in the bag
  * @param {number|null} [rare] a rare Pokémon this one is to be instead of a draw
  *   (see `rare.mjs`), brought to its level the way a stray is
+ * @param {number} [levelDrop] levels taken off the one rolled (see `wildLevelDrop`)
  * @returns {import('./pokemon.mjs').Pokemon}
  */
-export function rollWildPokemon(rng, area, companion, previous = null, owned = new Set(), shinyOdds = undefined, rare = null) {
-  const level = rollLevel(rng, companion);
+export function rollWildPokemon(rng, area, companion, previous = null, owned = new Set(), shinyOdds = undefined, rare = null, levelDrop = 0) {
+  const level = Math.max(1, rollLevel(rng, companion) - levelDrop);
   /** @returns {{speciesId: number, water: boolean, fished: boolean}} */
   const draw = () => {
     if (rng.chance(STRAY_CHANCE)) return { speciesId: pickStray(rng, area, level), water: false, fished: false };
@@ -224,6 +226,20 @@ export function devolveToLevel(speciesId, level) {
     current = previous.id;
   }
   return current;
+}
+
+/**
+ * How many levels the save's first run takes off a wild Pokémon, while the
+ * companion is below `FIRST_RUN_WILD_UNTIL`: the first stretch is walked
+ * alone from level 5, with no money put by, and a wild that stands level with
+ * it costs a potion as often as not. A trainer and a leader stand where they
+ * did.
+ *
+ * @param {boolean} firstRun
+ * @param {import('./pokemon.mjs').Pokemon} companion
+ */
+export function wildLevelDrop(firstRun, companion) {
+  return firstRun && levelOf(companion) < FIRST_RUN_WILD_UNTIL ? FIRST_RUN_WILD_LEVEL_DROP : 0;
 }
 
 /**

@@ -262,6 +262,13 @@ export const FIRST_RUN_EXPERIENCE_BONUS = 1.5;
 export const FIRST_RUN_EXPERIENCE_UNTIL = 30;
 
 /**
+ * How many levels lower a wild Pokémon stands on the save's first run, while
+ * the companion is below the level after it: two, floored at level 1.
+ */
+export const FIRST_RUN_WILD_LEVEL_DROP = 2;
+export const FIRST_RUN_WILD_UNTIL = 30;
+
+/**
  * How far above a badge's level the leader's ace stands, and how far below
  * each Pokémon the one sent out before it.
  */

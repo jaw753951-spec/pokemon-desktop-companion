@@ -13,7 +13,7 @@ import { name as localized, t } from '../core/i18n.mjs';
 import { BALL_TIERS } from '../../shared/ball-tiers.mjs';
 import { TAG_TYPES } from '../../shared/area-tags.mjs';
 import { alreadyOwned, priceOf } from '../engine/shop.mjs';
-import { capRoster, evolveToLevel, giveTrainerItems, LEADER_PARTY_CAP, rollTrainer, rollWildPokemon } from '../engine/encounter.mjs';
+import { capRoster, evolveToLevel, giveTrainerItems, LEADER_PARTY_CAP, rollTrainer, rollWildPokemon, wildLevelDrop } from '../engine/encounter.mjs';
 import { createPokemon, levelOf } from '../engine/pokemon.mjs';
 import { pickFind, signatureFind } from '../engine/items.mjs';
 import { callingFind, rollRare } from '../engine/rare.mjs';
@@ -908,6 +908,7 @@ function startWild(session, spawnAt) {
     boxed(session),
     session.shinyOdds,
     rollRare(session),
+    wildLevelDrop(session.firstRun, session.active),
   );
   session.lastWildSpecies = wild.speciesId;
   session.markSeen(wild.speciesId);
