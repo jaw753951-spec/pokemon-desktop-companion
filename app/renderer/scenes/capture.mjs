@@ -4,9 +4,10 @@
  * Laid out like Pokémon GO's: the target in the middle, the balls you actually
  * hold along the bottom with their real odds printed underneath, and the
  * throws you have left counted in the corner. Three throws, then it flees —
- * and it flees as soon as there is no ball left to throw at it, or when the
- * screen is left after a ball has been thrown. Only one left untried is kept
- * in the tray for later.
+ * and it flees as soon as the last ball has missed, or when the screen is
+ * left after a ball has been thrown. One left untried is kept in the tray for
+ * later, and so is one the screen opened on with no ball in the bag: it says
+ * so and goes straight back.
  */
 import { CAPTURE_ATTEMPTS, FIELD_HEIGHT, FIELD_WIDTH, timeOfDay, VIEW_HEIGHT, VIEW_WIDTH } from '../../shared/constants.mjs';
 import { loadSprite } from '../core/assets.mjs';
@@ -177,8 +178,9 @@ export function captureScene({ session, target, onFinish }) {
       renderCounter();
       renderBalls(app);
       renderBerries(app);
-      // Nothing to throw at all: it does not wait to be let go.
-      if (session.balls().length === 0) runOff(app, 'capture.outOfBalls');
+      // Nothing to throw at all: said so, and back to the road, the Pokémon
+      // still in the tray for when there is a ball.
+      if (session.balls().length === 0) turnBack(app);
 
       return el('div.screen.capture-screen', {}, [
         counter,
@@ -440,6 +442,20 @@ export function captureScene({ session, target, onFinish }) {
     message.textContent = t('capture.failed');
     renderBalls(app);
     renderBerries(app);
+  }
+
+  /**
+   * No ball in the bag to begin with: nothing was tried, so the Pokémon stays
+   * in the tray and the screen closes after saying why.
+   *
+   * @param {import('../core/app.mjs').App} app
+   */
+  async function turnBack(app) {
+    settled = true;
+    busy = true;
+    message.textContent = t('capture.noBallsHeld');
+    await wait(1200);
+    finish(app, false);
   }
 
   /**
