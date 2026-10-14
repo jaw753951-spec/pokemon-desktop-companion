@@ -478,10 +478,10 @@ export function defaultAutoBattle() {
     /**
      * The condition each kind of move starts with, until the player gives a
      * move one of its own: an attack always, a hindrance on a foe still
-     * unhurt, a boost on the first turn, a field move on an empty field, a
-     * heal at half health.
+     * unhurt, a boost once a battle, a field move on an empty field, a heal
+     * at half health.
      */
-    conditions: { damage: 'always', status: 'noStatus', stat: 'firstTurn', field: 'noField', heal: 'hpHalf' },
+    conditions: { damage: 'always', status: 'noStatus', stat: 'oncePerBattle', field: 'noField', heal: 'hpHalf' },
     /**
      * When each move may be used first, by the move, `never` included. A
      * condition that names a moment is answered before anything else;
@@ -559,12 +559,16 @@ export function normalizeItemPolicy(policy) {
  * is plain to see, and the nearest plain thing is the foe being faster.
  * Three turns after a miss was folded into two; "accuracy lowered" is any
  * stage lowered, which the rank conditions already read, and a move kept for
- * the fifth turn on was all but never used.
+ * the fifth turn on was all but never used. The battle's first turn was once
+ * a battle with the chance lost if another move took that turn, and every
+ * four turns seldom came round one against one.
  *
  * @type {Record<string, string>}
  */
 const RETIRED_CONDITIONS = {
   inDanger: 'slower',
+  firstTurn: 'oncePerBattle',
+  everyFourTurns: 'everyThreeTurns',
   missedThreeTurns: 'missedTwoTurns',
   accuracyDown: 'rankDown',
   accuracyShaky: 'lastMissed',
@@ -589,6 +593,9 @@ export function normalizeAutoBattle(policy) {
   if (!policy) return fresh;
 
   const conditions = { ...fresh.conditions, ...(policy.conditions ?? {}) };
+  for (const [category, condition] of Object.entries(conditions)) {
+    if (RETIRED_CONDITIONS[condition]) conditions[category] = RETIRED_CONDITIONS[condition];
+  }
   for (const category of Object.keys(fresh.conditions)) {
     const off = policy.use ? policy.use[category] === false : (policy.weights?.[category] ?? 1) <= 0;
     if (off) conditions[category] = 'never';

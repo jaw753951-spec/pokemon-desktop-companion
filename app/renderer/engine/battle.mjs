@@ -5712,8 +5712,6 @@ function conditionHolds(condition, battle, attacker, defender, slug) {
   switch (condition) {
     case 'never':
       return false;
-    case 'firstTurn':
-      return attacker.turnsTaken === 0;
     // The foe's first turn out: the start of a wild battle, and each of a
     // trainer's Pokémon as it comes out.
     case 'foeEntered':
@@ -5734,8 +5732,6 @@ function conditionHolds(condition, battle, attacker, defender, slug) {
       return turnsSinceUsed(attacker, slug) >= 2;
     case 'everyThreeTurns':
       return turnsSinceUsed(attacker, slug) >= 3;
-    case 'everyFourTurns':
-      return turnsSinceUsed(attacker, slug) >= 4;
     // A move whose last use missed is owed another try: on the next turn, or
     // so many of its user's turns on from the miss — two is the turn after
     // next — or the first turn after that nothing else takes. A use that does

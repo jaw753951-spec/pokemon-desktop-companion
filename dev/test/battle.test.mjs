@@ -257,13 +257,13 @@ test('moves are sorted into auto-battle categories', options, () => {
   assert.equal(categoryOf({ damageClass: 'status', meta: { ailment: 'none', healing: 0 }, statChanges: [] }), 'field');
 });
 
-test('every two, three or four turns counts from the turn the move was last used', options, () => {
-  const player = makeFixed(CHARIZARD, 50, ['flamethrower', 'ember', 'slash', 'scratch']);
+test('every two or three turns counts from the turn the move was last used', options, () => {
+  const player = makeFixed(CHARIZARD, 50, ['flamethrower', 'ember', 'slash']);
   const battle = new Battle({
     rng: new Rng(2),
     player,
     foes: [makeFixed(VENUSAUR, 90, ['tackle'])],
-    policy: { conditions: {}, moves: { ember: 'everyTwoTurns', slash: 'everyThreeTurns', scratch: 'everyFourTurns' } },
+    policy: { conditions: {}, moves: { ember: 'everyTwoTurns', slash: 'everyThreeTurns' } },
   });
 
   const picks = [];
@@ -273,10 +273,9 @@ test('every two, three or four turns counts from the turn the move was last used
     battle.player.turnsTaken++;
     battle.player.usedOn[pick] = battle.player.turnsTaken;
   }
-  // Scratch, due on the fourth, gives way to Ember and goes on the fifth;
   // Slash, used on the third, is next due on the sixth, where Ember is
   // ahead of it, and so goes on the seventh.
-  assert.deepEqual(picks, ['flamethrower', 'ember', 'slash', 'ember', 'scratch', 'ember', 'slash', 'ember']);
+  assert.deepEqual(picks, ['flamethrower', 'ember', 'slash', 'ember', 'flamethrower', 'ember', 'slash', 'ember']);
 });
 
 test('a move used on the first turn goes every two turns from there', options, () => {
@@ -285,7 +284,7 @@ test('a move used on the first turn goes every two turns from there', options, (
     rng: new Rng(2),
     player,
     foes: [makeFixed(VENUSAUR, 90, ['growl'])],
-    policy: { ...defaultAutoBattle(), moves: { growl: 'firstTurn' }, second: { growl: 'everyTwoTurns' } },
+    policy: { ...defaultAutoBattle(), moves: { growl: 'oncePerBattle' }, second: { growl: 'everyTwoTurns' } },
   });
 
   // Played out, so the battle itself records which turn each move went on.
@@ -490,7 +489,7 @@ test('a move the foe cannot take hands its turn to the next slot', options, () =
     player,
     foes: [makeFixed(92, 12, ['lick'])],
     // Scratch is due every turn it can be, and Gastly cannot take it.
-    policy: { conditions: {}, second: { scratch: 'everyTwoTurns' }, moves: { scratch: 'firstTurn' } },
+    policy: { conditions: {}, second: { scratch: 'everyTwoTurns' }, moves: { scratch: 'oncePerBattle' } },
   });
   const picks = [];
   for (let turn = 0; turn < 3; turn++) {
@@ -560,9 +559,12 @@ test('a condition that names a moment is answered before any attack', options, (
   });
   const pick = () => choosePolicyMove(battle, battle.player, /** @type {any} */ (battle.foe), player.moves);
 
-  // The first turn sets up; after that, it attacks until half health.
+  // It sets up once; after that, it attacks until half health.
   assert.equal(pick(), 'swords-dance');
   battle.player.turnsTaken = 3;
+  assert.equal(pick(), 'swords-dance', 'turns something else took do not lose it');
+  /** @type {Record<string, number>} */ (battle.player.usedOn)['swords-dance'] = 3;
+  battle.player.turnsTaken = 4;
   assert.equal(pick(), 'flamethrower');
   player.hp = Math.floor(maxHp(player) / 2);
   assert.equal(pick(), 'recover');
@@ -1225,11 +1227,14 @@ test('a miss in a real battle is noted, and a hit clears it', options, () => {
 
 test('the conditions taken out are read as the nearest ones left', () => {
   const policy = normalizeAutoBattle({
-    moves: { thunder: 'accuracyShaky', swift: 'accuracyDown', ember: 'longBattle' },
-    second: { thunder: 'missedThreeTurns' },
+    conditions: { stat: 'firstTurn' },
+    moves: { thunder: 'accuracyShaky', swift: 'accuracyDown', ember: 'longBattle', growl: 'firstTurn' },
+    second: { thunder: 'missedThreeTurns', growl: 'everyFourTurns' },
   });
-  assert.deepEqual(policy.moves, { thunder: 'lastMissed', swift: 'rankDown', ember: 'never' });
-  assert.deepEqual(policy.second, { thunder: 'missedTwoTurns' });
+  assert.deepEqual(policy.moves, { thunder: 'lastMissed', swift: 'rankDown', ember: 'never', growl: 'oncePerBattle' });
+  assert.deepEqual(policy.second, { thunder: 'missedTwoTurns', growl: 'everyThreeTurns' });
+  assert.equal(policy.conditions.stat, 'oncePerBattle', "a kind's own condition too");
+  assert.equal(normalizeAutoBattle(null).conditions.stat, 'oncePerBattle', 'and a boost starts once a battle');
 });
 
 test('once per foe, a boss, the last foe, levels, the weather and an empty hand', options, () => {

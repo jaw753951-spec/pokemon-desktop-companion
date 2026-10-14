@@ -32,7 +32,7 @@ import { typeChip } from './typechip.mjs';
  */
 const CONDITION_GROUPS = [
   { key: 'basic', conditions: ['never', 'always'] },
-  { key: 'turn', conditions: ['firstTurn', 'foeEntered', 'oncePerBattle', 'oncePerFoe', 'everyTwoTurns', 'everyThreeTurns', 'everyFourTurns'] },
+  { key: 'turn', conditions: ['oncePerBattle', 'oncePerFoe', 'foeEntered', 'everyTwoTurns', 'everyThreeTurns'] },
   { key: 'miss', conditions: ['missedRetry', 'missedTwoTurns', 'untilHit', 'lastMissed'] },
   { key: 'matchup', conditions: ['canFinish', 'superEffective', 'faster', 'slower'] },
   { key: 'battle', conditions: ['foePhysical', 'foeSpecial', 'trainerBattle', 'wildBattle', 'bossBattle', 'lastFoe', 'foeLevelHigher', 'foeLevelLower'] },
