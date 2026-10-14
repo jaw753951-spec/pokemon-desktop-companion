@@ -334,7 +334,7 @@ export function describe(app, content) {
  * @param {(dismiss: () => void) => HTMLElement} build
  * @returns {() => void}
  */
-function mountModal(app, build, options = {}) {
+export function mountModal(app, build, options = {}) {
   // A modal normally sits in the middle of the screen, over whatever asked the
   // question. `bottom` moves it out of the way for a screen whose question is
   // about something the player has to be able to see while answering.

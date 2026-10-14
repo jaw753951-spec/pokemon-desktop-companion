@@ -1939,13 +1939,187 @@ canvas {
 .auto-move-row > .chip,
 .auto-move-head-rank {
   flex: none;
-  width: 104px;
+  width: 124px;
 }
 
-.auto-move-row > .chip {
+/* A condition chip leads with its group's colour, so a column of them reads
+   at a glance: turns in blue, health in red, and so on. */
+.auto-condition {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+}
+
+.auto-condition-label {
+  flex: 1;
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  text-align: center;
+}
+
+/* How the columns are read, under them. */
+.auto-order {
+  flex: none;
+  margin: 0;
+  padding: 0 4px;
+  font-size: 9px;
+  line-height: 1.4;
+  color: var(--ink-soft);
+}
+
+.cond-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ink-soft);
+}
+
+.cond-dot.cond-basic { background: #9099a1; }
+.cond-dot.cond-turn { background: #4d90d5; }
+.cond-dot.cond-matchup { background: #ab6ac8; }
+.cond-dot.cond-status { background: #e0a030; }
+.cond-dot.cond-rank { background: #63bb5b; }
+.cond-dot.cond-hp { background: #d8443c; }
+.cond-dot.cond-foeHp { background: #7a2b2b; }
+
+/* The condition picker: the groups down the left, the open one beside them,
+   and what the condition under the pointer means along the bottom. */
+.modal .panel.cond-picker {
+  width: 440px;
+  max-width: calc(100vw - 32px);
+  gap: 6px;
+  text-align: left;
+}
+
+.cond-title {
+  font-weight: 700;
+  text-align: center;
+}
+
+.cond-body {
+  display: flex;
+  gap: 6px;
+  min-height: 128px;
+}
+
+.cond-groups {
+  flex: none;
+  width: 92px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cond-group {
+  -webkit-app-region: no-drag;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 6px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 10px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cond-group:hover {
+  color: var(--ink);
+}
+
+.cond-group.open {
+  border-color: var(--frame-light);
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.cond-group > span {
+  flex: 1;
+}
+
+/* The group the current condition is in. */
+.cond-here {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.cond-options {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
+  gap: 3px;
+  padding-left: 6px;
+  border-left: 1px solid var(--paper-dim);
+}
+
+.cond-option {
+  -webkit-app-region: no-drag;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 26px;
+  padding: 3px 6px;
+  border: 1px solid var(--frame-light);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.6);
+  color: var(--ink);
+  font: inherit;
+  font-size: 10px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cond-option:hover,
+.cond-option:focus-visible {
+  border-color: var(--accent);
+  background: rgba(255, 255, 255, 0.95);
+}
+
+.cond-option.current {
+  border-color: var(--accent-dark);
+  border-width: 2px;
+}
+
+.cond-current {
+  font-size: 8px;
+  color: var(--accent-dark);
+}
+
+.cond-help {
+  min-height: 30px;
+  margin: 0;
+  padding: 4px 6px;
+  border-radius: 4px;
+  background: rgba(56, 74, 99, 0.06);
+  font-size: 9px;
+  line-height: 1.4;
+  color: var(--ink-soft);
+}
+
+.cond-help b {
+  color: var(--ink);
+}
+
+.cond-actions {
+  display: flex;
+  align-items: center;
+}
+
+.cond-actions .spacer {
+  flex: 1;
 }
 
 .auto-move-head-move {

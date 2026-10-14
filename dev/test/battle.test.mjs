@@ -325,6 +325,60 @@ test('a move whose effect is already in place is passed over, whatever its condi
   assert.equal(pick('refresh'), 'tackle', 'nothing to cure');
 });
 
+test('the finer conditions: once a battle, the foe just out, speed, the kind of battle, health above a line', options, () => {
+  // Growl under the condition; Tackle is what is left when it does not hold.
+  const setUp = (condition, { trainerBattle = false, foeLevel = 50 } = {}) => {
+    const battle = new Battle({
+      rng: new Rng(2),
+      player: makeFixed(CHARIZARD, 50, ['growl', 'tackle']),
+      foes: [makeFixed(VENUSAUR, foeLevel, ['tackle'])],
+      policy: { ...defaultAutoBattle(), moves: { growl: condition } },
+      trainerBattle,
+    });
+    battle.turn = 1;
+    return battle;
+  };
+  const pick = (/** @type {Battle} */ battle) => battle.chooseMove(battle.player, /** @type {any} */ (battle.foe));
+
+  const once = setUp('oncePerBattle');
+  assert.equal(pick(once), 'growl');
+  once.player.usedOn = { growl: 1 };
+  assert.equal(pick(once), 'tackle', 'used once already');
+
+  const entered = setUp('foeEntered');
+  assert.equal(pick(entered), 'growl');
+  entered.turn = 3;
+  assert.equal(pick(entered), 'tackle', 'out for a while');
+
+  assert.equal(pick(setUp('faster', { foeLevel: 20 })), 'growl');
+  assert.equal(pick(setUp('slower', { foeLevel: 20 })), 'tackle');
+  assert.equal(pick(setUp('slower', { foeLevel: 100 })), 'growl');
+
+  assert.equal(pick(setUp('trainerBattle', { trainerBattle: true })), 'growl');
+  assert.equal(pick(setUp('trainerBattle')), 'tackle');
+  assert.equal(pick(setUp('wildBattle')), 'growl');
+
+  const healthy = setUp('hpAboveHalf');
+  assert.equal(pick(healthy), 'growl');
+  healthy.player.pokemon.hp = Math.floor(healthy.player.maxHp / 2);
+  assert.equal(pick(healthy), 'tackle', 'half is not above half');
+
+  const full = setUp('foeHpFull');
+  assert.equal(pick(full), 'growl');
+  full.foe.pokemon.hp -= 1;
+  assert.equal(pick(full), 'tackle');
+
+  const ailing = setUp('selfStatus');
+  assert.equal(pick(ailing), 'tackle');
+  ailing.player.pokemon.status = STATUS.BURN;
+  assert.equal(pick(ailing), 'growl');
+
+  const field = setUp('hasField');
+  assert.equal(pick(field), 'tackle');
+  field.field.setWeather(WEATHER.RAIN);
+  assert.equal(pick(field), 'growl');
+});
+
 test('a move can wait for the foe to be weak to it', options, () => {
   const pick = (foe, moves = ['slash', 'ember', 'present']) => {
     const player = makeFixed(CHARIZARD, 50, moves);

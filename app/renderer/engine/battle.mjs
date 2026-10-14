@@ -5648,6 +5648,12 @@ function conditionHolds(condition, battle, attacker, defender, slug) {
       return false;
     case 'firstTurn':
       return attacker.turnsTaken === 0;
+    // The foe's first turn out: the start of a wild battle, and each of a
+    // trainer's Pokémon as it comes out.
+    case 'foeEntered':
+      return battle.firstTurnOut(defender);
+    case 'oncePerBattle':
+      return !attacker.usedOn?.[slug];
     // Every so many turns, counted from the turn the move was last used,
     // however it came to be: one not yet used counts from before the first
     // turn, so every two is the second, fourth, sixth — and one used on the
@@ -5668,10 +5674,28 @@ function conditionHolds(condition, battle, attacker, defender, slug) {
       const used = battle.effectiveMove(attacker, defender, move, slug, { peek: true });
       return battle.effectivenessOf(attacker, used, defender) > 1;
     }
+    // Who moves first on Speed alone, a Trick Room turning it round; a
+    // priority move is not counted.
+    case 'faster':
+    case 'slower': {
+      const mine = battle.speedOf(attacker);
+      const theirs = battle.speedOf(defender);
+      const ahead = battle.field.trickRoom > 0 ? mine < theirs : mine > theirs;
+      const behind = battle.field.trickRoom > 0 ? mine > theirs : mine < theirs;
+      return condition === 'faster' ? ahead : behind;
+    }
+    case 'trainerBattle':
+      return battle.trainerBattle;
+    case 'wildBattle':
+      return !battle.trainerBattle;
     case 'noStatus':
       return !defender.pokemon.status;
     case 'foeStatus':
       return Boolean(defender.pokemon.status);
+    case 'selfStatus':
+      return Boolean(attacker.pokemon.status);
+    case 'hasField':
+      return battle.field ? !battle.field.quiet : false;
     case 'noField':
       // Now that there is weather and terrain, this asks what it always read
       // as: reach for a field move when there is no field effect already.
@@ -5686,6 +5710,10 @@ function conditionHolds(condition, battle, attacker, defender, slug) {
       return Object.values(defender.stages).some((stage) => stage > 0);
     case 'foeRankDown':
       return Object.values(defender.stages).some((stage) => stage < 0);
+    case 'hpFull':
+      return health() >= 1;
+    case 'hpAboveHalf':
+      return health() > 1 / 2;
     case 'hpTwoThirds':
       return health() <= 2 / 3;
     // `lowHp` is what half health was called before the fractions were named.
@@ -5696,6 +5724,10 @@ function conditionHolds(condition, battle, attacker, defender, slug) {
       return health() <= 1 / 3;
     case 'hpQuarter':
       return health() <= 1 / 4;
+    case 'foeHpFull':
+      return foeHealth() >= 1;
+    case 'foeHpAboveHalf':
+      return foeHealth() > 1 / 2;
     case 'foeHpTwoThirds':
       return foeHealth() <= 2 / 3;
     case 'foeHpHalf':
