@@ -457,6 +457,7 @@
   "capture.nickname": "Would you like to give a nickname to {name}?",
   "capture.nicknamePlaceholder": "Nickname",
   "capture.noBalls": "No Poké Balls left.",
+  "capture.outOfBalls": "No Poké Balls left! {name} fled!",
   "capture.sentToBox": "{name} was sent to the Box!",
   "capture.boxFull": "The box is full — there was nowhere to send it!",
   "league.enter": "Pokémon League",
