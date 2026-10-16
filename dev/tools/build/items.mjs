@@ -2,11 +2,11 @@
  * Collect item icons, and sort the items the game can hand out into rarity
  * tiers so the ball-pickup event can draw from a tier that matches the ball.
  */
-import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { readFile } from 'node:fs/promises';
 
 import { fetchBuffer, writeOut } from '../lib/http.mjs';
+import { VENDOR_DIR } from '../lib/vendor.mjs';
 import { decodePng, encodePng } from '../lib/png.mjs';
 import { crop, opaqueBounds } from '../lib/image.mjs';
 import { defaultLanguage } from '../../../app/shared/languages.mjs';
@@ -121,27 +121,29 @@ const POKESPRITE = 'https://raw.githubusercontent.com/msikma/pokesprite/master';
 /**
  * The seven mochi of The Teal Mask, which neither published set draws. The
  * only pictures of them are Scarlet and Violet's own bag icons, which
- * Bulbagarden Archives keeps; they are smooth renders at 160 pixels rather
- * than pixel art, and are brought down to the bag's size on the way in.
+ * Bulbagarden Archives keeps — and which it refuses to the build machines
+ * releases are made on, so they are kept in `data/vendor/bulbagarden` and
+ * read from there. They are smooth renders at 160 pixels rather than pixel
+ * art, and are brought down to the bag's size on the way in.
  */
 const MOCHI = [
   'health-mochi', 'muscle-mochi', 'resist-mochi', 'genius-mochi', 'clever-mochi', 'swift-mochi', 'fresh-start-mochi',
 ];
 
 /**
- * Where Bulbagarden Archives keeps an item's Scarlet and Violet bag icon:
- * "Bag Health Mochi SV Sprite.png", filed, as MediaWiki files every upload,
- * under the first one and two hex digits of its name's MD5.
+ * An item's Scarlet and Violet bag icon as kept in the vendor folder, under
+ * the archive's own file name: "Bag_Health_Mochi_SV_Sprite.png".
  *
  * @param {string} slug
  */
 function archiveBagIcon(slug) {
-  const title = slug.split('-').map((word) => word[0].toUpperCase() + word.slice(1)).join(' ')
-    .replace('Fresh Start', 'Fresh-Start');
-  const file = `Bag_${title.replaceAll(' ', '_')}_SV_Sprite.png`;
-  const hash = createHash('md5').update(file).digest('hex');
-  return `https://archives.bulbagarden.net/media/upload/${hash[0]}/${hash.slice(0, 2)}/${file}`;
+  const title = slug.split('-').map((word) => word[0].toUpperCase() + word.slice(1)).join('_')
+    .replace('Fresh_Start', 'Fresh-Start');
+  return `${VENDORED}bulbagarden/Bag_${title}_SV_Sprite.png`;
 }
+
+/** Marks a candidate that is a file in `data/vendor` rather than a URL. */
+const VENDORED = 'vendor:';
 
 /**
  * Where PokéSprite files the Sword and Shield items PokeAPI draws none of,
@@ -261,7 +263,9 @@ function tinted(buffer, metal) {
  */
 async function firstAvailable(urls) {
   for (const url of urls) {
-    const buffer = await fetchBuffer(url, { allowMissing: true });
+    const buffer = url.startsWith(VENDORED)
+      ? await readFile(join(VENDOR_DIR, url.slice(VENDORED.length))).catch(() => null)
+      : await fetchBuffer(url, { allowMissing: true });
     if (!buffer) continue;
 
     const png = decodePng(buffer);
