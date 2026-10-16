@@ -46,7 +46,7 @@ test('attacks are left to the hardest hit; the costly ones are kept to finish', 
   assert.equal(plan.flamethrower, 'always/never');
   assert.equal(plan.overheat, 'canFinish/never', 'a sharp fall in its own Sp. Atk');
   assert.equal(plan['hyper-beam'], 'canFinish/never', 'a turn recharging');
-  assert.equal(plan['solar-beam'], 'sunny/never', 'only in the sun, where it does not stand still a turn');
+  assert.equal(plan['solar-beam'], 'never/never', 'a turn standing still, with something else to hit with');
   // With nothing else to do the work, each is just an attack.
   assert.equal(pairs('charizard', ['overheat'])['overheat'], 'always/never');
   assert.equal(pairs('charizard', ['hyper-beam', 'scratch'])['hyper-beam'], 'always/never');
@@ -62,9 +62,9 @@ test('an attack with a moment of its own is used at it, and is an ordinary attac
   const plan = pairs('gengar', ['hex', 'dream-eater', 'shadow-ball', 'fake-out']);
   assert.equal(plan.hex, 'foeStatus/always');
   assert.equal(plan['dream-eater'], 'foeAsleep/never');
-  assert.equal(plan['fake-out'], 'foeEntered/never', 'only on its first turn out');
+  assert.equal(plan['fake-out'], 'oncePerFoe/never', 'once against each foe, its first turn out unless something comes first');
   assert.equal(pairs('hawlucha', ['acrobatics', 'close-combat'])['acrobatics'], 'noItem/always');
-  assert.equal(pairs('zapdos', ['thunder', 'drill-peck'])['thunder'], 'rainy/always');
+  assert.equal(pairs('zapdos', ['thunder', 'drill-peck'])['thunder'], 'always/never', 'an ordinary attack, the weather aside');
   assert.equal(pairs('gengar', ['nightmare', 'shadow-ball'])['nightmare'], 'foeAsleep/never');
   const ursaring = pairs('ursaring', ['facade', 'reversal', 'slash', 'counter']);
   assert.equal(ursaring.facade, 'selfStatus/always');

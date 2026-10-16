@@ -58,12 +58,6 @@ export const FIELD_WIDTH = VIEW_WIDTH / FIELD_ZOOM;
 export const FIELD_HEIGHT = VIEW_HEIGHT / FIELD_ZOOM;
 
 /**
- * The scrolling area background fills the field, as the map does in the
- * handheld games; the HUD sits over it rather than beside it.
- */
-export const BACKGROUND_HEIGHT = FIELD_HEIGHT;
-
-/**
  * How far below where the cartridge draws it the foe's platform stands in a
  * battle backdrop, in field pixels.
  *

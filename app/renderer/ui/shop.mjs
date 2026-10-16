@@ -16,6 +16,7 @@ import { name as localized, t } from '../core/i18n.mjs';
 import { pocketOrder } from '../engine/bagorder.mjs';
 import { alreadyOwned, buy, formatMoney, oneAtATime, shopStock } from '../engine/shop.mjs';
 import { moveSummary } from './movecard.mjs';
+import { applySearch, searchBox } from './itemsearch.mjs';
 
 /** The pockets in the order the bag shows them. */
 const POCKETS = ['medicine', 'misc', 'berries', 'pokeballs', 'machines'];
@@ -92,12 +93,12 @@ export function shopScene({ session, onClose }) {
 
 /**
  * What the shop remembers between rebuilds: the pocket open, the item looked
- * at, and how many of it.
+ * at, how many of it, and the words the stock is narrowed to.
  *
- * @returns {{pocket: string, selected: string|null, count: number}}
+ * @returns {{pocket: string, selected: string|null, count: number, query: string}}
  */
 export function shopState() {
-  return { pocket: POCKETS[0], selected: null, count: 1 };
+  return { pocket: POCKETS[0], selected: null, count: 1, query: '' };
 }
 
 /**
@@ -108,7 +109,7 @@ export function shopState() {
  *
  * @param {import('../core/app.mjs').App} app
  * @param {import('../engine/session.mjs').Session} session
- * @param {{pocket: string, selected: string|null, count: number}} state
+ * @param {{pocket: string, selected: string|null, count: number, query?: string}} state
  * @param {() => void} rebuild
  * @param {{purse?: boolean}} [options]
  * @returns {HTMLElement}
@@ -137,6 +138,7 @@ export function shopTab(app, session, state, rebuild, options = {}) {
       el('span.item-name', { text: localized(item.name, slug) }),
       el('span.item-count', { text: t('money.label', { amount: formatMoney(price) }) }),
     ])));
+  if (state.query) applySearch(list, state.query);
 
   return el('div.tab-body.items-tab', {}, [
     el('div.pocket-tabs', {}, [
@@ -153,6 +155,7 @@ export function shopTab(app, session, state, rebuild, options = {}) {
           },
         })),
       options.purse ? el('span.shop-money.inline', { text: t('money.label', { amount: formatMoney(session.money) }) }) : null,
+      searchBox(state, () => list),
     ]),
     el('div.items-split', {}, [list, inspector(app, session, state, stock, rebuild)]),
   ]);
@@ -172,7 +175,8 @@ export function stepShop(event, state, root) {
   if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return false;
   const target = /** @type {HTMLElement|null} */ (event.target);
   if (target?.closest?.('input, textarea, select')) return false;
-  const shown = [...root.querySelectorAll('.item-row')].map((row) => /** @type {HTMLElement} */ (row).dataset.slug ?? '');
+  // Only the rows a search has left showing.
+  const shown = [...root.querySelectorAll('.item-row:not([hidden])')].map((row) => /** @type {HTMLElement} */ (row).dataset.slug ?? '');
   if (shown.length === 0) return false;
   event.preventDefault();
 

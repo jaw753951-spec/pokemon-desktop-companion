@@ -30,11 +30,6 @@ export function loadImage(path) {
   return pending;
 }
 
-/** Drop a decoded image so a long session does not hold the whole dex in memory. */
-export function forgetImage(path) {
-  images.delete(url('assets', path));
-}
-
 /**
  * One animation: a horizontal strip of equal-width frames.
  */
@@ -115,16 +110,6 @@ export class Sprite {
  */
 export async function loadSprite(path, meta) {
   return new Sprite(await loadImage(path), meta);
-}
-
-/**
- * A still image, wrapped so it can be drawn the same way as a sprite.
- * @param {string} path
- * @returns {Promise<Sprite>}
- */
-export async function loadStill(path) {
-  const image = await loadImage(path);
-  return new Sprite(image, { width: image.naturalWidth, height: image.naturalHeight, frames: 1, delay: 1000 });
 }
 
 /**

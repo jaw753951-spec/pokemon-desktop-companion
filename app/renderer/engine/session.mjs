@@ -14,6 +14,7 @@ import { pocketOrder } from './bagorder.mjs';
 import { EventScheduler } from './events.mjs';
 import { optimizeMoves } from './autoplan.mjs';
 import { ensureAttack, fullyHeal, shinyOddsFor } from './pokemon.mjs';
+import { settledEffort } from './stats.mjs';
 import { settleForme } from './forms.mjs';
 import { oneAtATime, STARTING_MONEY } from './shop.mjs';
 
@@ -53,8 +54,9 @@ export class Session {
       // keeps nothing of it: a Tera Orb, from before the Terastal formes went.
       if (pokemon?.heldItem && LEGACY_ITEMS[pokemon.heldItem]) pokemon.heldItem = LEGACY_ITEMS[pokemon.heldItem];
       if (pokemon?.heldItem && !gameData().items[pokemon.heldItem]) pokemon.heldItem = null;
-      // Effort is gone; a save that still carries it drops it.
-      if (pokemon) delete pokemon.evs;
+      // Effort, every stat of it and within the limits: a save from the
+      // months the game had none starts every Pokémon on nothing.
+      if (pokemon) pokemon.evs = settledEffort(pokemon.evs);
       // An Alcremie saved before its look was rolled, or with one of the
       // sixty-three the game no longer draws, gets one of the seven.
       if (pokemon && speciesOf(pokemon.speciesId)?.slug === 'alcremie' && !ALCREMIE_LOOKS.includes(pokemon.look)) {
@@ -573,6 +575,14 @@ const RETIRED_CONDITIONS = {
   accuracyDown: 'rankDown',
   accuracyShaky: 'lastMissed',
   longBattle: 'never',
+  // The foe's first turn out, and until a move has landed on each foe, are a
+  // move used once against each; a gym leader or the League is a trainer;
+  // sun and rain are weather, and weather is a field.
+  foeEntered: 'oncePerFoe',
+  untilHit: 'oncePerFoe',
+  bossBattle: 'trainerBattle',
+  sunny: 'hasField',
+  rainy: 'hasField',
 };
 
 /**

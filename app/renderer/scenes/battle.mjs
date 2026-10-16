@@ -13,18 +13,18 @@ import { abilityOf, gameData, moveOf, speciesOf, spriteKey } from '../core/data.
 import { button, el, setChildren, shinyMark, statusMark } from '../core/dom.mjs';
 import { name as localized, t } from '../core/i18n.mjs';
 import { chooseFromList } from '../ui/dialog.mjs';
+import { evolutionScene } from './evolution.mjs';
 import { Battle } from '../engine/battle.mjs';
-import { battleMedicine, healingItemFor, pickFind, restoreHeldItem, shedAfterEvolving, throwItem } from '../engine/items.mjs';
+import { battleMedicine, healingItemFor, pickFind, restoreHeldItem, throwItem } from '../engine/items.mjs';
 import {
-  evolveInto,
   friendshipForLevels,
   gainFriendship,
-  learnOnEvolution,
   noteLearnedMoves,
   levelOf,
   maxHp,
   maxPp,
-  pendingEvolution,
+  nameOf,
+  offeredEvolution,
   setMove,
 } from '../engine/pokemon.mjs';
 import { settleForme } from '../engine/forms.mjs';
@@ -46,6 +46,9 @@ import { drawWeather } from '../render/weather.mjs';
  * numbers and `advance` does the halving.
  */
 const BEAT_MS = { default: 620, intro: 1000, move: 520, damage: 680, stat: 700, status: 820, faint: 900, end: 1100, go: 1050 };
+
+/** The beat of each strike after a multi-hit move's first, quicker as the games' are. */
+const NEXT_HIT_MS = 420;
 
 /**
  * A Pokémon sent out of its ball: how long the ball is in the air, how high it
@@ -99,9 +102,14 @@ const STATUS_BLOCKED = { slp: 'status.slp.blocked', frz: 'status.frz.blocked', p
  * cost without looking at the number. A fixed duration for every change, which
  * is what a CSS transition gives, makes the two look the same and the bar look
  * as though it is guessing.
+ *
+ * The floor is there so a small change is still seen to move: at a tenth of a
+ * second, a critical hit on something sturdy, one strike of a Bullet Seed or
+ * an Oran Berry's ten points went by in six frames and read as the bar
+ * jumping to its new place.
  */
 const DRAIN_FULL_MS = 1100;
-const DRAIN_MIN_MS = 110;
+const DRAIN_MIN_MS = 280;
 
 /**
  * The message box's top edge, in field pixels: it is 34 tall and sits 8 from
@@ -141,7 +149,6 @@ const PLAYER_SPOT = { x: Math.round(FIELD_WIDTH * 0.26), y: MESSAGE_TOP - 3 };
  *   foes: import('../engine/pokemon.mjs').Pokemon[],
  *   trainer?: {name: {ko: string, en: string}, portrait?: string|null, kind?: string}|null,
  *   leader?: boolean,
- *   boss?: boolean,
  *   backdrop?: string|null,
  *   music?: string|null,
  *   weather?: string|null,
@@ -149,7 +156,7 @@ const PLAYER_SPOT = { x: Math.round(FIELD_WIDTH * 0.26), y: MESSAGE_TOP - 3 };
  * }} options
  * @returns {import('../core/app.mjs').Scene}
  */
-export function battleScene({ session, foes, trainer = null, leader = false, boss = leader, backdrop = null, music = null, weather = undefined, onFinish }) {
+export function battleScene({ session, foes, trainer = null, leader = false, backdrop = null, music = null, weather = undefined, onFinish }) {
   const battle = new Battle({
     rng: session.rng,
     player: session.active,
@@ -163,7 +170,6 @@ export function battleScene({ session, foes, trainer = null, leader = false, bos
     trainerBattle: Boolean(trainer),
     firstRun: session.firstRun,
     // A gym leader or a League round.
-    bossBattle: boss,
     // The sky the place is under, unless the caller names one of its own.
     weather: weather === undefined ? weatherForArea(session.area) : weather,
     // And the ground, for a Camouflage.
@@ -772,7 +778,7 @@ export function battleScene({ session, foes, trainer = null, leader = false, bos
         battlerFor(entry.side)?.setPose('hit');
         app.audio.blip('hit');
         updateBars();
-        return BEAT_MS.damage;
+        return (entry.data?.hit ?? 1) > 1 ? NEXT_HIT_MS : BEAT_MS.damage;
       }
 
       case 'critical':
@@ -1323,36 +1329,36 @@ export function battleScene({ session, foes, trainer = null, leader = false, bos
     if (levels > 0) friendshipForLevels(session.active, levels);
     if (battle.outcome === 'lost') gainFriendship(session.active, -1);
 
-    if (battle.outcome === 'won') {
-      const evolution = pendingEvolution(session.active, {
-        timeOfDay: timeOfDay(),
-        crits: battle.player.marks.crits ?? 0,
-        box: session.box,
-        raining: weatherForArea(session.area) === 'rain',
-        areaTags: session.area?.tags ?? [],
-      });
-      if (evolution) {
-        const from = nameOf(session.active);
-        const fromSpecies = session.active.speciesId;
-        evolveInto(session.active, evolution.to, session.rng);
-        session.markCaught(evolution.to);
-        app.toast(t('battle.evolving', { name: from, target: nameOf(session.active) }));
-        app.audio.playCry(session.active.speciesId);
-        // And what evolving teaches.
-        const taught = learnOnEvolution(session.active);
-        for (const move of taught.learned) {
-          app.toast(t('battle.learned', { name: nameOf(session.active), move: localized(moveOf(move)?.name, move) }), 3200);
-        }
-        for (const move of taught.waiting) {
-          app.toast(t('battle.cannotLearnMore', { name: nameOf(session.active), move: localized(moveOf(move)?.name, move) }), 3200);
-        }
-        // And a Nincada leaves a Shedinja behind.
-        const shell = shedAfterEvolving(session, fromSpecies, session.active);
-        if (shell) app.toast(t('battle.shed', { name: nameOf(shell) }), 3200);
-      }
+    // An evolution the win allows plays out on its own screen, over this one,
+    // before the battle hands back to whoever started it — unless the player
+    // stopped it at this level already.
+    const evolution = battle.outcome === 'won'
+      ? offeredEvolution(session.active, {
+          timeOfDay: timeOfDay(),
+          crits: battle.player.marks.crits ?? 0,
+          box: session.box,
+          raining: weatherForArea(session.area) === 'rain',
+          areaTags: session.area?.tags ?? [],
+        })
+      : null;
+    if (evolution) {
+      app.push(evolutionScene({
+        session,
+        pokemon: session.active,
+        to: evolution.to,
+        stoppable: true,
+        onFinish: () => {
+          app.pop();
+          handBack();
+        },
+      }));
+      return;
     }
+    handBack();
+  }
 
-    // Whatever this battle's levels and evolution taught, in the order it came.
+  /** Whatever this battle's levels and evolution taught noted down, and the battle over. */
+  function handBack() {
     noteLearnedMoves(session.active, session.machines);
 
     battle.release();
@@ -1395,23 +1401,13 @@ export function battleScene({ session, foes, trainer = null, leader = false, bos
     shownWeather = field.weather ?? null;
     setChildren(conditions, [
       field.weather
-        ? el('span.field-chip', { text: t(`weather.${field.weather}.name`), title: t(`weather.${field.weather}.start`) })
+        ? el('span.field-chip', { text: t(`weather.${field.weather}.name`) })
         : null,
       field.terrain
-        ? el('span.field-chip', { text: t(`terrain.${field.terrain}.name`), title: t(`terrain.${field.terrain}.start`) })
+        ? el('span.field-chip', { text: t(`terrain.${field.terrain}.name`) })
         : null,
     ]);
   }
-
-  /**
-   * @param {import('../engine/pokemon.mjs').Pokemon|null|undefined} pokemon
-   * @returns {string}
-   */
-  function nameOf(pokemon) {
-    if (!pokemon) return '';
-    return pokemon.nickname || localized(speciesOf(pokemon.speciesId)?.name, '');
-  }
-
 }
 
 /**
@@ -1444,7 +1440,7 @@ function nameplate(pokemon) {
     setChildren(node, [
       name,
       next.gender ? el(`span.gender-mark.${next.gender}`, { text: t(`pokemon.gender.${next.gender}`) }) : null,
-      shinyMark(next, t('pokemon.shiny')),
+      shinyMark(next),
       statusMark(condition, t(`status.${condition}.short`)),
       confused ? statusMark('confusion', t('status.confusion.short')) : null,
       `  ${t('slot.level', { level: levelOf(next) })}`,

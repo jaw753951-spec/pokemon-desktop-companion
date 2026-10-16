@@ -48,8 +48,8 @@ export function pokemonTab(app, session, refresh, state = {}) {
   return el('div.tab-body.pokemon-tab', {}, [
     el('div.pokemon-left', {}, [
       walker,
-      statHexagon({ base: baselineStats(pokemon, level), actual: stats }),
-      statTable(stats, { hp: pokemon.hp, nature: gameData().natures?.[pokemon.nature] }),
+      statHexagon({ base: baselineStats(pokemon, level), actual: stats, effort: pokemon.evs }),
+      statTable(stats, { hp: pokemon.hp, nature: gameData().natures?.[pokemon.nature], evs: pokemon.evs }),
     ]),
 
     scrollable(
@@ -57,7 +57,7 @@ export function pokemonTab(app, session, refresh, state = {}) {
         el('div.pokemon-heading', {}, [
           el('span.pokemon-nickname', { text: pokemon.nickname || localized(species?.name, '') }),
           genderMark(pokemon),
-          shinyMark(pokemon, t('pokemon.shiny')),
+          shinyMark(pokemon),
           statusMark(pokemon.status, t(`status.${pokemon.status}.short`)),
           el('span.pokemon-level', { text: t('slot.level', { level }) }),
         ]),
@@ -118,8 +118,7 @@ function heldLine(app, session, refresh) {
       ? el('button.chip', {
           type: 'button',
           text: localized(gameData().items[held]?.name, held),
-          title: t('items.inspect'),
-          onClick: async () => {
+              onClick: async () => {
             app.audio.blip('select');
             const item = itemOf(held);
             const off = await describe(app, {
@@ -160,7 +159,7 @@ function baselineStats(pokemon, level) {
   /** @type {Record<string, number>} */
   const out = {};
   for (const stat of STATS) {
-    out[stat] = computeStat(base?.[stat] ?? 1, 0, level, 1, stat === 'hp');
+    out[stat] = computeStat(base?.[stat] ?? 1, 0, 0, level, 1, stat === 'hp');
   }
   return out;
 }
@@ -189,7 +188,7 @@ function moveDetail(app, session, refresh, state) {
   if (!entry || !moveOf(entry.move)) return null;
 
   const card = el('div.move-detail', {}, [
-    moveCard(entry.move),
+    moveCard(entry.move, { slot: entry }),
     button(t('pokemon.replaceMove'), () => openReplace(app, session, slot, refresh), { className: 'small' }),
   ]);
 
@@ -301,7 +300,6 @@ function abilityLine(app, pokemon) {
     el('button.chip', {
       type: 'button',
       text: localized(ability?.name, slug),
-      title: t('items.inspect'),
       onClick: () => {
         app.audio.blip('select');
         void describe(app, {
@@ -340,7 +338,7 @@ async function openReplace(app, session, slot, refresh) {
   const choices = moves.map((move) => ({
     value: move,
     label: localized(moveOf(move)?.name, move),
-    detail: moveSummary(move),
+    detail: moveSummary(move, pokemon.moves.find((entry) => entry?.move === move) ?? null),
     fresh: fresh.has(move),
     disabled: known.has(move),
   }));

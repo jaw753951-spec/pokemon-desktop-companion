@@ -18,10 +18,21 @@ const HANGUL_LAST = 0xd7a3;
 const PARTICLE_PATTERN = /(을|이|은|과|으로|아)\((를|가|는|와|로|야)\)/g;
 
 /**
+ * The other way the games write 으로/로, and the way the string files do:
+ * "(으)로", the optional part in brackets.
+ */
+const EURO_PATTERN = /\(으\)로/g;
+
+/**
  * @param {string} text
  * @returns {string}
  */
 export function resolveParticles(text) {
+  text = text.replace(EURO_PATTERN, (match, offset) => {
+    const batchim = finalConsonantOf(text[offset - 1]);
+    if (batchim === null) return match;
+    return batchim === 0 || batchim === RIEUL ? '로' : '으로';
+  });
   return text.replace(PARTICLE_PATTERN, (match, withBatchim, withoutBatchim, offset) => {
     const batchim = finalConsonantOf(text[offset - 1]);
     // A Latin or numeric name gives no basis to choose, so the neutral form

@@ -4,7 +4,7 @@
  */
 import { url } from '../core/bridge.mjs';
 import { artPath, speciesOf } from '../core/data.mjs';
-import { button, el, setChildren, statusMark } from '../core/dom.mjs';
+import { button, el, setChildren, shinyMark, statusMark } from '../core/dom.mjs';
 import { name as localized, t } from '../core/i18n.mjs';
 import { leagueOpen } from '../engine/session.mjs';
 import { experienceProgress, levelOf, maxHp } from '../engine/pokemon.mjs';
@@ -216,7 +216,7 @@ export function createHud(handlers) {
      *
      * A species already registered as caught wears a small Poké Ball in its
      * corner, as the games mark a wild Pokémon's nameplate once the Pokédex
-     * has it.
+     * has it; a shiny wears the box's red star in the other.
      *
      * @param {Array<import('../engine/pokemon.mjs').Pokemon>} entries
      * @param {(index: number) => void} onSelect
@@ -226,7 +226,7 @@ export function createHud(handlers) {
       setChildren(tray, [
         entries.length ? trayLabel : null,
         ...entries.map((pokemon, index) =>
-          el('button.hud-window', {
+          el('button.hud-window.tray-slot', {
             type: 'button',
             title: localized(speciesOf(pokemon.speciesId)?.name, ''),
             style: {
@@ -245,6 +245,7 @@ export function createHud(handlers) {
               style: { width: '28px', height: '28px', objectFit: 'contain' },
             }),
             caught(pokemon.speciesId) ? el('i.caught-mark', { 'aria-hidden': 'true' }) : null,
+            shinyMark(pokemon),
           ]),
         ),
       ]);

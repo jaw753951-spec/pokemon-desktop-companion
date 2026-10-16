@@ -19,7 +19,7 @@ import {
 } from '../../shared/constants.mjs';
 import { loadImage, loadSprite } from '../core/assets.mjs';
 import { artOf, gameData, speciesOf, spriteKey } from '../core/data.mjs';
-import { walkSteps } from '../engine/pokemon.mjs';
+import { nameOf, walkSteps } from '../engine/pokemon.mjs';
 
 import { name as localized, t } from '../core/i18n.mjs';
 import { eventModifiers, healAfterBattle, restockBerry } from '../engine/items.mjs';
@@ -320,7 +320,7 @@ export function fieldScene(session) {
       const wild = setup.foes[0];
       const lost = setup.trainer
         ? t('battle.lost')
-        : t('battle.lostWild', { name: wild?.nickname || localized(speciesOf(wild?.speciesId)?.name, '') });
+        : t('battle.lostWild', { name: nameOf(wild) });
       app.toast([lost, paid > 0 ? t('money.paid', { amount: formatMoney(paid) }) : null].filter(Boolean).join('\n'));
       restock(app);
       refreshArt(app);

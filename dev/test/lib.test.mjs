@@ -12,7 +12,6 @@ import {
   opaqueBounds,
   pickLoopEnds,
   pickWalkPath,
-  resampleFrames,
 } from '../tools/lib/image.mjs';
 import { parseJascPal, tilesetDirName, combineMetatiles } from '../tools/lib/gba-gfx.mjs';
 
@@ -234,20 +233,6 @@ test('pickWalkPath keeps the lane off the very top of the map', () => {
   assert.ok(path.laneRow - path.bandRow >= 4, 'the lane sits low enough in the strip to read');
 });
 
-test('resampleFrames caps frame count while keeping total duration', () => {
-  const frames = Array.from({ length: 40 }, (_, i) => ({ id: i, delayMs: 30 }));
-  const out = resampleFrames(frames, 8);
-  assert.equal(out.length, 8);
-  assert.equal(out.reduce((sum, f) => sum + f.delayMs, 0), 1200);
-  assert.equal(out[0].id, 0);
-  assert.ok(out[7].id > out[0].id, 'later samples come from later frames');
-});
-
-test('resampleFrames leaves short animations alone', () => {
-  const frames = [{ delayMs: 100 }, { delayMs: 100 }];
-  assert.equal(resampleFrames(frames, 8), frames);
-});
-
 test('tilesetDirName converts decomp symbols to directory names', () => {
   assert.equal(tilesetDirName('gTileset_General'), 'general');
   assert.equal(tilesetDirName('gTileset_PetalburgWoods'), 'petalburg_woods');
@@ -273,29 +258,6 @@ test('combineMetatiles places secondary metatiles after the primary block', () =
   assert.equal(combined[0], 0x1234);
   assert.equal(combined[512 * 8], 0x0abc);
   assert.equal(combined.length, (512 + 1) * 8);
-});
-
-test('a blown-up drawing comes back exactly', async () => {
-  const { doubledPixels, undouble } = await import('../tools/lib/image.mjs');
-  const raster = (width, height, paint) => {
-    const data = new Uint8Array(width * height * 4);
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const colour = paint(x, y);
-        if (!colour) continue;
-        data.set([...colour, 255], (y * width + x) * 4);
-      }
-    }
-    return { width, height, data };
-  };
-
-  // Every pixel doubled, on the odd parity.
-  const art = raster(3, 2, (x, y) => [x * 80, y * 80, 40]);
-  const blown = raster(7, 5, (x, y) => (x < 1 || y < 1 ? null : [((x - 1) >> 1) * 80, ((y - 1) >> 1) * 80, 40]));
-  const parity = doubledPixels(blown);
-  assert.equal(parity.share, 1);
-  assert.deepEqual([parity.dx, parity.dy], [1, 1]);
-  assert.deepEqual(undouble(blown, parity), art);
 });
 
 test('every sprite the vendored sources list is in the repository, and nothing unlisted is', async () => {

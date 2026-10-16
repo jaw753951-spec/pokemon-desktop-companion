@@ -110,7 +110,8 @@ export function inventoryScene({ session, onClose, tabs: shownTabs = /** @type {
         if (app.scene !== scene || state.tab !== 'items') return;
         const target = /** @type {HTMLElement|null} */ (event.target);
         if (target?.closest?.('input, textarea, select')) return;
-        const shown = [...body.querySelectorAll('.item-row')].map((row) => /** @type {HTMLElement} */ (row).dataset.slug ?? '');
+        // Only the rows a search has left showing.
+        const shown = [...body.querySelectorAll('.item-row:not([hidden])')].map((row) => /** @type {HTMLElement} */ (row).dataset.slug ?? '');
         if (shown.length === 0) return;
         event.preventDefault();
 

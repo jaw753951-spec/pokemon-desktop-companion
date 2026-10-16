@@ -12,7 +12,7 @@ import { NEEDS_ASSETS, useRealGameData } from './helpers/data.mjs';
 import { Rng } from '../../app/renderer/core/rng.mjs';
 import { gameData, spriteKey } from '../../app/renderer/core/data.mjs';
 import { Battle } from '../../app/renderer/engine/battle.mjs';
-import { formeFor, FORM_ABILITY, heldForme, settleHeldForme } from '../../app/renderer/engine/forms.mjs';
+import { formeFor, FORM_ABILITY, heldForme, settleForme } from '../../app/renderer/engine/forms.mjs';
 import { abilityName } from '../../app/renderer/engine/abilities.mjs';
 import { moveOf } from '../../app/renderer/core/data.mjs';
 import { createPokemon, maxHp, setMove } from '../../app/renderer/engine/pokemon.mjs';
@@ -58,18 +58,6 @@ function fight(player, extra = {}) {
     ...extra,
   });
 }
-
-/** The state formeFor reads, for a combatant in no particular condition. */
-const state = (battle, combatant, over = {}) => ({
-  current: combatant.marks.forme ?? null,
-  weather: battle.weatherFor(combatant),
-  weatherTurns: battle.field.weatherTurns,
-  overhp: combatant.pokemon.hp,
-  maxhp: combatant.maxHp,
-  broken: Boolean(combatant.marks.formeBroken),
-  usedMove: combatant.lastMove,
-  ...over,
-});
 
 test('every forme-changing species the engine knows is one the pipeline carried', options, () => {
   const species = gameData().species;
@@ -268,7 +256,7 @@ test('a forme the dex does not carry answers null rather than crashing', options
 test('an Ogerpon wears the mask it holds: its type, its ability, its Ivy Cudgel', options, () => {
   const ogerpon = fixed(OGERPON, 50, ['ivy-cudgel']);
   ogerpon.heldItem = 'wellspring-mask';
-  settleHeldForme(ogerpon);
+  settleForme(ogerpon);
   assert.equal(ogerpon.forme, 'ogerpon-wellspring-mask', 'worn outside a battle too');
   assert.equal(abilityName(ogerpon), 'water-absorb');
 
@@ -280,7 +268,7 @@ test('an Ogerpon wears the mask it holds: its type, its ability, its Ivy Cudgel'
 
   // Taken off, it is the Teal Mask again, with its own ability and Grass alone.
   ogerpon.heldItem = null;
-  settleHeldForme(ogerpon);
+  settleForme(ogerpon);
   assert.equal(ogerpon.forme, undefined);
   assert.equal(abilityName(ogerpon), ogerpon.ability);
   assert.equal(heldForme(ogerpon), null);
@@ -292,7 +280,7 @@ test('an Ogerpon wears the mask it holds: its type, its ability, its Ivy Cudgel'
 test('a mask does nothing for anyone but Ogerpon', options, () => {
   const geodude = fixed(GEODUDE, 50, ['tackle']);
   geodude.heldItem = 'hearthflame-mask';
-  settleHeldForme(geodude);
+  settleForme(geodude);
   assert.equal(geodude.forme, undefined);
   const battle = fight(geodude);
   assert.equal(battle.heldDamage(battle.player, moveOf('tackle'), 1), 1);

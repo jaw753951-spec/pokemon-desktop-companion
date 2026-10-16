@@ -7,7 +7,7 @@
  * which is the thing the player is really watching grow.
  */
 import { t } from '../core/i18n.mjs';
-import { STATS } from '../engine/stats.mjs';
+import { EFFORT_STAT_MAX, STATS } from '../engine/stats.mjs';
 
 const SIZE = 104;
 const CENTRE = SIZE / 2;
@@ -17,12 +17,14 @@ const RADIUS = 38;
 const AXES = ['hp', 'atk', 'def', 'spe', 'spd', 'spa'];
 
 /**
- * @param {{base: Record<string, number>, actual: Record<string, number>}} values
+ * @param {{base: Record<string, number>, actual: Record<string, number>, effort?: Record<string, number>}} values
  *   `base` is the untrained baseline at the same level, so the two shapes are
- *   directly comparable and the gap between them is the training so far
+ *   directly comparable and the gap between them is the training so far;
+ *   `effort` is drawn faintly beneath them, as Scarlet and Violet draw it,
+ *   every axis reaching the rim at 252
  * @returns {SVGSVGElement}
  */
-export function statHexagon({ base, actual }) {
+export function statHexagon({ base, actual, effort = {} }) {
   // One ceiling for both shapes, taken from the larger of the two so the
   // hexagon is filled at any level rather than shrinking to a dot at level 5.
   const ceiling = Math.max(
@@ -69,6 +71,20 @@ export function statHexagon({ base, actual }) {
     'stroke-width': '1.5',
   }));
 
+  // The effort, in the games' pale gold, laid faintly over the other two: a
+  // different scale from them — a stat's own 252, not the stats' ceiling — so
+  // it is a shape of its own rather than a part of either.
+  if (AXES.some((stat) => (effort[stat] ?? 0) > 0)) {
+    svg.append(element('polygon', {
+      points: hexPoints(AXES.map((stat) => Math.min(1, (effort[stat] ?? 0) / EFFORT_STAT_MAX))),
+      fill: 'rgba(240, 192, 40, 0.38)',
+      stroke: 'rgba(214, 160, 20, 0.9)',
+      'stroke-width': '1',
+      'stroke-linejoin': 'round',
+      class: 'stat-hex-effort',
+    }));
+  }
+
   return svg;
 }
 
@@ -77,15 +93,15 @@ export function statHexagon({ base, actual }) {
  * as what is left of the whole, the other five as they stand, and the two a
  * nature moves picked out the way the games have since Sun and Moon — the
  * stat it raises in red, the one it lowers in blue. The effort behind each
- * number is not written out, as the games never write it; the hexagon above
- * is where the training shows.
+ * is the hexagon's pale gold shape, as the games draw it, and a stat that has
+ * all 252 it can take wears a small gold star beside its name.
  *
  * @param {Record<string, number>} actual
- * @param {{hp: number, nature?: {increased?: string|null, decreased?: string|null}|null}} standing
- *   the Pokémon's current HP, and its nature
+ * @param {{hp: number, nature?: {increased?: string|null, decreased?: string|null}|null, evs?: Record<string, number>}} standing
+ *   the Pokémon's current HP, its nature and its effort
  * @returns {HTMLElement}
  */
-export function statTable(actual, { hp, nature }) {
+export function statTable(actual, { hp, nature, evs = {} }) {
   const table = document.createElement('div');
   table.className = 'stat-table';
   // A neutral nature raises and lowers the same stat, which is no change.
@@ -100,6 +116,13 @@ export function statTable(actual, { hp, nature }) {
     if (moved && stat === nature?.increased) label.classList.add('raised');
     if (moved && stat === nature?.decreased) label.classList.add('lowered');
     label.textContent = t(`stat.${stat}`);
+    if ((evs[stat] ?? 0) >= EFFORT_STAT_MAX) {
+      const full = document.createElement('i');
+      full.className = 'effort-full';
+      full.textContent = '✦';
+      full.setAttribute('aria-hidden', 'true');
+      label.append(full);
+    }
 
     const value = document.createElement('span');
     value.className = 'stat-value';

@@ -139,13 +139,13 @@ test('a Pokémon that is caught goes into the box at level 5, with the moves of 
   assert.equal(levelOf(small), 5);
 });
 
-test('there is no effort: stats are base, genes, level and nature', options, () => {
+test('a new Pokémon starts on no effort, and the items that train it are carried', options, () => {
   const pokemon = fixed(id('pikachu'), 50);
-  assert.equal('evs' in pokemon, false);
+  assert.deepEqual(pokemon.evs, { hp: 0, atk: 0, def: 0, spa: 0, spd: 0, spe: 0 });
   const stats = statsOf(pokemon);
   assert.ok(Object.values(stats).every((value) => value > 0));
   for (const slug of ['hp-up', 'protein', 'macho-brace', 'power-anklet', 'pomeg-berry', 'fresh-start-mochi']) {
-    assert.equal(gameData().items[slug], undefined, `${slug} should be gone`);
+    assert.ok(gameData().items[slug], `${slug} should be carried`);
   }
 });
 

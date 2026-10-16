@@ -40,22 +40,29 @@ function makeFixed(speciesId, level, moves = []) {
   return pokemon;
 }
 
-test('stat formula follows the main series, with no effort in it', options, () => {
-  // A level-78 Garchomp with 108 base HP and 24 IV: floor((216 + 24) * 78 / 100)
-  // = 187, then the level and ten on top.
-  assert.equal(computeStat(108, 24, 78, 1, true), 275);
+test('stat formula follows the main series, effort and all', options, () => {
+  // A level-78 Garchomp. Its HP — 108 base, 24 IV, 74 EV:
+  // floor((216 + 24 + 18) * 78 / 100) = 201, then the level and ten on top.
+  assert.equal(computeStat(108, 24, 74, 78, 1, true), 289);
+  // Defense, 95 base, 30 IV, 86 EV, neutral: floor((190 + 30 + 21) * 0.78) + 5.
+  assert.equal(computeStat(95, 30, 86, 78, 1, false), 192);
+  // Special Attack, 80 base, 16 IV, 48 EV, under an Adamant nature:
+  // (floor(188 * 0.78) + 5) * 0.9 = 135.9.
+  assert.equal(computeStat(80, 16, 48, 78, 0.9, false), 135);
 
-  // Its Attack, step by step: floor((2*130 + 12) * 78 / 100) = 212, then
-  // (212 + 5) * 1.1 = 238.7.
-  assert.equal(computeStat(130, 12, 78, 1.1, false), 238);
-  // A hindering nature rounds the same way: 217 * 0.9 = 195.3.
-  assert.equal(computeStat(130, 12, 78, 0.9, false), 195);
-  // And a neutral one is the inner term plus five.
-  assert.equal(computeStat(130, 12, 78, 1, false), 217);
+  // Its Attack with 195 EV, a raising nature: floor(320 * 0.78) = 249, then
+  // (249 + 5) * 1.1 = 279.4. Every four points of effort is one in the sum,
+  // so 192 to 195 all give the same.
+  assert.equal(computeStat(130, 12, 195, 78, 1.1, false), 279);
+  assert.equal(computeStat(130, 12, 192, 78, 1.1, false), 279);
+  // And with none: floor(272 * 0.78) = 212, then (212 + 5) * 1.1 = 238.7.
+  assert.equal(computeStat(130, 12, 0, 78, 1.1, false), 238);
+  assert.equal(computeStat(130, 12, 0, 78, 0.9, false), 195);
+  assert.equal(computeStat(130, 12, 0, 78, 1, false), 217);
 
   // A level-1 Pokémon still has the flat +10 on HP and +5 elsewhere.
-  assert.equal(computeStat(45, 0, 1, 1, true), 11);
-  assert.equal(computeStat(49, 0, 1, 1, false), 5);
+  assert.equal(computeStat(45, 0, 0, 1, 1, true), 11);
+  assert.equal(computeStat(49, 0, 0, 1, 1, false), 5);
 });
 
 test('stage multipliers follow the main-series table', options, () => {
@@ -344,11 +351,6 @@ test('the finer conditions: once a battle, the foe just out, speed, the kind of 
   assert.equal(pick(once), 'growl');
   once.player.usedOn = { growl: 1 };
   assert.equal(pick(once), 'tackle', 'used once already');
-
-  const entered = setUp('foeEntered');
-  assert.equal(pick(entered), 'growl');
-  entered.turn = 3;
-  assert.equal(pick(entered), 'tackle', 'out for a while');
 
   assert.equal(pick(setUp('faster', { foeLevel: 20 })), 'growl');
   assert.equal(pick(setUp('slower', { foeLevel: 20 })), 'tackle');
@@ -1168,28 +1170,18 @@ test('a move that missed is used again, at once or so many turns on, and a hit s
   assert.equal(pick(), 'swift', 'and stays due until it is used');
 });
 
-test('until it hits each foe, the last move missed, and a foe asleep', options, () => {
+test('the last move missed, and a foe asleep', options, () => {
   const player = makeFixed(CHARIZARD, 50, ['flamethrower', 'swift']);
   const battle = new Battle({
     rng: new Rng(2),
     player,
     foes: [makeFixed(VENUSAUR, 50, ['tackle']), makeFixed(VENUSAUR, 50, ['tackle'])],
-    policy: { ...defaultAutoBattle(), moves: { flamethrower: 'always', swift: 'untilHit' } },
+    policy: { ...defaultAutoBattle(), moves: { flamethrower: 'always', swift: 'lastMissed' } },
   });
   const me = battle.player;
   const foe = /** @type {any} */ (battle.foe);
   const pick = (/** @type {any} */ against = foe) => choosePolicyMove(battle, me, against, player.moves);
 
-  assert.equal(pick(), 'swift', 'not yet landed');
-  me.marks.lastFailed = true;
-  battle.noteLanding(me, foe, 'swift', [{ kind: 'protected', side: 'foe' }]);
-  assert.equal(pick(), 'swift', 'a block is not a hit');
-  me.marks.lastFailed = false;
-  battle.noteLanding(me, foe, 'swift', []);
-  assert.equal(pick(), 'flamethrower', 'landed on this foe');
-  assert.equal(pick(/** @type {any} */ ({ ...foe })), 'swift', 'and owed again to the next one sent out');
-
-  battle.policy.moves = { flamethrower: 'always', swift: 'lastMissed' };
   assert.equal(pick(), 'flamethrower');
   me.turnsTaken++;
   battle.noteLanding(me, foe, 'flamethrower', [{ kind: 'miss', side: 'player' }]);
@@ -1218,7 +1210,6 @@ test('a miss in a real battle is noted, and a hit clears it', options, () => {
     const log = battle.takeTurn();
     const miss = log.some((entry) => entry.kind === 'miss' && entry.side === 'player');
     assert.equal(Object.hasOwn(battle.player.missedOn ?? {}, 'zap-cannon'), miss, `seed ${seed}`);
-    assert.equal(battle.player.landed?.moves.has('zap-cannon') ?? false, !miss, `seed ${seed}`);
     if (miss) missed++;
     else landed++;
   }
@@ -1235,6 +1226,14 @@ test('the conditions taken out are read as the nearest ones left', () => {
   assert.deepEqual(policy.second, { thunder: 'missedTwoTurns', growl: 'everyThreeTurns' });
   assert.equal(policy.conditions.stat, 'oncePerBattle', "a kind's own condition too");
   assert.equal(normalizeAutoBattle(null).conditions.stat, 'oncePerBattle', 'and a boost starts once a battle');
+
+  // The five taken off the picker later.
+  const later = normalizeAutoBattle({
+    moves: { 'fake-out': 'foeEntered', swift: 'untilHit', growl: 'bossBattle', 'solar-beam': 'sunny' },
+    second: { thunder: 'rainy' },
+  });
+  assert.deepEqual(later.moves, { 'fake-out': 'oncePerFoe', swift: 'oncePerFoe', growl: 'trainerBattle', 'solar-beam': 'hasField' });
+  assert.deepEqual(later.second, { thunder: 'hasField' });
 });
 
 test('once per foe, a boss, the last foe, levels, the weather and an empty hand', options, () => {
@@ -1254,10 +1253,6 @@ test('once per foe, a boss, the last foe, levels, the weather and an empty hand'
   assert.ok(!when('oncePerFoe'));
   assert.ok(when('oncePerFoe', { ...foe }));
 
-  assert.ok(!when('bossBattle'));
-  battle.bossBattle = true;
-  assert.ok(when('bossBattle'));
-
   assert.ok(!when('lastFoe'), 'one more to come');
   battle.foeQueue = [];
   assert.ok(when('lastFoe'));
@@ -1268,14 +1263,7 @@ test('once per foe, a boss, the last foe, levels, the weather and an empty hand'
   foe.pokemon = makeFixed(VENUSAUR, 45, ['splash']);
   assert.ok(when('foeLevelLower') && !when('foeLevelHigher'));
 
-  assert.ok(!when('sunny') && !when('rainy'));
-  battle.field.weather = WEATHER.SUN;
-  assert.ok(when('sunny') && !when('rainy'));
-  battle.field.weather = WEATHER.RAIN;
-  assert.ok(when('rainy') && !when('sunny'));
   player.heldItem = 'utility-umbrella';
-  assert.ok(!when('rainy'), 'an Umbrella keeps the rain off');
-
   assert.ok(!when('noItem'));
   player.heldItem = null;
   assert.ok(when('noItem'));

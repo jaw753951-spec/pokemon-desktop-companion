@@ -33,9 +33,6 @@ const SKIES = {
 /** How much either way a mark's own speed differs from its sky's. */
 const SPEED_JITTER = 0.35;
 
-/** The skies this can draw, for anyone checking before asking. */
-export const WEATHER_KINDS = Object.keys(SKIES);
-
 /**
  * A number in `[0, 1)` for a pair of integers: the same pair always gives the
  * same number, and neighbouring pairs give unrelated ones.

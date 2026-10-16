@@ -228,9 +228,7 @@ export const VERSION_GROUP_PRIORITY = [
  * A Kanto route whose tags lean it towards rocky Pokémon still fights on the
  * grass its lane runs through: Fire Red has no mountain battle background of
  * its own, and Emerald's — near white above a pebbled platform — read as a
- * backdrop that failed to load (`backdrop`). And a strip can be slid down the
- * map a few blocks to show more of what stands under the lane (`bandDrop`):
- * Route 10's showed only the tops of the rocks beside its road.
+ * backdrop that failed to load (`backdrop`).
  *
  * The lane is found as the longest run with two rows of headroom over it, which
  * on a road two blocks wide with trees or a fence along its far side is the
@@ -247,7 +245,7 @@ export const VERSION_GROUP_PRIORITY = [
  * mirror image is a building no one built, and Route 2's walks the gap in
  * its tall grass rather than the edge of the sand path beside it.
  *
- * @type {Array<{id: string, dir: string, location: string, tags: string[], game?: 'emerald'|'firered', region?: string, ko?: string, backdrop?: string, bandDrop?: number, loop?: [number, number], lane?: number}>}
+ * @type {Array<{id: string, dir: string, location: string, tags: string[], game?: 'emerald'|'firered', region?: string, ko?: string, backdrop?: string, loop?: [number, number], lane?: number}>}
  */
 export const AREAS = [
   { id: 'route101', dir: 'Route101', location: 'hoenn-route-101', tags: ['grass', 'plain'], loop: [9, 17] },
@@ -293,7 +291,7 @@ export const AREAS = [
   { id: 'kanto-route-7', dir: 'Route7', location: 'kanto-route-7', tags: ['grass', 'urban'], game: 'firered', region: 'kanto', ko: '7번도로' },
   { id: 'kanto-route-8', dir: 'Route8', location: 'kanto-route-8', tags: ['grass', 'urban'], game: 'firered', region: 'kanto', ko: '8번도로' },
   { id: 'kanto-route-9', dir: 'Route9', location: 'kanto-route-9', tags: ['mountain', 'rough'], game: 'firered', region: 'kanto', backdrop: 'grass', ko: '9번도로' },
-  { id: 'kanto-route-10', dir: 'Route10', location: 'kanto-route-10', tags: ['mountain', 'electric'], game: 'firered', region: 'kanto', backdrop: 'grass', bandDrop: 2, ko: '10번도로', loop: [3, 13] },
+  { id: 'kanto-route-10', dir: 'Route10', location: 'kanto-route-10', tags: ['mountain', 'electric'], game: 'firered', region: 'kanto', backdrop: 'grass', ko: '10번도로', loop: [3, 13] },
   { id: 'kanto-route-11', dir: 'Route11', location: 'kanto-route-11', tags: ['grass', 'plain'], game: 'firered', region: 'kanto', ko: '11번도로' },
   { id: 'kanto-route-12', dir: 'Route12', location: 'kanto-route-12', tags: ['grass', 'water'], game: 'firered', region: 'kanto', ko: '12번도로' },
   { id: 'kanto-route-13', dir: 'Route13', location: 'kanto-route-13', tags: ['grass', 'meadow'], game: 'firered', region: 'kanto', ko: '13번도로' },

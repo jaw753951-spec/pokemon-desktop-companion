@@ -115,13 +115,6 @@ function shippedItems(items, { machines, moves, species, log }) {
       continue;
     }
 
-    // Effort is gone from the game — nothing earns it and nothing spends it —
-    // so the vitamins, Power items, wings, mochi and the berries that undo it
-    // have nothing left to act on.
-    if (item.held?.on === 'effort' || item.use?.effort || item.use?.resetEffort) {
-      dropped['effort is gone'] = (dropped['effort is gone'] ?? 0) + 1;
-      continue;
-    }
 
     const formItem = FORM_ITEMS[slug];
     if (formItem) item = { ...item, ...formItem, pocket: 'misc' };
@@ -196,6 +189,10 @@ const RETIRED_CATEGORIES = {
   collectibles: 'selling',
   loot: 'selling',
   unused: 'unused in the games too',
+  // A Revive brings back a Pokémon that has fainted, and nothing here stays
+  // fainted: the companion is carried to a Pokémon Center on one hit point
+  // the moment it goes down, and a caught Pokémon goes into the box healed.
+  revival: 'nothing stays fainted',
 };
 
 /**
@@ -380,8 +377,9 @@ const RETIRED_ITEMS = {
   // One generation's or one region's version of something the bag already
   // has, doing the same thing under another name. The drinks and the
   // regional sweets are Potions and Full Heals; a companion is one Pokémon,
-  // so a Sacred Ash is a Max Revive; the mochi, wings and Let's Go candies
-  // are vitamins in other sizes; the incenses are breeding items whose held
+  // so a Sacred Ash is a Max Revive; the Let's Go candies are vitamins in
+  // other sizes (the mochi and the feathers, which the games still sell
+  // beside the vitamins, stay); the incenses are breeding items whose held
   // effect another item already has; a Gem is a one-shot type booster; the
   // Blank Plate is a Silk Scarf that changes no Arceus. The five confusion
   // berries are one berry five times over, told apart only by which natures
@@ -392,7 +390,6 @@ const RETIRED_ITEMS = {
       'heal-powder', 'lava-cookie', 'old-gateau', 'casteliacone', 'lumiose-galette', 'shalour-sable', 'big-malasada',
       'pewter-crunchies',
       'revival-herb', 'sacred-ash', 'max-honey',
-      ...['health', 'muscle', 'resist', 'genius', 'clever', 'swift'].flatMap((stat) => [`${stat}-mochi`, `${stat}-wing`]),
       ...['health', 'mighty', 'tough', 'smart', 'courage', 'quick'].flatMap((stat) => [`${stat}-candy`, `${stat}-candy-l`, `${stat}-candy-xl`]),
       'dynamax-candy',
       'sea-incense', 'wave-incense', 'rock-incense', 'rose-incense', 'odd-incense', 'lax-incense', 'full-incense',
@@ -477,7 +474,11 @@ async function buildMoves(pool, log) {
           name: nameBundle(move.names, move.name),
           type: move.type.name,
           damageClass: move.damage_class?.name ?? 'status',
-          power: move.power,
+          // No power at all where the games show a dash: PokeAPI gives the
+          // newest moves a 0 for "none" (a Shed Tail, a Hard Press) or a 1
+          // for "worked out in the fight" (a Ruination, a Comeuppance), where
+          // the older ones have nothing — which is what the battle reads.
+          power: move.power > 1 ? move.power : null,
           accuracy: move.accuracy,
           pp: move.pp ?? 5,
           priority: move.priority ?? 0,
@@ -1224,11 +1225,6 @@ function useEffect(item) {
   /** @type {any} */
   const use = {};
 
-  // "Revives with half HP." — checked first, since a revival also restores HP
-  // and would otherwise read as an ordinary potion.
-  const revive = /Revives(?: [^.]+?)? with (half|full) HP/i.exec(text);
-  if (revive) return { revive: revive[1].toLowerCase() === 'full' ? 1 : 0.5 };
-
   if (/Restores HP to full/i.test(text)) use.hp = 'full';
   const hp = /Restores (\d+) HP/i.exec(text);
   if (hp) use.hp = Number(hp[1]);
@@ -1250,7 +1246,7 @@ function useEffect(item) {
   const raise = /Raises ([A-Za-z ]+?)(?: effort)? and happiness/i.exec(text);
   if (raise) {
     const stat = STAT_NAMES[raise[1].trim().toLowerCase()];
-    if (stat && stat !== 'random') use.effort = { stat, amount: EFFORT_STEP };
+    if (stat && stat !== 'random') use.effort = { stat, amount: EFFORT_STEP, friendship: FRIENDSHIP.vitamin };
   }
 
   // "Increases HP effort by 1." — the six wings, which are a vitamin paid out
@@ -1258,7 +1254,7 @@ function useEffect(item) {
   const wing = /Increases ([A-Za-z ]+?) effort by (\d+)/i.exec(text);
   if (wing && !use.effort) {
     const stat = STAT_NAMES[wing[1].trim().toLowerCase()];
-    if (stat && stat !== 'random') use.effort = { stat, amount: Number(wing[2]) };
+    if (stat && stat !== 'random') use.effort = { stat, amount: Number(wing[2]), friendship: FRIENDSHIP.feather };
   }
 
   // "Raises a move's max PP by 20%." — a PP Up, and a PP Max, which says 60%
@@ -1276,7 +1272,7 @@ function useEffect(item) {
   const drop = /Drops ([A-Za-z ]+?) Effort Values by (\d+)/i.exec(text);
   if (drop) {
     const stat = STAT_NAMES[drop[1].trim().toLowerCase()];
-    if (stat && stat !== 'random') use.effort = { stat, amount: -Number(drop[2]) };
+    if (stat && stat !== 'random') use.effort = { stat, amount: -Number(drop[2]), friendship: FRIENDSHIP.berry };
   }
 
   if (/Causes a level-up/i.test(text)) use.level = 1;
@@ -1465,6 +1461,14 @@ const UNWRITTEN = {
 /** How much effort a vitamin adds, as the games have always given. */
 const EFFORT_STEP = 10;
 
+/**
+ * What each kind of effort item is worth in friendship, by how fond the
+ * Pokémon already is — under 100, under 200, and above — as the games pay it:
+ * a vitamin, a feather, and a berry that takes effort away. The mochi give
+ * none.
+ */
+const FRIENDSHIP = { vitamin: [5, 3, 2], feather: [3, 2, 1], berry: [10, 5, 2] };
+
 /** The most a move's PP can be raised above its base, as the games cap it. */
 const PP_UP_LIMIT = 0.6;
 
@@ -1600,6 +1604,7 @@ async function buildSpecies(pool, log, limit) {
           genus: genusBundle(species.genera),
           types: pokemon.types.sort((a, b) => a.slot - b.slot).map((entry) => entry.type.name),
           stats,
+          effort: effortOf(pokemon),
           abilities: pokemon.abilities.map((entry) => ({
             name: entry.ability.name,
             hidden: entry.is_hidden,
@@ -1647,6 +1652,23 @@ async function buildSpecies(pool, log, limit) {
   const formSpecies = Object.values(out).filter((entry) => entry.forms.length).length;
   const formCount = Object.values(out).reduce((total, entry) => total + entry.forms.length, 0);
   log(`species forms ${formCount} across ${formSpecies} species the battle can change`);
+  return out;
+}
+
+/**
+ * What defeating one is worth in effort, stat by stat, as the games pay it: a
+ * Geodude one point of Defense, a Garchomp three of Attack. PokeAPI carries it
+ * beside each base stat; only the stats that pay anything are kept.
+ *
+ * @param {any} pokemon a PokeAPI pokemon record
+ * @returns {Record<string, number>}
+ */
+function effortOf(pokemon) {
+  /** @type {Record<string, number>} */
+  const out = {};
+  for (const stat of pokemon.stats ?? []) {
+    if (stat.effort > 0) out[STAT_KEYS[stat.stat.name] ?? stat.stat.name] = stat.effort;
+  }
   return out;
 }
 
@@ -1785,6 +1807,7 @@ async function addRegionalSpecies(out, pool) {
             ...(varietyForm(pokemon.name, region, formName) ? { form: varietyForm(pokemon.name, region, formName) } : {}),
             types: pokemon.types.sort((a, b) => a.slot - b.slot).map((entry) => entry.type.name),
             stats,
+            effort: effortOf(pokemon),
             abilities: pokemon.abilities.map((entry) => ({ name: entry.ability.name, hidden: entry.is_hidden })),
             height: pokemon.height,
             weight: pokemon.weight,

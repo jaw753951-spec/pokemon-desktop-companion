@@ -73,9 +73,6 @@ const MOMENT_ATTACKS = {
   acrobatics: ['noItem', 'always'],
   // Twice the power on a sleeping foe.
   'wake-up-slap': ['foeAsleep', 'always'],
-  // Never miss in the rain.
-  thunder: ['rainy', 'always'],
-  hurricane: ['rainy', 'always'],
 };
 
 /** Moves that only matter with something to cure. */
@@ -260,8 +257,9 @@ function otherAttacks(slug, profile, atLeast = 60) {
 function planAttack(slug, move, profile) {
   // A Counter answers a hit it cannot see coming; a Bide waits for two.
   if (RETALIATES.has(slug) || slug === 'bide') return OFF;
-  // A Fake Out works on a foe's first turn out and fails after it.
-  if (FIRST_TURN_ONLY.has(slug)) return use(RANK.finisher, 'foeEntered');
+  // A Fake Out works on a foe's first turn out and fails after it: once
+  // against each, which is its first turn unless something else came first.
+  if (FIRST_TURN_ONLY.has(slug)) return use(RANK.finisher, 'oncePerFoe');
   // An Explosion is the last thing it does.
   if (move.rules?.selfdestruct) return use(RANK.finisher, 'hpQuarter');
   // A Flail or a Reversal is only strong at the bottom of its health.
@@ -274,8 +272,6 @@ function planAttack(slug, move, profile) {
   if (slug === 'last-resort') return otherAttacks(slug, profile, 1).length ? OFF : use(RANK.attack, 'always');
 
   const others = otherAttacks(slug, profile).length > 0;
-  // A Solar Beam needs no charging turn in the sun.
-  if (slug === 'solar-beam' || slug === 'solar-blade') return use(RANK.moment, 'sunny', others ? 'never' : 'always');
   // Two turns standing still, or one recharging, or a sharp fall in the stat
   // it attacks with: worth it to finish a foe, when something else can do
   // the rest of the work.

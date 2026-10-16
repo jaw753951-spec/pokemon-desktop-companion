@@ -78,7 +78,6 @@ function ballButton(app, speciesId, slot, caption, stage) {
 
   return el('button.starter-pick', {
     type: 'button',
-    title: label,
     onMouseEnter: reveal,
     onMouseLeave: () => { cried = false; },
     onFocus: reveal,

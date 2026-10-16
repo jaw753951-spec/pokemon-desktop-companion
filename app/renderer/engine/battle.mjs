@@ -8,8 +8,8 @@
  * of log entries per turn which the battle scene plays back as animation.
  */
 import { COMPANION_DAMAGE_TAKEN, COMPANION_WEAKNESS, FIRST_RUN_EXPERIENCE_BONUS, FIRST_RUN_EXPERIENCE_UNTIL } from '../../shared/constants.mjs';
-import { gameData, itemOf, moveOf, speciesOf, typeEffectiveness } from '../core/data.mjs';
-import { ABILITIES, abilityEffect, abilityName, afterBattle, auraMultiplier, hasSecondary } from './abilities.mjs';
+import { gameData, itemOf, moveHasFlag as hasFlag, moveOf, speciesOf, typeEffectiveness } from '../core/data.mjs';
+import { ABILITIES, abilityName, afterBattle, auraMultiplier, hasSecondary } from './abilities.mjs';
 import { chooseFoeMove } from './foeai.mjs';
 import { formeFor, heldForme, SIGNATURE_MOVES, signatureType, standingForme, START_FORMES } from './forms.mjs';
 import {
@@ -79,8 +79,6 @@ import { stageMultiplier } from './stats.mjs';
  * @property {Record<string, number>} [missedOn] the turn each move missed on,
  *   for as long as its last use was that miss
  * @property {number} [lastMissTurn] the last of its turns any move missed on
- * @property {{target: Combatant, moves: Set<string>}} [landed] the moves that
- *   have landed on the foe in front of it
  * @property {{target: Combatant, moves: Set<string>}} [usedAgainst] the moves
  *   used on the foe in front of it, hit or miss
  * @property {number} [enteredTurn] the battle turn it came out on
@@ -296,9 +294,6 @@ export function weightPower(move, userWeight, targetWeight) {
 /** The two-turn moves that need no charging when the sun is out. */
 const SUN_CHARGED = new Set(['solar-beam', 'solar-blade']);
 
-/** @param {any} move @param {string} flag */
-const hasFlag = (move, flag) => Boolean(move?.flags?.includes(flag));
-
 export class Battle {
   /**
    * @param {{
@@ -314,10 +309,9 @@ export class Battle {
    *   weather?: string|null,
    *   environment?: string|null,
    *   firstRun?: boolean,
-   *   bossBattle?: boolean,
    * }} options
    */
-  constructor({ rng, player, foes, policy, items = null, trainerBattle = false, weather = null, environment = null, firstRun = false, bossBattle = false }) {
+  constructor({ rng, player, foes, policy, items = null, trainerBattle = false, weather = null, environment = null, firstRun = false }) {
     this.rng = rng;
     this.policy = policy;
     /**
@@ -340,7 +334,6 @@ export class Battle {
     /** Whether the save is on its first run, which pays more experience early on. */
     this.firstRun = firstRun;
     /** A gym leader or a League round, which the auto-battle can save a move for. */
-    this.bossBattle = bossBattle;
     /**
      * The companion's moves the other side has watched it use. A trainer
      * keeps them in mind for the rest of the battle, whichever of their
@@ -1659,6 +1652,26 @@ export class Battle {
         return push(...entries);
       },
     });
+    // A line put in afterwards, in front of what it announces — a berry named
+    // before the heal it gave — is stamped as things stood at that point in
+    // the turn, not as they stand once the heal is done. Stamped now, it
+    // moved the bar to the end of the heal on the berry's line, and the heal's
+    // own line then had nothing left to show.
+    const opening = { hp: this.hitPoints(), statuses: this.statuses(), confused: this.confusion() };
+    const splice = Array.prototype.splice.bind(log);
+    Object.defineProperty(log, 'splice', {
+      configurable: true,
+      value: (/** @type {number} */ start, /** @type {number} */ count, /** @type {LogEntry[]} */ ...entries) => {
+        const at = start < 0 ? Math.max(0, log.length + start) : Math.min(start, log.length);
+        const before = log[at - 1] ?? opening;
+        for (const entry of entries) {
+          if (entry && !entry.hp) entry.hp = before.hp;
+          if (entry && !entry.statuses) entry.statuses = before.statuses;
+          if (entry && !entry.confused) entry.confused = before.confused;
+        }
+        return splice(start, count, ...entries);
+      },
+    });
     return log;
   }
 
@@ -2872,9 +2885,6 @@ export class Battle {
     } else {
       delete missedOn[moveName];
     }
-    if (attacker.marks.lastFailed) return;
-    if (attacker.landed?.target !== defender) attacker.landed = { target: defender, moves: new Set() };
-    attacker.landed.moves.add(moveName);
   }
 
   /**
@@ -3679,7 +3689,17 @@ export class Battle {
 
     combatant.pokemon.heldItem = null;
     combatant.marks.ateBerry = slug;
-    log.splice(mark, 0, { kind: 'berry', side: combatant.side, data: { item: slug } });
+    // A Sitrus's hit points and a Lum's cure have no line of their own: the
+    // berry's line is the one that shows them, so it stands as things are once
+    // the berry is eaten, and the bar rises as it is named.
+    log.splice(mark, 0, {
+      kind: 'berry',
+      side: combatant.side,
+      data: { item: slug },
+      hp: this.hitPoints(),
+      statuses: this.statuses(),
+      confused: this.confusion(),
+    });
 
     // A Figy and its kin taste of one stat; a nature that lowers that stat
     // cannot stand the flavour, and the Pokémon is left confused.
@@ -3933,8 +3953,17 @@ export class Battle {
       }
 
       const survives = this.survivesHit(defender, result.damage);
+      // A berry eaten on the way in is announced before the damage it softened.
+      if (defender.marks.ateResist) {
+        log.push({ kind: 'berry', side: defender.side, data: { item: defender.marks.ateResist } });
+        defender.marks.ateResist = null;
+      }
       defender.pokemon.hp = Math.max(survives ? 1 : 0, defender.pokemon.hp - result.damage);
       total += result.damage;
+      // Every strike drains the bar on its own, as the games play a Double
+      // Kick or a Bullet Seed: one drop for all of them read as the bar
+      // jumping straight to where it ended.
+      log.push({ kind: 'damage', side: defender.side, data: { amount: result.damage, hit: landed } });
       if (survives) {
         if (survives.move) {
           this.say(defender, 'move.endured');
@@ -3971,16 +4000,15 @@ export class Battle {
     if (total === 0 && soaked === 0) return;
     const dealt = total + soaked;
 
-    // A berry eaten on the way in is announced before the damage it softened.
+    // A berry eaten for a hit a substitute took is still announced.
     if (defender.marks.ateResist) {
       log.push({ kind: 'berry', side: defender.side, data: { item: defender.marks.ateResist } });
       defender.marks.ateResist = null;
     }
 
-    // The hit lands first and the reasons follow it, which is the order the
+    // The hits land first and the reasons follow them, which is the order the
     // games read in: the bar drains, then "급소에 맞았다!", then "효과가
     // 굉장했다!".
-    if (total > 0) log.push({ kind: 'damage', side: defender.side, data: { amount: total, hits: landed } });
     if (move.rules?.ohko && defender.pokemon.hp <= 0) this.say(defender, 'move.ohko');
     if (critical) {
       log.push({ kind: 'critical', side: defender.side });
@@ -5244,12 +5272,19 @@ export class Battle {
     const species = speciesOf(defeated.pokemon.speciesId);
     // The first run's early levels pay more (see `FIRST_RUN_EXPERIENCE_BONUS`).
     const early = this.firstRun && levelOf(this.player.pokemon) < FIRST_RUN_EXPERIENCE_UNTIL ? FIRST_RUN_EXPERIENCE_BONUS : 1;
+    // A Macho Brace or a Power item pays its effort whatever the battle did to
+    // it: a Klutz or a Magic Room stops what an item does in a fight, and
+    // effort is paid after one.
+    const training = itemOf(this.player.pokemon.heldItem ?? '')?.held;
+    const effortHeld = training?.on === 'effort' ? training : null;
     const reward = gainFromDefeat(
       this.player.pokemon,
-      { baseStats: species.stats, baseExp: species.baseExp, level: levelOf(defeated.pokemon) },
+      { baseStats: species.stats, baseExp: species.baseExp, level: levelOf(defeated.pokemon), effort: species.effort },
       {
         trainerBattle: this.trainerBattle,
         experienceMultiplier: (heldPassive(this.player.pokemon, 'experience')?.multiplier ?? 1) * early,
+        effortMultiplier: effortHeld?.multiplier ?? 1,
+        effortBonus: effortHeld?.bonus ?? null,
       },
     );
     this.rewards.push(reward);
@@ -5363,7 +5398,8 @@ export function effectiveStat(combatant, stat, options = {}) {
  * How much a held item changes a stat.
  *
  * A Choice Band's fifty percent, an Eviolite's half again for something that
- * still has an evolution ahead of it.
+ * still has an evolution ahead of it, and the Speed a Macho Brace or a Power
+ * item costs for the effort it earns.
  *
  * @param {import('./pokemon.mjs').Pokemon} pokemon
  * @param {string} stat
@@ -5376,6 +5412,8 @@ function heldStatMultiplier(pokemon, stat) {
     const unevolved = (speciesOf(pokemon.speciesId).evolutions ?? []).length > 0;
     if (!held.unevolvedOnly || unevolved) multiplier *= held.multiplier;
   }
+  const effort = heldPassive(pokemon, 'effort');
+  if (stat === 'spe' && effort?.speed) multiplier *= effort.speed;
   return multiplier;
 }
 
@@ -5720,15 +5758,10 @@ function conditionHolds(condition, battle, attacker, defender, slug) {
   switch (condition) {
     case 'never':
       return false;
-    // The foe's first turn out: the start of a wild battle, and each of a
-    // trainer's Pokémon as it comes out.
-    case 'foeEntered':
-      return battle.firstTurnOut(defender);
     case 'oncePerBattle':
       return !attacker.usedOn?.[slug];
     // Once against each Pokémon the foe sends out, on whatever turn first
-    // lets it: unlike the foe's first turn out, a turn something else took
-    // does not lose it.
+    // lets it: a turn something else took does not lose it.
     case 'oncePerFoe':
       return !(attacker.usedAgainst?.target === defender && attacker.usedAgainst.moves.has(slug));
     // Every so many turns, counted from the turn the move was last used,
@@ -5750,10 +5783,6 @@ function conditionHolds(condition, battle, attacker, defender, slug) {
     case 'missedTwoTurns':
     case 'missedThreeTurns':
       return Object.hasOwn(attacker.missedOn ?? {}, slug) && turnsSinceUsed(attacker, slug) >= 2;
-    // Until it has landed on the foe in front of it: tried again after a miss
-    // or a block, and again for each Pokémon a trainer sends out.
-    case 'untilHit':
-      return !(attacker.landed?.target === defender && attacker.landed.moves.has(slug));
     // Whatever the companion used on its last turn missed: when a move that
     // never misses is worth more than a strong one that might.
     case 'lastMissed':
@@ -5791,8 +5820,6 @@ function conditionHolds(condition, battle, attacker, defender, slug) {
       return battle.trainerBattle;
     case 'wildBattle':
       return !battle.trainerBattle;
-    case 'bossBattle':
-      return battle.bossBattle;
     // The last the foe has: a wild Pokémon always is.
     case 'lastFoe':
       return battle.foeQueue.length === 0;
@@ -5808,11 +5835,6 @@ function conditionHolds(condition, battle, attacker, defender, slug) {
       return Boolean(attacker.pokemon.status);
     case 'foeAsleep':
       return defender.pokemon.status === STATUS.SLEEP;
-    // The sky as it reaches the companion: a Cloud Nine or an Umbrella hides it.
-    case 'sunny':
-      return battle.weatherFor(attacker) === WEATHER.SUN;
-    case 'rainy':
-      return battle.weatherFor(attacker) === WEATHER.RAIN;
     // Holding nothing: an Acrobatics at double power, or a berry eaten.
     case 'noItem':
       return !attacker.pokemon.heldItem;

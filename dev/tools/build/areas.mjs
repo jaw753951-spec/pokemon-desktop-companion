@@ -60,11 +60,6 @@ export async function buildAreas({ assetDir, dataDir, log, pool }) {
     // gatehouse's mouth at the end of the lane came back as half a door frame
     // stood on its own in the road, which the companion walked through.
     const path = pickWalkPath(blockdata, layout.width, layout.height, bandBlocks, (x, y) => isWater(x, y) || isWarp(x, y), area.lane);
-    // Slid down the map where the area asks, to show what stands below the
-    // lane; the lane itself stays where it was, higher in the strip.
-    if (area.bandDrop) {
-      path.bandRow = Math.max(0, Math.min(layout.height - bandBlocks, path.laneRow, path.bandRow + area.bandDrop));
-    }
     // And cut to the stretch of the run whose ends mirror into the map going
     // on, or to the one the area names: see `pickLoopEnds`.
     if (area.loop && (area.loop[0] < path.column || area.loop[1] >= path.column + path.columns || area.loop[0] > area.loop[1])) {

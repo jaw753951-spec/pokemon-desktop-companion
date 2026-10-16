@@ -7,15 +7,18 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { NEEDS_ASSETS, useRealGameData } from './helpers/data.mjs';
+import { experienceForLevel } from '../../app/renderer/engine/stats.mjs';
 import { Rng } from '../../app/renderer/core/rng.mjs';
 import { gameData, speciesIdBySlug, speciesOf } from '../../app/renderer/core/data.mjs';
-import { shedAfterEvolving, useItem } from '../../app/renderer/engine/items.mjs';
+import { completeEvolution, shedAfterEvolving, useItem } from '../../app/renderer/engine/items.mjs';
 import {
   createPokemon,
   friendshipForLevels,
   gainFriendship,
+  offeredEvolution,
   pendingEvolution,
   setMove,
+  stopEvolution,
   TRADE_ITEM,
   walkSteps,
 } from '../../app/renderer/engine/pokemon.mjs';
@@ -127,7 +130,12 @@ test('an item that is not the one it is waiting for does not set off a levelling
 test('a Linking Cord is a trade, and the item held says which one', options, () => {
   const kadabra = make('kadabra', 30);
   const session = fakeSession({ [TRADE_ITEM]: 1 }, kadabra);
-  assert.ok(useItem(session, TRADE_ITEM).ok);
+  const used = useItem(session, TRADE_ITEM);
+  assert.ok(used.ok);
+  // The evolution screen plays it out, and cannot be told to stop it.
+  assert.deepEqual(used.evolution, { to: id('alakazam'), stoppable: false });
+  assert.equal(kadabra.speciesId, id('kadabra'), 'nothing evolves before the screen');
+  completeEvolution(session, kadabra, used.evolution.to);
   assert.equal(kadabra.speciesId, id('alakazam'));
   assert.equal(session.bag[TRADE_ITEM], 1, 'the cord is kept, as every evolution item is');
 
@@ -246,4 +254,25 @@ test('a Wurmple is always the same one of its two, and not always the first', op
     seen.add(first);
   }
   assert.deepEqual([...seen].sort(), [id('silcoon'), id('cascoon')].sort());
+});
+
+test('an evolution stopped at a level is not asked again until the next one', options, () => {
+  const charmander = make('charmander', 16);
+  assert.equal(offeredEvolution(charmander)?.to, id('charmeleon'));
+  stopEvolution(charmander);
+  assert.equal(offeredEvolution(charmander), null, 'not after the next battle at the same level');
+  assert.equal(pendingEvolution(charmander)?.to, id('charmeleon'), 'it is still due');
+
+  charmander.experience = experienceForLevel(speciesOf(charmander.speciesId).growthRate, 17);
+  assert.equal(offeredEvolution(charmander)?.to, id('charmeleon'), 'asked again at the next level');
+
+  // An item chosen by the player is not held back by a stop.
+  const pikachu = make('pikachu', 20);
+  stopEvolution(pikachu);
+  assert.equal(offeredEvolution(pikachu, { item: 'thunder-stone' })?.to, id('raichu'));
+
+  // Evolving clears it.
+  const session = fakeSession({}, charmander);
+  completeEvolution(session, charmander, id('charmeleon'));
+  assert.equal(charmander.evolutionStopped, undefined);
 });

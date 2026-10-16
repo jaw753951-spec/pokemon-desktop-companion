@@ -70,6 +70,14 @@ test('으로/로 treats a final ㄹ as no final consonant', () => {
   assert.equal(resolveParticles('이글이글으로(로) 변경'), '이글이글로 변경');
 });
 
+test('so does "(으)로", the way the string files write it', () => {
+  assert.equal(resolveParticles('파이리는 리자드(으)로 진화했다!'), '파이리는 리자드로 진화했다!');
+  assert.equal(resolveParticles('이브이는 샤미드(으)로 진화했다!'), '이브이는 샤미드로 진화했다!');
+  assert.equal(resolveParticles('메타몽은 이상해꽃(으)로 변신했다!'), '메타몽은 이상해꽃으로 변신했다!');
+  assert.equal(resolveParticles('이글이글(으)로 변경'), '이글이글로 변경');
+  assert.equal(resolveParticles('레벨 16(으)로 올랐다!'), '레벨 16(으)로 올랐다!');
+});
+
 test('a non-Hangul word before the particle keeps the written form', () => {
   assert.equal(resolveParticles('Pikachu을(를) 선택'), 'Pikachu을(를) 선택');
   assert.equal(resolveParticles('을(를) 선택'), '을(를) 선택');

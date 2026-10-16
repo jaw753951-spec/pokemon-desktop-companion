@@ -24,7 +24,7 @@
  *   write the line about it, because an ability that acts silently reads as a
  *   bug from the other side of the screen.
  */
-import { speciesOf } from '../core/data.mjs';
+import { moveHasFlag as hasFlag, speciesOf } from '../core/data.mjs';
 import { formeAbility } from './forms.mjs';
 import { WEATHER, TERRAIN } from './field.mjs';
 
@@ -663,17 +663,6 @@ const UNTRACEABLE = new Set([
 const LOCKED_STATES = new Set(['taunt', 'encore', 'disable', 'torment']);
 
 /**
- * The ability a Pokémon is acting on, if the engine knows what it does.
- *
- * @param {{ability?: string}|null|undefined} pokemon
- * @returns {any|null}
- */
-export function abilityEffect(pokemon) {
-  const slug = abilityName(pokemon);
-  return slug ? ABILITIES[slug] ?? null : null;
-}
-
-/**
  * The ability a Pokémon has right now: the one its forme brings, when a
  * held-item forme brings one — a masked Ogerpon's — and its own otherwise.
  *
@@ -690,13 +679,7 @@ export const abilityWorks = (slug) => Boolean(ABILITIES[slug]);
 /** Whether the ability is one a one-on-one battle never gives a chance to act. @param {string} slug */
 export const abilityInert = (slug) => Boolean(ABILITIES[slug]?.inert);
 
-/** How many of the dex's abilities the engine reads, for the screens to say. */
-export const abilityCount = () => Object.keys(ABILITIES).length;
-
 // ---- The small questions the table above asks over and over.
-
-/** @param {any} move @param {string} flag */
-const hasFlag = (move, flag) => Boolean(move?.flags?.includes(flag));
 
 /** @param {any} combatant */
 const fullHealth = (combatant) => combatant.pokemon.hp >= combatant.maxHp;

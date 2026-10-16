@@ -60,10 +60,13 @@ export async function verifyAssets({ assetDir, dataDir, log }) {
   // The build drops what belongs to a system this game will not have, and
   // keeps everything that acts on something it does — whether or not the
   // engine reads it yet. It also drops each generation's copy of something
-  // the bag already has, and the TRs a TM already covers, and everything that only
-  // trained effort, which leaves about five hundred and seventy; a build far
-  // under that has lost items it meant to keep.
-  note(Object.keys(items).length >= 500, `items: only ${Object.keys(items).length}`);
+  // the bag already has, and the TRs a TM already covers, which leaves about
+  // six hundred and fifteen; a build far under that has lost items it meant to
+  // keep.
+  note(Object.keys(items).length >= 560, `items: only ${Object.keys(items).length}`);
+  // And each species carries what defeating it is worth in effort.
+  const unpaid = Object.values(species).filter((entry) => !entry.effort || Object.keys(entry.effort).length === 0);
+  note(unpaid.length === 0, `species with no effort yield: ${summarize(unpaid.map((entry) => entry.slug))}`);
   // Unless something evolves by it: a Gimmighoul Coin is filed with the TM materials.
   const retired = Object.entries(items).filter(([slug, item]) =>
     ['mega-stones', 'z-crystals', 'dynamax-crystals', 'tera-shard', 'curry-ingredients', 'tm-materials'].includes(

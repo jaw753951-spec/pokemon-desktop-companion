@@ -6,12 +6,14 @@
  * the order the cartridges' bags list them in.
  *
  * - **Medicine**: HP (Potion up to Full Restore), status cures (one
- *   condition each, then Full Heal), revives, PP, then the stat items — PP Up
- *   and PP Max, Exp. Candies small to large then the Rare Candy, the Ability
- *   Capsule and Patch — and last the Mints, by the stat their nature raises.
+ *   condition each, then Full Heal), PP, then the stat items — the six
+ *   vitamins, the six feathers and the six mochi, each in stat order, and the
+ *   Fresh-Start Mochi; PP Up and PP Max, Exp. Candies small to large then the
+ *   Rare Candy, the Ability Capsule and Patch — and last the Mints, by the
+ *   stat their nature raises.
  * - **Berries**: healing, curing, PP, the type-resisting eighteen in the
- *   games' order, the pinch berries, the ones that answer a hit, and the
- *   catching berries.
+ *   games' order, the pinch berries, the ones that answer a hit, the six that
+ *   lower effort, and the catching berries.
  * - **Balls**: Poké, Great, Ultra and Master Ball, then the special balls,
  *   then the Apricorn balls.
  * - **Machines** go by kind and number — TMs, then HMs, then TRs, each from
@@ -91,11 +93,13 @@ function medicineRank({ item }) {
       return [0, use.hp === 'full' ? 100000 : Number(use.hp ?? 0), use.status ? 1 : 0];
     case 'status-cures':
       return [1, cureIndex(use.status)];
-    case 'revival':
-      return [2, Number(use.revive ?? 0)];
     case 'pp-recovery':
       return [3, use.pp?.scope === 'all' ? 1 : 0, use.pp?.amount === 'full' ? 1 : 0];
     case 'vitamins':
+      // A vitamin, then a feather (a point at a time), then a mochi (which
+      // brings no friendship), each kind in stat order.
+      if (use.effort) return [4, 0, use.effort.amount === 1 ? 1 : use.effort.friendship ? 0 : 2, statIndex(use.effort.stat)];
+      if (use.resetEffort) return [4, 0, 3];
       if (use.ppUp) return [4, 1, Number(use.ppUp.fraction ?? 0)];
       if (use.experience) return [4, 2, Number(use.experience)];
       if (use.level) return [4, 2, Number.MAX_SAFE_INTEGER];
@@ -114,6 +118,7 @@ function medicineRank({ item }) {
 function berryRank({ item }) {
   const held = item?.held;
   if (item?.capture || item?.category === 'catching-bonus') return [7];
+  if (item?.use?.effort) return [6, statIndex(item.use.effort.stat)];
   switch (held?.on) {
     case 'hp':
       if (held.heal) return [0, held.heal.amount ?? Math.round((held.heal.fraction ?? 0) * 1000)];
@@ -196,22 +201,10 @@ export function evolvesSomething(slug) {
 }
 
 /**
- * Whether some Pokémon evolves by holding this item and none by using it: a
- * Metal Coat, a Razor Claw, an Oval Stone. Evolving leaves such an item in
- * the Pokémon's hand, so it is never spent.
+ * Built once from the data: which Pokémon each item belongs to, and which
+ * families each item evolves.
  *
- * @param {string} slug
- */
-export function evolvesWhenHeld(slug) {
-  const { held, used } = index();
-  return held.has(slug) && !used.has(slug);
-}
-
-/**
- * Built once from the data: which Pokémon each item belongs to, which
- * families each item evolves, and which items do it held and which used.
- *
- * @type {{owners: Map<string, number>, evolves: Map<string, Set<number>>, held: Set<string>, used: Set<string>}|null}
+ * @type {{owners: Map<string, number>, evolves: Map<string, Set<number>>}|null}
  */
 let cached = null;
 let cachedFor = /** @type {any} */ (null);
@@ -253,14 +246,8 @@ function index() {
 
   /** @type {Map<string, Set<number>>} */
   const evolves = new Map();
-  /** @type {Set<string>} */
-  const held = new Set();
-  /** @type {Set<string>} */
-  const used = new Set();
   for (const entry of species) {
     for (const evolution of entry.evolutions ?? []) {
-      if (evolution.item) used.add(evolution.item);
-      for (const item of [evolution.heldItem, ...(evolution.heldItems ?? [])]) if (item) held.add(item);
       for (const item of [evolution.item, evolution.heldItem, ...(evolution.heldItems ?? [])]) {
         if (!item) continue;
         if (!evolves.has(item)) evolves.set(item, new Set());
@@ -269,7 +256,7 @@ function index() {
     }
   }
 
-  cached = { owners, evolves, held, used };
+  cached = { owners, evolves };
   cachedFor = data;
   return cached;
 }

@@ -2,6 +2,7 @@
  * Collect item icons, and sort the items the game can hand out into rarity
  * tiers so the ball-pickup event can draw from a tier that matches the ball.
  */
+import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { readFile } from 'node:fs/promises';
 
@@ -97,6 +98,7 @@ function iconCandidates(name, item, machines, moves) {
   // at all; those borrow the nearest picture there is.
   const drawn = ICON_STAND_INS[name] ?? name;
   const candidates = [
+    ...(MOCHI.includes(name) ? [archiveBagIcon(name)] : []),
     ...(pokespriteIcon(name) ? [`${POKESPRITE}/items/${pokespriteIcon(name)}.png`] : []),
     `${SPRITES}/items/${drawn}.png`,
     `${SPRITES}/items/gen9/${drawn}.png`,
@@ -115,6 +117,31 @@ function iconCandidates(name, item, machines, moves) {
 
 /** The PokéSprite item set, which draws a few key items PokeAPI does not. */
 const POKESPRITE = 'https://raw.githubusercontent.com/msikma/pokesprite/master';
+
+/**
+ * The seven mochi of The Teal Mask, which neither published set draws. The
+ * only pictures of them are Scarlet and Violet's own bag icons, which
+ * Bulbagarden Archives keeps; they are smooth renders at 160 pixels rather
+ * than pixel art, and are brought down to the bag's size on the way in.
+ */
+const MOCHI = [
+  'health-mochi', 'muscle-mochi', 'resist-mochi', 'genius-mochi', 'clever-mochi', 'swift-mochi', 'fresh-start-mochi',
+];
+
+/**
+ * Where Bulbagarden Archives keeps an item's Scarlet and Violet bag icon:
+ * "Bag Health Mochi SV Sprite.png", filed, as MediaWiki files every upload,
+ * under the first one and two hex digits of its name's MD5.
+ *
+ * @param {string} slug
+ */
+function archiveBagIcon(slug) {
+  const title = slug.split('-').map((word) => word[0].toUpperCase() + word.slice(1)).join(' ')
+    .replace('Fresh Start', 'Fresh-Start');
+  const file = `Bag_${title.replaceAll(' ', '_')}_SV_Sprite.png`;
+  const hash = createHash('md5').update(file).digest('hex');
+  return `https://archives.bulbagarden.net/media/upload/${hash[0]}/${hash.slice(0, 2)}/${file}`;
+}
 
 /**
  * Where PokéSprite files the Sword and Shield items PokeAPI draws none of,
@@ -174,11 +201,11 @@ const ICON_STAND_INS = {
   'meltan-candy': 'rare-candy',
   'gimmighoul-coin': 'amulet-coin',
   'scroll-of-waters': 'splash-plate',
-  // Poltchageist's teacups, as the pots Sinistea evolves by; the Fresh-Start
-  // Mochi as a sweet of the same size.
+  // Poltchageist's teacups, as the pots Sinistea evolves by; and the mochi,
+  // should the archive below be out of reach, as a sweet of the same size.
   'unremarkable-teacup': 'cracked-pot',
   'masterpiece-teacup': 'chipped-pot',
-  'fresh-start-mochi': 'lava-cookie',
+  ...Object.fromEntries(MOCHI.map((slug) => [slug, 'lava-cookie'])),
 };
 
 /**
@@ -242,9 +269,63 @@ async function firstAvailable(urls) {
     if (!bounds) continue;
 
     const trimmed = crop(png, bounds.x, bounds.y, bounds.width, bounds.height);
-    return encodePng(trimmed.width, trimmed.height, trimmed.data);
+    // A render made for a television — the Scarlet and Violet bag icons — is
+    // brought to the size of the rest, which the field draws one-to-one.
+    const sized = Math.max(trimmed.width, trimmed.height) > LARGEST_ICON ? shrunk(trimmed, ICON_SIZE) : trimmed;
+    return encodePng(sized.width, sized.height, sized.data);
   }
   return null;
+}
+
+/** The longest side of a drawn icon, and what a bigger one is brought down to. */
+const LARGEST_ICON = 32;
+const ICON_SIZE = 20;
+
+/**
+ * Shrink a picture so its longer side is `size`, each new pixel the average of
+ * the ones it covers — weighted by how opaque they are, so an edge fades into
+ * the background rather than taking on the colour of nothing.
+ *
+ * @param {{width: number, height: number, data: Uint8Array}} source
+ * @param {number} size
+ */
+function shrunk(source, size) {
+  const scale = size / Math.max(source.width, source.height);
+  const width = Math.max(1, Math.round(source.width * scale));
+  const height = Math.max(1, Math.round(source.height * scale));
+  const data = new Uint8Array(width * height * 4);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const x0 = Math.floor(x / scale);
+      const x1 = Math.min(source.width, Math.ceil((x + 1) / scale));
+      const y0 = Math.floor(y / scale);
+      const y1 = Math.min(source.height, Math.ceil((y + 1) / scale));
+      let r = 0;
+      let g = 0;
+      let b = 0;
+      let a = 0;
+      let count = 0;
+      for (let sy = y0; sy < y1; sy++) {
+        for (let sx = x0; sx < x1; sx++) {
+          const at = (sy * source.width + sx) * 4;
+          const alpha = source.data[at + 3];
+          r += source.data[at] * alpha;
+          g += source.data[at + 1] * alpha;
+          b += source.data[at + 2] * alpha;
+          a += alpha;
+          count++;
+        }
+      }
+      const out = (y * width + x) * 4;
+      if (a > 0) {
+        data[out] = Math.round(r / a);
+        data[out + 1] = Math.round(g / a);
+        data[out + 2] = Math.round(b / a);
+      }
+      data[out + 3] = Math.round(a / Math.max(1, count));
+    }
+  }
+  return { width, height, data };
 }
 
 /**

@@ -148,12 +148,11 @@ test('an item the engine reads states what it does', withData, () => {
     assert.ok(explained, `${slug} claims to work with nothing behind it`);
   }
 
-  // The four the game leans on, read off their own effect text rather than
+  // The three the game leans on, read off their own effect text rather than
   // guessed at from a description.
   assert.deepEqual(items['potion'].use, { hp: 20 });
   assert.deepEqual(items['max-potion'].use, { hp: 'full' });
   assert.deepEqual(items['ether'].use, { pp: { amount: 10, scope: 'one' } });
-  assert.deepEqual(items['revive'].use, { revive: 0.5 });
 });
 
 test('only what this game will never have is dropped', withData, () => {
@@ -194,20 +193,24 @@ test('only what this game will never have is dropped', withData, () => {
   // One generation's copy of something the bag already has is not carried —
   // a Casteliacone is a Full Heal, a Health Mochi a vitamin — while the thing
   // it copies is.
-  for (const slug of ['casteliacone', 'fresh-water', 'sacred-ash', 'health-mochi', 'health-wing', 'mighty-candy-xl',
+  // Nothing stays fainted here, so nothing brings a Pokémon back.
+  for (const slug of ['revive', 'max-revive', 'casteliacone', 'fresh-water', 'sacred-ash', 'mighty-candy-xl',
     'dynamax-candy', 'sea-incense', 'blank-plate', 'fire-gem', 'enigma-berry', 'figy-berry', 'aguav-berry']) {
     assert.equal(items[slug], undefined, `${slug} should have been dropped`);
   }
-  for (const slug of ['full-heal', 'super-potion', 'max-revive', 'mystic-water', 'silk-scarf', 'sitrus-berry',
+  for (const slug of ['full-heal', 'super-potion', 'mystic-water', 'silk-scarf', 'sitrus-berry',
     'silver-razz-berry', 'golden-razz-berry', 'exp-candy-s']) {
     assert.ok(items[slug], `${slug} should still be carried`);
   }
 
-  // Effort is gone from the game, and everything that only trained it went
-  // with it: the vitamins, the Power items, the wings and the berries that
-  // undo it. The seven Sweets are the one Sweet.
-  for (const slug of ['hp-up', 'protein', 'macho-brace', 'power-bracer', 'pomeg-berry', 'fresh-start-mochi',
-    'strawberry-sweet', 'love-sweet', 'ribbon-sweet']) {
+  // Effort is trained by the vitamins, the feathers and the mochi, earned
+  // faster with a Macho Brace or a Power item, and undone by six berries and
+  // the Fresh-Start Mochi; the Let's Go candies, which train it under another
+  // name, stay out. The seven Sweets are the one Sweet.
+  for (const slug of ['hp-up', 'protein', 'health-wing', 'health-mochi', 'macho-brace', 'power-bracer', 'pomeg-berry', 'fresh-start-mochi']) {
+    assert.ok(items[slug], `${slug} should be carried`);
+  }
+  for (const slug of ['strawberry-sweet', 'love-sweet', 'ribbon-sweet']) {
     assert.equal(items[slug], undefined, `${slug} should have been dropped`);
   }
   assert.ok(items.sweet, 'the Sweet should be carried');

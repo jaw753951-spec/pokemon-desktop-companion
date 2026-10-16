@@ -2,7 +2,7 @@
  * Stat, level and experience mathematics, following the main series.
  *
  * Formulas are the modern (Gen 3 onward) ones, which Gen 9 still uses:
- * stats from base + IV + nature (there is no effort here), experience by growth curve, and the
+ * stats from base + IV + effort + nature, experience by growth curve, and the
  * Gen 5+ experience yield that scales with the level gap.
  */
 
@@ -34,14 +34,56 @@ export function stageMultiplier(stage, isAccuracy = false) {
 /**
  * @param {number} base base stat
  * @param {number} iv 0..31
+ * @param {number} ev 0..252, of which every four points is one point of stat
  * @param {number} level
  * @param {number} natureMultiplier 0.9, 1 or 1.1
  * @param {boolean} isHp
  */
-export function computeStat(base, iv, level, natureMultiplier, isHp) {
-  const common = Math.floor(((2 * base + iv) * level) / 100);
+export function computeStat(base, iv, ev, level, natureMultiplier, isHp) {
+  const common = Math.floor(((2 * base + iv + Math.floor(ev / 4)) * level) / 100);
   if (isHp) return common + level + 10;
   return Math.floor((common + 5) * natureMultiplier);
+}
+
+/** The most effort one stat can hold, and all six together, since Gen 6. */
+export const EFFORT_STAT_MAX = 252;
+export const EFFORT_TOTAL_MAX = 510;
+
+/** A Pokémon's effort, every stat present and nothing past the limits. */
+export function settledEffort(evs = {}) {
+  /** @type {Record<string, number>} */
+  const out = {};
+  let left = EFFORT_TOTAL_MAX;
+  for (const stat of STATS) {
+    const value = Math.max(0, Math.min(EFFORT_STAT_MAX, left, Math.floor(Number(evs[stat]) || 0)));
+    out[stat] = value;
+    left -= value;
+  }
+  return out;
+}
+
+/** @param {Record<string, number>} evs */
+export const effortTotal = (evs) => STATS.reduce((sum, stat) => sum + (evs?.[stat] ?? 0), 0);
+
+/**
+ * Effort added, stat by stat, as far as the limits allow: each stat stops at
+ * 252, and whatever would carry the six past 510 is not earned. The stats are
+ * filled in the games' order when the total runs out partway.
+ *
+ * @param {Record<string, number>} evs
+ * @param {Record<string, number>} gained
+ * @returns {Record<string, number>}
+ */
+export function addEffort(evs, gained) {
+  const out = settledEffort(evs);
+  let left = EFFORT_TOTAL_MAX - effortTotal(out);
+  for (const stat of STATS) {
+    const wanted = Math.max(0, Math.floor(gained[stat] ?? 0));
+    const added = Math.min(wanted, EFFORT_STAT_MAX - out[stat], left);
+    out[stat] += added;
+    left -= added;
+  }
+  return out;
 }
 
 /**
@@ -49,16 +91,17 @@ export function computeStat(base, iv, level, natureMultiplier, isHp) {
  *
  * @param {Record<string, number>} base
  * @param {Record<string, number>} ivs
+ * @param {Record<string, number>|undefined} evs
  * @param {number} level
  * @param {{increased: string|null, decreased: string|null}} nature
  * @returns {Record<string, number>}
  */
-export function computeStats(base, ivs, level, nature) {
+export function computeStats(base, ivs, evs, level, nature) {
   /** @type {Record<string, number>} */
   const out = {};
   for (const stat of STATS) {
     const multiplier = stat === 'hp' ? 1 : natureMultiplierFor(nature, stat);
-    out[stat] = computeStat(base[stat] ?? 1, ivs[stat] ?? 0, level, multiplier, stat === 'hp');
+    out[stat] = computeStat(base[stat] ?? 1, ivs[stat] ?? 0, evs?.[stat] ?? 0, level, multiplier, stat === 'hp');
   }
   return out;
 }
