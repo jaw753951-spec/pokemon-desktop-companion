@@ -25,10 +25,7 @@
  */
 import { itemOf, moveOf, speciesOf, typeEffectiveness } from '../core/data.mjs';
 import { TERRAIN, WEATHER } from './field.mjs';
-import { friendshipOf, levelOf, maxHp, setMove } from './pokemon.mjs';
-
-/** @param {any} move @param {string} flag */
-const hasFlag = (move, flag) => Boolean(move?.flags?.includes(flag));
+import { friendshipOf, levelOf, setMove } from './pokemon.mjs';
 
 /** @param {any} combatant */
 const hpShare = (combatant) => combatant.pokemon.hp / Math.max(1, combatant.maxHp);

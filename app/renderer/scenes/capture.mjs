@@ -17,7 +17,7 @@ import { button, el, setChildren, shinyMark } from '../core/dom.mjs';
 import { name as localized, t } from '../core/i18n.mjs';
 import { attemptCapture, captureChance } from '../engine/capture.mjs';
 import { abilityName } from '../engine/abilities.mjs';
-import { CAUGHT_LEVEL, fullyHeal, resetToLevel } from '../engine/pokemon.mjs';
+import { CAUGHT_LEVEL, fullyHeal, nameOf, resetToLevel } from '../engine/pokemon.mjs';
 import { BATTLE_SCALE, Battler, battlerArt, mirrorFor } from '../render/battler.mjs';
 import { inFieldSpace } from '../render/field.mjs';
 import { prompt } from '../ui/dialog.mjs';
@@ -184,7 +184,7 @@ export function captureScene({ session, target, onFinish }) {
 
       return el('div.screen.capture-screen', {}, [
         counter,
-        el('div.capture-name', {}, [label(), shinyMark(target, t('pokemon.shiny'))]),
+        el('div.capture-name', {}, [label(), shinyMark(target)]),
         tray,
         message,
         el('div.capture-close', {}, [
@@ -426,7 +426,7 @@ export function captureScene({ session, target, onFinish }) {
     if (!fetched && abilityName(session.active) === 'ball-fetch' && ball !== 'master-ball') {
       fetched = true;
       session.addItem(ball);
-      app.toast(t('battle.pickup', { name: (session.active.nickname || localized(speciesOf(session.active.speciesId)?.name, '')), item: localized(gameData().items[ball]?.name, ball) }), 2600);
+      app.toast(t('battle.pickup', { name: nameOf(session.active), item: localized(gameData().items[ball]?.name, ball) }), 2600);
     }
 
     if (attempts <= 0) {

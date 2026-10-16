@@ -337,9 +337,6 @@ export function settleForme(pokemon) {
   }
 }
 
-/** The name the ogerpon change was first written under. */
-export const settleHeldForme = settleForme;
-
 /**
  * Step a Pokémon to the next shape a key item gives it, if the item is for
  * its species.

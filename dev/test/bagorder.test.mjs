@@ -51,7 +51,7 @@ test('medicine, berries and balls go kind by kind, weakest first', withData, () 
     }
   };
   before(listed('medicine'), 'potion', 'super-potion', 'hyper-potion', 'max-potion', 'full-restore', 'antidote', 'full-heal',
-    'revive', 'max-revive', 'ether', 'max-elixir', 'pp-up', 'pp-max', 'exp-candy-xs', 'exp-candy-xl',
+    'ether', 'max-elixir', 'pp-up', 'pp-max', 'exp-candy-xs', 'exp-candy-xl',
     'rare-candy', 'ability-capsule', 'ability-patch', 'adamant-mint', 'bold-mint', 'timid-mint',
     'serious-mint');
   before(listed('berries'), 'oran-berry', 'sitrus-berry', 'lum-berry', 'leppa-berry', 'occa-berry', 'roseli-berry',

@@ -14,8 +14,6 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { Rng } from '../../app/renderer/core/rng.mjs';
-
 const AUTHORED = fileURLToPath(new URL('../../data/authored/', import.meta.url));
 
 test('alola sends out four and a champion, from its two who share a seat', async () => {

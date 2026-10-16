@@ -45,9 +45,15 @@ const LOSS_PER_LEVEL = [8, 16, 24, 36, 48, 64, 80, 100, 120];
 const PRICES = {
   potion: 200, 'super-potion': 700, 'hyper-potion': 1500, 'max-potion': 2500, 'full-restore': 3000,
   antidote: 200, 'burn-heal': 300, 'ice-heal': 300, awakening: 300, 'paralyze-heal': 300, 'full-heal': 400,
-  revive: 2000, 'max-revive': 4000,
   ether: 1200, 'max-ether': 2000, elixir: 3000, 'max-elixir': 4500,
   'hp-up': 10000, protein: 10000, iron: 10000, calcium: 10000, zinc: 10000, carbos: 10000,
+  // A mochi does what a vitamin does; a feather is a tenth of one, priced at
+  // the same per point. The games sell neither for money.
+  ...Object.fromEntries(['health', 'muscle', 'resist', 'genius', 'clever', 'swift'].flatMap((stat) => [
+    [`${stat}-mochi`, 10000],
+    [`${stat}-wing`, 1000],
+  ])),
+  'fresh-start-mochi': 10000,
   'rare-candy': 20000, 'pp-up': 10000, 'pp-max': 30000, 'ability-capsule': 50000, 'ability-patch': 100000,
   'poke-ball': 200, 'great-ball': 600, 'ultra-ball': 800, 'premier-ball': 200,
   'net-ball': 1000, 'dive-ball': 1000, 'nest-ball': 1000, 'repeat-ball': 1000, 'timer-ball': 1000,
@@ -62,12 +68,12 @@ const PRICES = {
 
 /** And by kind, for what the games price only through its kind or not at all. */
 const CATEGORY_PRICES = {
-  healing: 500, 'status-cures': 300, revival: 2000, 'pp-recovery': 2000, vitamins: 10000, 'nature-mints': 20000,
+  healing: 500, 'status-cures': 300, 'pp-recovery': 2000, vitamins: 10000, 'nature-mints': 20000,
   'standard-balls': 1000, 'special-balls': 1000, 'apricorn-balls': 3000,
-  medicine: 500, 'in-a-pinch': 3000, 'type-protection': 1000,
+  medicine: 500, 'in-a-pinch': 3000, 'type-protection': 1000, 'effort-drop': 1500,
   'catching-bonus': 1500, other: 3000,
   'held-items': 8000, choice: 20000,
-  'type-enhancement': 5000, 'bad-held-items': 5000, training: 10000,
+  'type-enhancement': 5000, 'bad-held-items': 5000, 'effort-training': 6000, training: 10000,
   'species-specific': 5000,
 };
 

@@ -15,10 +15,11 @@ import { button, el, scrollable, setChildren } from '../core/dom.mjs';
 import { name as localized, t } from '../core/i18n.mjs';
 import { AFTER_BATTLE_TARGETS, equipItem, formeMoveNeed, itemActions, itemNeedsChoice, recommendedBerries, useItem } from '../engine/items.mjs';
 import { pocketOrder } from '../engine/bagorder.mjs';
-import { maxPp } from '../engine/pokemon.mjs';
+import { maxPp, nameOf } from '../engine/pokemon.mjs';
 import { STATS } from '../engine/stats.mjs';
 import { badgeIcon, championIcon } from './badges.mjs';
 import { moveSummary } from './movecard.mjs';
+import { applySearch, searchBox } from './itemsearch.mjs';
 import { evolutionScene } from '../scenes/evolution.mjs';
 import { chooseAction, chooseFromList, chooseItem, confirm } from './dialog.mjs';
 
@@ -33,7 +34,7 @@ const HEALING_CONDITIONS = ['never', 'hpTwoThirds', 'hpHalf', 'hpThird', 'hpQuar
  * @param {import('../core/app.mjs').App} app
  * @param {import('../engine/session.mjs').Session} session
  * @param {() => void} refresh
- * @param {{pocket?: string, selected?: string|null, learnableOnly?: boolean}} state carried between re-renders
+ * @param {{pocket?: string, selected?: string|null, learnableOnly?: boolean, query?: string}} state carried between re-renders
  * @returns {HTMLElement}
  */
 export function itemsTab(app, session, refresh, state) {
@@ -112,7 +113,7 @@ export function itemsTab(app, session, refresh, state) {
         ),
     );
     if (badges.length) {
-      list.append(el('div.pocket-heading', { text: t('items.badgesOf', { name: pokemonName(session.active) }) }));
+      list.append(el('div.pocket-heading', { text: t('items.badgesOf', { name: nameOf(session.active) }) }));
     }
     list.append(
       ...badges.map((badge) =>
@@ -132,6 +133,10 @@ export function itemsTab(app, session, refresh, state) {
     );
   }
   showInspector(app, session, inspector, state.selected ?? null, refresh);
+  // Narrowed to what the words at the end of the pockets find, which they
+  // go on doing in whichever pocket is opened next.
+  tabs.append(searchBox(state, () => list));
+  if (state.query) applySearch(list, state.query);
 
   const filter = machines
     ? el('div.pocket-filter', {}, [
@@ -170,7 +175,7 @@ function optionsPane(app, session, refresh) {
   // rebuilds the tab, and only a `.scroll` keeps its place across that.
   return scrollable(el('div.item-options', {}, [
     el('div.item-options-heading', {}, [
-      el('div.section-title', { text: t('items.berryRestock') }),
+      el('div.section-title.option-title', { text: t('items.berryRestock') }),
       el('span.spacer'),
       // Healing first, then a resist for its weakness, then a pinch berry —
       // picked for the companion walking now.
@@ -178,20 +183,16 @@ function optionsPane(app, session, refresh) {
         app.audio.blip('confirm');
         policy.berries = recommendedBerries(session, session.active);
         refresh();
-      }, { className: 'small', title: t('items.berryRecommendNote') }),
+      }, { className: 'small' }),
     ]),
-    el('p.meta', { text: t('items.berryRestockNote') }),
     ...[0, 1, 2].map((index) => berryRow(app, session, policy, index, refresh)),
     autoBerryRow(app, policy, refresh),
-    el('p.meta', { text: t('items.berryAutoNote') }),
 
-    el('div.section-title', { text: t('items.healingUse') }),
-    el('p.meta', { text: t('items.healingUseNote') }),
+    el('div.section-title.option-title', { text: t('items.healingUse') }),
     healingItemRow(app, session, policy, refresh),
     healingConditionRow(app, policy, refresh),
 
-    el('div.section-title', { text: t('items.afterBattle') }),
-    el('p.meta', { text: t('items.afterBattleNote') }),
+    el('div.section-title.option-title', { text: t('items.afterBattle') }),
     afterBattleRow(app, policy, refresh),
   ]));
 }
@@ -208,12 +209,11 @@ function afterBattleRow(app, policy, refresh) {
    * @param {'afterBattleStatus'|'afterBattlePp'} key
    * @param {string} label
    */
-  const toggle = (key, label, title = '') => {
+  const toggle = (key, label) => {
     const on = Boolean(policy[key]);
     return el(`button.chip${on ? '' : '.off'}`, {
       type: 'button',
       text: label,
-      title: title || undefined,
       'aria-pressed': String(on),
       onClick: () => {
         app.audio.blip('select');
@@ -245,7 +245,7 @@ function afterBattleRow(app, policy, refresh) {
       }),
       el('div.after-battle-extras', {}, [
         toggle('afterBattleStatus', t('items.afterBattleStatus')),
-        toggle('afterBattlePp', t('items.afterBattlePp'), t('items.afterBattlePpNote')),
+        toggle('afterBattlePp', t('items.afterBattlePp')),
       ]),
     ]),
   ]);
@@ -262,6 +262,8 @@ function heldBerries(session) {
   const pockets = new Map([...session.pocket('berries'), ...session.pocket('medicine')].map((entry) => [entry.slug, entry]));
   return [...pockets.values()]
     .filter((entry) => entry.item.pocket === 'berries' || entry.slug.endsWith('-berry'))
+    // A Pomeg and its kin are fed from the bag and do nothing held.
+    .filter((entry) => !(entry.item.use?.effort && !entry.item.held))
     .sort((a, b) => localized(a.item.name, a.slug).localeCompare(localized(b.item.name, b.slug)));
 }
 
@@ -483,7 +485,7 @@ function itemButtons(app, session, slug, refresh) {
       const picked = await chooseAction(
         app,
         t('items.formeForgetWhich', {
-          name: pokemon.nickname || localized(speciesOf(pokemon.speciesId)?.name, ''),
+          name: nameOf(pokemon),
           move: moveName(forme.move),
         }),
         [
@@ -555,11 +557,6 @@ export function badgeEntries(session) {
 function badgeName(badge) {
   if (!badge.type) return t('slot.champion');
   return `${localized(gameData().types[badge.type]?.name, badge.type)} ${t('badge.word')}`;
-}
-
-/** @param {import('../engine/pokemon.mjs').Pokemon} pokemon */
-function pokemonName(pokemon) {
-  return pokemon.nickname || localized(speciesOf(pokemon.speciesId)?.name, '');
 }
 
 /**

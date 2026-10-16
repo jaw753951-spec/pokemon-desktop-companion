@@ -17,7 +17,6 @@
 
 export const TILE_SIZE = 8;
 export const METATILE_SIZE = 16;
-export const TILES_PER_ROW = 16;
 export const PALETTES_IN_PRIMARY = 6;
 export const TILES_IN_PRIMARY = 512;
 export const METATILES_IN_PRIMARY = 512;

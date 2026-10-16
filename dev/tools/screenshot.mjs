@@ -47,7 +47,9 @@ const SETTLE_AFTER_MS = 1200;
  * that are chasing a particular frame of an animation rather than a screen.
  */
 const STEPS = [
-  { name: '01-title', script: 'null' },
+  // The fan-game notice the game opens on, and the title past it.
+  { name: '00-notice', script: 'null' },
+  { name: '01-title', script: "(document.getElementById('notice-screen')?.click(), true)" },
   { name: '02-slots', script: 'clickText("button", ["새 게임", "New Game"])' },
   { name: '03-starter', script: 'clickText("button", ["1."])' },
   {
@@ -277,7 +279,7 @@ const saveAndShowTitle = async () => {
 /** Stock the bag across every pocket, which a fresh run has not had time to do. */
 const seedBag = () => {
   const session = app().session;
-  for (const [item, count] of [['potion', 5], ['super-potion', 2], ['revive', 1], ['poke-ball', 10],
+  for (const [item, count] of [['potion', 5], ['super-potion', 2], ['poke-ball', 10],
     ['great-ball', 3], ['oran-berry', 4], ['sitrus-berry', 2], ['tm01', 1], ['fire-stone', 1], ['golden-razz-berry', 2], ['silver-razz-berry', 1]]) {
     session.addItem(item, count);
   }

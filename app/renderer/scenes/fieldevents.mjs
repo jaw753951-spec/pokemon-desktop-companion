@@ -577,8 +577,8 @@ export function foundCount(rng, slug, firstRun = false) {
  */
 export const FIRST_RUN_SUPPLY_BONUS = 1.5;
 
-/** The medicine that counts as a supply: what restores HP, cures, revives or restores PP. */
-const SUPPLY_MEDICINE = new Set(['healing', 'status-cures', 'revival', 'pp-recovery']);
+/** The medicine that counts as a supply: what restores HP, cures or restores PP. */
+const SUPPLY_MEDICINE = new Set(['healing', 'status-cures', 'pp-recovery']);
 
 /**
  * Whether an item is one of the everyday supplies the first run finds more

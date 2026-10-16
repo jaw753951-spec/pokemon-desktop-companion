@@ -7,12 +7,16 @@
  */
 import { randomLook } from '../../shared/alcremie.mjs';
 import { gameData, moveOf, speciesOf } from '../core/data.mjs';
+import { name as localized } from '../core/i18n.mjs';
 import { FORME_MOVES, HELD_FORMES, settleForme } from './forms.mjs';
 import {
+  addEffort,
   computeStats,
+  effortTotal,
   experienceForLevel,
   experienceYield,
   levelForExperience,
+  settledEffort,
   STATS,
 } from './stats.mjs';
 
@@ -23,6 +27,7 @@ import {
  * @property {number} experience
  * @property {string} nature
  * @property {Record<string, number>} ivs
+ * @property {Record<string, number>} [evs] effort, 0..252 a stat and 510 in all; none yet is none at all
  * @property {Array<{move: string, pp: number, ppUp?: number}>} moves
  * @property {number} hp remaining hit points
  * @property {string|null} status `brn`, `psn`, `par`, `slp`, `frz` or null
@@ -132,6 +137,7 @@ export function createPokemon(rng, speciesId, level, options = {}) {
     experience: experienceForLevel(species.growthRate, Math.max(1, level)),
     nature: natures.length ? rng.pick(natures) : 'hardy',
     ivs,
+    evs: settledEffort(),
     moves: [],
     hp: 0,
     status: null,
@@ -428,14 +434,22 @@ export function statsOf(pokemon, forme = pokemon.forme) {
     ? (species.forms ?? []).find((form) => form.slug === forme)?.stats ?? species.stats
     : species.stats;
   const nature = gameData().natures[pokemon.nature] ?? { increased: null, decreased: null };
-  return computeStats(base, pokemon.ivs, levelOf(pokemon), nature);
+  return computeStats(base, pokemon.ivs, pokemon.evs, levelOf(pokemon), nature);
 }
 
 /** @param {Pokemon} pokemon */
 export const maxHp = (pokemon) => statsOf(pokemon).hp;
 
-/** @param {Pokemon} pokemon */
-export const displayName = (pokemon) => pokemon.nickname || null;
+/**
+ * What a Pokémon is called on screen: the name it was given, or its species'.
+ *
+ * @param {Pokemon|null|undefined} pokemon
+ * @returns {string}
+ */
+export function nameOf(pokemon) {
+  if (!pokemon) return '';
+  return pokemon.nickname || localized(speciesOf(pokemon.speciesId)?.name, '');
+}
 
 /**
  * Progress towards the next level, for the experience bar.
@@ -455,13 +469,17 @@ export function experienceProgress(pokemon) {
 }
 
 /**
- * Award experience, and report what changed so the battle log can
+ * Award experience and effort, and report what changed so the battle log can
  * narrate it.
  *
+ * Effort is the defeated species' own yield, as the games pay it — a Geodude
+ * one point of Defense, a Garchomp three of Attack — twice over with a Macho
+ * Brace held, and eight points more in its stat with a Power item.
+ *
  * @param {Pokemon} pokemon
- * @param {{baseStats: Record<string, number>, baseExp: number, level: number}} defeated
- * @param {{trainerBattle?: boolean, experienceMultiplier?: number}} [options]
- * @returns {{experience: number, levelsGained: number, newLevel: number, learnable: string[]}}
+ * @param {{baseStats: Record<string, number>, baseExp: number, level: number, effort?: Record<string, number>}} defeated
+ * @param {{trainerBattle?: boolean, experienceMultiplier?: number, effortMultiplier?: number, effortBonus?: {stat: string, amount: number}|null}} [options]
+ * @returns {{experience: number, levelsGained: number, newLevel: number, learnable: string[], effort: Record<string, number>}}
  */
 export function gainFromDefeat(pokemon, defeated, options = {}) {
   const before = levelOf(pokemon);
@@ -482,14 +500,45 @@ export function gainFromDefeat(pokemon, defeated, options = {}) {
   // A level-up tops up the extra hit points immediately, as the games do.
   if (after > before) pokemon.hp = Math.min(maxHp(pokemon), pokemon.hp + (after - before) * 2);
 
+  const multiplier = options.effortMultiplier ?? 1;
+  /** @type {Record<string, number>} */
+  const earned = Object.fromEntries(STATS.map((stat) => [stat, (defeated.effort?.[stat] ?? 0) * multiplier]));
+  const bonus = options.effortBonus;
+  if (bonus?.stat && bonus.stat in earned) earned[bonus.stat] += bonus.amount;
+  const effort = changeEffort(pokemon, earned);
+
   return {
     // What was actually added, a Lucky Egg's share included.
     experience: gained,
+    // And the effort, after the limits.
+    effort,
     levelsGained: after - before,
     newLevel: after,
     learnable: movesLearnedBetween(pokemon, before, after),
   };
 }
+
+/**
+ * Add effort, or take it away, and keep the hit points in step: a Pokémon
+ * whose maximum rises gains the same hit points it rose by, as when it levels,
+ * and one whose maximum falls keeps no more than the new maximum.
+ *
+ * @param {Pokemon} pokemon
+ * @param {Record<string, number>} change by stat, negative to take away
+ * @returns {Record<string, number>} what actually moved, by stat
+ */
+export function changeEffort(pokemon, change) {
+  const before = settledEffort(pokemon.evs);
+  const maxBefore = maxHp(pokemon);
+  const raised = addEffort(before, Object.fromEntries(STATS.map((stat) => [stat, Math.max(0, change[stat] ?? 0)])));
+  pokemon.evs = Object.fromEntries(STATS.map((stat) => [stat, Math.max(0, raised[stat] + Math.min(0, change[stat] ?? 0))]));
+  const maxAfter = maxHp(pokemon);
+  if (pokemon.hp > 0) pokemon.hp = Math.max(1, Math.min(maxAfter, pokemon.hp + Math.max(0, maxAfter - maxBefore)));
+  return Object.fromEntries(STATS.map((stat) => [stat, pokemon.evs[stat] - before[stat]]));
+}
+
+/** How much effort a Pokémon has in all, out of 510. */
+export const effortOf = (/** @type {Pokemon} */ pokemon) => effortTotal(settledEffort(pokemon.evs));
 
 /**
  * Level-up moves that became available while crossing levels.

@@ -136,12 +136,11 @@ export const SHINY_MARK = '★';
  * That mark as an element, for the screens that list Pokémon.
  *
  * @param {{shiny?: boolean}|null|undefined} pokemon
- * @param {string} [title] the word for it in the player's language
  * @returns {HTMLElement|null} nothing at all for an ordinary Pokémon
  */
-export function shinyMark(pokemon, title = '') {
+export function shinyMark(pokemon) {
   if (!pokemon?.shiny) return null;
-  return el('span.shiny-mark', { text: SHINY_MARK, title: title || undefined, 'aria-label': title || undefined });
+  return el('span.shiny-mark', { text: SHINY_MARK });
 }
 
 /**

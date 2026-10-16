@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 
 import { NEEDS_ASSETS, useRealGameData } from './helpers/data.mjs';
 import { Rng } from '../../app/renderer/core/rng.mjs';
-import { moveOf } from '../../app/renderer/core/data.mjs';
+import { gameData, moveOf } from '../../app/renderer/core/data.mjs';
 import { Battle, STATUS } from '../../app/renderer/engine/battle.mjs';
 import { createPokemon, maxHp, setMove } from '../../app/renderer/engine/pokemon.mjs';
 import { defaultAutoBattle } from '../../app/renderer/engine/session.mjs';
@@ -45,8 +45,8 @@ function fight(player, foe, extra = {}) {
   return new Battle({ rng: new Rng(7), player, foes: [foe], policy: defaultAutoBattle(), ...extra });
 }
 
-/** How many times one move landed on the foe: a multi-hit move reports them in one entry. */
-const hitsOf = (log) => log.find((entry) => entry.kind === 'damage' && entry.side === 'foe')?.data?.hits ?? 0;
+/** How many times one move landed on the foe: each strike is a damage line of its own. */
+const hitsOf = (log) => log.filter((entry) => entry.kind === 'damage' && entry.side === 'foe' && entry.data?.hit).length;
 
 test('a Fly says where its user went, and the move that comes down brings it back', options, () => {
   const PIDGEOT = 18;
@@ -436,4 +436,52 @@ test('the signature moves do what their descriptions say', options, () => {
   sun.foe.pokemon.ability = 'sturdy';
   sun.player.marks.moldBreaking = true;
   assert.equal(sun.abilityOf(sun.foe, sun.player), null);
+});
+
+test('each strike of a multi-hit move drains the bar on its own, in order', options, () => {
+  const battle = fight(fixed(MAUSHOLD, 60, ['population-bomb']), punchbag(90));
+  battle.player.stages.acc = 6;
+  const log = battle.takeTurn();
+  const strikes = log.filter((entry) => entry.kind === 'damage' && entry.side === 'foe');
+  assert.deepEqual(strikes.map((entry) => entry.data?.hit), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  // Every line stands where the bar stood after that strike, lower each time.
+  for (let index = 1; index < strikes.length; index++) {
+    assert.ok(strikes[index].hp.foe < strikes[index - 1].hp.foe, `strike ${index + 1} should stand lower than the one before`);
+  }
+  // And "hit 10 times" follows the last of them.
+  const count = log.findIndex((entry) => entry.data?.key === 'move.hitCount');
+  assert.ok(count > log.indexOf(strikes[strikes.length - 1]));
+});
+
+test("a Sitrus Berry's line is where the bar rises", options, () => {
+  const battle = fight(fixed(MAUSHOLD, 60, ['tackle']), punchbag(90));
+  const player = battle.player.pokemon;
+  player.heldItem = 'sitrus-berry';
+  player.hp = Math.floor(maxHp(player) / 4);
+  const before = player.hp;
+
+  const log = battle.makeLog();
+  battle.eatOneBerry(battle.player, log);
+  const berry = log.find((entry) => entry.kind === 'berry');
+  assert.ok(berry, 'the berry is eaten');
+  // It is the only line the heal has, so it carries the healed hit points.
+  assert.ok(player.hp > before);
+  assert.equal(berry.hp.player, player.hp);
+});
+
+test('a move whose power the fight works out carries none, as the games show a dash', options, () => {
+  const moves = gameData().moves;
+  for (const slug of ['ruination', 'comeuppance', 'hard-press', 'super-fang', 'crush-grip']) {
+    assert.equal(moves[slug].power, null, `${slug} has no fixed power`);
+  }
+  // PokeAPI's 0 for "none" and 1 for "worked out in the fight" are gone.
+  const placeholders = Object.keys(moves).filter((slug) => moves[slug].power === 0 || moves[slug].power === 1);
+  assert.deepEqual(placeholders, []);
+
+  // And Ruination still takes half of what the target has left.
+  const battle = fight(fixed(SNORLAX, 60, ['ruination']), punchbag(90));
+  battle.player.stages.acc = 6;
+  const before = battle.foe.pokemon.hp;
+  battle.takeTurn();
+  assert.equal(battle.foe.pokemon.hp, before - Math.floor(before / 2));
 });

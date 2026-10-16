@@ -11,7 +11,7 @@ import { url } from '../core/bridge.mjs';
 import { artPath, speciesOf } from '../core/data.mjs';
 import { button, el, scrollable, setChildren, shinyMark } from '../core/dom.mjs';
 import { name as localized, t } from '../core/i18n.mjs';
-import { levelOf } from '../engine/pokemon.mjs';
+import { levelOf, nameOf } from '../engine/pokemon.mjs';
 import { championIcon } from './badges.mjs';
 import { chooseAction, confirm } from './dialog.mjs';
 
@@ -343,8 +343,8 @@ function dress(node, pokemon, moving) {
   const picture = /** @type {Node} */ (node.firstChild);
   setChildren(node, [
     picture,
-    shinyMark(pokemon, t('pokemon.shiny')),
-    pokemon.favorite ? el('i.favorite-mark', { title: t('box.favorite') }) : null,
+    shinyMark(pokemon),
+    pokemon.favorite ? el('i.favorite-mark') : null,
     // The crown of a Pokémon that has beaten the League.
     pokemon.champion ? el('i.champion-pin', {}, [championIcon()]) : null,
   ]);
@@ -360,7 +360,7 @@ function dress(node, pokemon, moving) {
 async function openMenu(app, session, index, update, state) {
   const pokemon = session.box[index];
   if (!pokemon) return;
-  const label = pokemon.nickname || localized(speciesOf(pokemon.speciesId)?.name, '');
+  const label = nameOf(pokemon);
 
   const choice = await chooseAction(app, label, [
     { value: 'switch', label: t('box.switch') },

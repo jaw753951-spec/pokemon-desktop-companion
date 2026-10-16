@@ -56,6 +56,9 @@ app.whenReady().then(async () => {
       if (image) { (image.closest('button') || image).click(); return true; }
       return false;
     };
+    // Past the fan-game notice the game opens on.
+    document.getElementById('notice-screen')?.click();
+    await wait(400);
     if (!clickText('button', ['새 게임', 'New Game'])) return 'no new-game button';
     await wait(600);
     if (!clickText('button', ['1.'])) return 'no slot button';

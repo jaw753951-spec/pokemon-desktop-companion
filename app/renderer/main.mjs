@@ -1,6 +1,6 @@
 /**
  * Renderer entry point: load everything the game needs, then hand control to
- * the title screen.
+ * the title screen — by way of the notice that this is a fan game.
  */
 import { App, fitStage, runLoop, trackWindowDrag } from './core/app.mjs';
 import { AudioEngine } from './core/audio.mjs';
@@ -8,6 +8,7 @@ import { saves, settings as settingsApi } from './core/bridge.mjs';
 import { loadGameData } from './core/data.mjs';
 import { el } from './core/dom.mjs';
 import { setLanguage, t } from './core/i18n.mjs';
+import { noticeScene } from './scenes/notice.mjs';
 import { titleScene } from './scenes/title.mjs';
 
 async function boot() {
@@ -37,7 +38,7 @@ async function boot() {
   // the app itself reads it.
   /** @type {any} */ (globalThis).__pdcApp = app;
   splash.remove();
-  app.setScene(titleScene({ slots }));
+  app.setScene(noticeScene({ onDone: () => app.setScene(titleScene({ slots })) }));
   runLoop(app);
 }
 

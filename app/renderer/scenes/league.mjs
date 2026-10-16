@@ -15,7 +15,7 @@ import { gameData, speciesOf } from '../core/data.mjs';
 import { stableHash } from '../core/rng.mjs';
 import { button, el, setChildren } from '../core/dom.mjs';
 import { name as localized, t } from '../core/i18n.mjs';
-import { createPokemon } from '../engine/pokemon.mjs';
+import { createPokemon, nameOf } from '../engine/pokemon.mjs';
 import { capRoster, evolveToLevel, giveTrainerItems, LEAGUE_PARTY_CAP } from '../engine/encounter.mjs';
 import { backdropForLeagueRound, drawBackdrop, loadRoom } from '../render/backdrop.mjs';
 import { inFieldSpace } from '../render/field.mjs';
@@ -162,7 +162,6 @@ export function leagueScene({ session, onLeave, onCrowned }) {
         session,
         foes,
         trainer: round,
-        boss: true,
         backdrop: backdropForLeagueRound(index, rounds.length),
         music: gameData().bgm.cues[last ? 'battleChampion' : 'battleEliteFour'],
         onFinish: (result) => {
@@ -224,7 +223,7 @@ export function leagueScene({ session, onLeave, onCrowned }) {
     session.leagueRegion = league.region;
     session.leagueRun = null;
 
-    const name = session.active.nickname || localized(speciesOf(session.active.speciesId)?.name, '');
+    const name = nameOf(session.active);
     app.audio.playJingle(gameData().bgm.cues.victoryLeague ?? null, { intro: true });
     const prize = t('league.reward', { item: localized(gameData().items[reward]?.name, reward) });
     app.toast(`${t('league.crowned', { name })}\n${prize}\n${t('league.wentHome')}`, 5000);

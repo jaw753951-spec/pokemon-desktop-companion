@@ -11,21 +11,27 @@ import { gameData, itemOf, moveOf, speciesOf, typeEffectiveness } from '../core/
 import { name as localized, t } from '../core/i18n.mjs';
 import {
   abilitySlot,
+  changeEffort,
   createPokemon,
+  effortOf,
   evolveInto,
   friendshipForLevels,
+  friendshipOf,
+  gainFriendship,
   learnOnEvolution,
   levelOf,
+  MAX_FRIENDSHIP,
   maxHp,
   maxPp,
   movesLearnedBetween,
+  nameOf,
   noteLearnedMoves,
   offeredEvolution,
   pendingEvolution,
   setMove,
   statsOf,
 } from './pokemon.mjs';
-import { experienceForLevel, STATS } from './stats.mjs';
+import { EFFORT_STAT_MAX, experienceForLevel, STATS } from './stats.mjs';
 import { FORME_MOVE_RULES, nextForme, SET_FORMES, settleForme, signatureItems, standingTypes, USE_FORMES, useFormeItem } from './forms.mjs';
 
 /**
@@ -156,6 +162,9 @@ export function useItem(session, slug, choice = {}) {
     // An Ability Patch or Capsule on a Pokémon with nothing to change to says
     // so — a bare "cannot be used" read as the item being broken.
     if (item.use.ability && pokemon.hp > 0) return { used: false, ok: false, message: t('items.noAbilityChange') };
+    // A Pomeg and its kin have a Use of their own beside the one to hand them
+    // over, so one that can do nothing says so rather than being handed over.
+    if (item.use.effort) return { used: false, ok: false, message: t('items.cannotUse') };
     // A berry is both: something that can be eaten now and something that is
     // usually meant to be carried until it is needed. Using one on a Pokémon
     // at full health used to stop dead at "that cannot be used right now",
@@ -403,20 +412,14 @@ export function itemActions(session, slug) {
   }
 
   return {
-    use: Boolean(pendingEvolution(session.active, { item: slug })),
+    // A Pomeg and its kin are fed from the bag, as a vitamin is; anything else
+    // out here is used only to evolve something.
+    use: Boolean(item.use?.effort) || Boolean(pendingEvolution(session.active, { item: slug })),
     // The same question `equipItem` answers, asked through the same function:
     // a menu that offers what the engine then refuses is the bug this pair
     // used to have.
     equip: canHold(slug),
   };
-}
-
-/**
- * @param {import('./pokemon.mjs').Pokemon} pokemon
- * @returns {string}
- */
-function nameOf(pokemon) {
-  return pokemon.nickname || localized(speciesOf(pokemon.speciesId)?.name, '');
 }
 
 /**
@@ -440,16 +443,7 @@ function applyUse(pokemon, item, choice = {}) {
 
   const max = maxHp(pokemon);
 
-  // A revival is the one effect that wants its target fainted.
-  if (use.revive !== undefined) {
-    if (pokemon.hp > 0) return false;
-    pokemon.hp = Math.max(1, Math.round(max * use.revive));
-    pokemon.status = null;
-    pokemon.statusTurns = 0;
-    return true;
-  }
-
-  // Everything else is for a Pokémon still standing.
+  // Every effect is for a Pokémon still standing.
   if (pokemon.hp <= 0) return false;
   let changed = false;
 
@@ -502,7 +496,40 @@ function applyUse(pokemon, item, choice = {}) {
   // A PP Up raises a move's ceiling rather than filling it.
   if (use.ppUp) changed = raiseMaxPp(pokemon, use.ppUp, choice.move) || changed;
 
+  // A vitamin, a feather or a mochi trains one stat's effort; a Pomeg and its
+  // kin take ten of it away.
+  if (use.effort) changed = trainEffort(pokemon, use.effort) || changed;
+
+  // A Fresh-Start Mochi takes every point of it back.
+  if (use.resetEffort && effortOf(pokemon) > 0) {
+    changeEffort(pokemon, Object.fromEntries(STATS.map((stat) => [stat, -EFFORT_STAT_MAX])));
+    changed = true;
+  }
+
   return changed;
+}
+
+/**
+ * One stat's effort moved by an item, and the friendship that comes with it
+ * as the games pay it — more the less fond the Pokémon already is.
+ *
+ * A vitamin or a feather that can add nothing — the stat at 252, or the six
+ * at 510 — does nothing at all. A berry still pleases a Pokémon with no effort
+ * left in that stat to take, so it goes on raising friendship until there is
+ * none of that left to raise either.
+ *
+ * @param {import('./pokemon.mjs').Pokemon} pokemon
+ * @param {{stat: string, amount: number, friendship?: number[]}} effort
+ */
+function trainEffort(pokemon, effort) {
+  const moved = changeEffort(pokemon, { [effort.stat]: effort.amount })[effort.stat] !== 0;
+  const gain = effort.friendship;
+  const fond = Boolean(gain) && (moved || effort.amount < 0) && friendshipOf(pokemon) < MAX_FRIENDSHIP;
+  if (fond && gain) {
+    const now = friendshipOf(pokemon);
+    gainFriendship(pokemon, now < 100 ? gain[0] : now < 200 ? gain[1] : gain[2]);
+  }
+  return moved || fond;
 }
 
 /**
@@ -732,7 +759,7 @@ export function healingItems(session, pokemon) {
   return session
     .pocket('medicine')
     // What a battle can throw: the ones that put hit points back. A status
-    // cure and a revival both have their moment, and neither is this one.
+    // cure has its moment, and this is not it.
     .filter(({ item }) => item.use?.hp !== undefined)
     .map(({ slug, count, item }) => {
       const power = item.use.hp === 'full' ? max : item.use.hp;

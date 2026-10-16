@@ -261,3 +261,32 @@ test('a stamp is never rewritten by a later line', () => {
   // is that the sequence is a history rather than the same number repeated.
   assert.ok(new Set(stamps).size > 1, `every line read ${stamps[0]}`);
 });
+
+test('a line put in front of what it announces is stamped as things stood there', () => {
+  // A stand-in battle: the log reads the two sides' hit points, conditions
+  // and confusion off it, and nothing else.
+  const sides = { player: { pokemon: { hp: 50, status: null } }, foe: { pokemon: { hp: 40, status: null } } };
+  const fake = {
+    ...sides,
+    noteFaints() {},
+    hitPoints: Battle.prototype.hitPoints,
+    statuses: Battle.prototype.statuses,
+    confusion: () => ({ player: false, foe: false }),
+  };
+  const log = Battle.prototype.makeLog.call(fake);
+
+  log.push({ kind: 'move', side: 'foe', data: {} });
+  sides.player.pokemon.hp = 20;
+  log.push({ kind: 'damage', side: 'player', data: {} });
+  // The berry is eaten after the hit, and named in front of its heal.
+  const mark = log.length;
+  sides.player.pokemon.hp = 45;
+  log.push({ kind: 'heal', side: 'player', data: {} });
+  log.splice(mark, 0, { kind: 'berry', side: 'player', data: {} });
+
+  assert.deepEqual(log.map((entry) => [entry.kind, entry.hp.player]), [['move', 50], ['damage', 20], ['berry', 20], ['heal', 45]]);
+
+  // At the very start of the turn, it stands where the turn began.
+  log.splice(0, 0, { kind: 'message', side: 'player', data: {} });
+  assert.equal(log[0].hp.player, 50);
+});

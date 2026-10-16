@@ -13,11 +13,11 @@
  */
 import { FIELD_HEIGHT, FIELD_WIDTH, VIEW_HEIGHT, VIEW_WIDTH } from '../../shared/constants.mjs';
 import { loadSprite } from '../core/assets.mjs';
-import { gameData, speciesOf } from '../core/data.mjs';
+import { gameData } from '../core/data.mjs';
 import { el } from '../core/dom.mjs';
-import { name as localized, t } from '../core/i18n.mjs';
+import { t } from '../core/i18n.mjs';
 import { completeEvolution } from '../engine/items.mjs';
-import { evolveInto, stopEvolution } from '../engine/pokemon.mjs';
+import { evolveInto, nameOf, stopEvolution } from '../engine/pokemon.mjs';
 import { BATTLE_SCALE, Battler, battlerArt, mirrorFor } from '../render/battler.mjs';
 import { inFieldSpace } from '../render/field.mjs';
 import { confirm } from '../ui/dialog.mjs';
@@ -91,7 +91,7 @@ export function evolutionScene({ session, pokemon, to, stoppable, lead = [], onF
   /** The shape it is becoming, for the flashing; then the Pokémon as it now is. @type {Battler|null} */
   let into = null;
 
-  const fromName = pokemon.nickname || localized(speciesOf(pokemon.speciesId)?.name, '');
+  const fromName = nameOf(pokemon);
   const message = el('div.battle-message');
 
   /**

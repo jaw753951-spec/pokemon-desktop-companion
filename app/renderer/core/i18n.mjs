@@ -48,9 +48,6 @@ export async function loadLanguages() {
 /** Every language the sheet lists, in its order. */
 export const languages = () => catalogue;
 
-/** The language in use, or null before one is set. */
-export const currentLanguage = () => current;
-
 /** @returns {string} */
 export const language = () => current?.code ?? '';
 

@@ -32,18 +32,15 @@ import { typeChip } from './typechip.mjs';
  */
 const CONDITION_GROUPS = [
   { key: 'basic', conditions: ['never', 'always'] },
-  { key: 'turn', conditions: ['oncePerBattle', 'oncePerFoe', 'foeEntered', 'everyTwoTurns', 'everyThreeTurns'] },
-  { key: 'miss', conditions: ['missedRetry', 'missedTwoTurns', 'untilHit', 'lastMissed'] },
+  { key: 'turn', conditions: ['oncePerBattle', 'oncePerFoe', 'everyTwoTurns', 'everyThreeTurns'] },
+  { key: 'miss', conditions: ['missedRetry', 'missedTwoTurns', 'lastMissed'] },
   { key: 'matchup', conditions: ['canFinish', 'superEffective', 'faster', 'slower'] },
-  { key: 'battle', conditions: ['foePhysical', 'foeSpecial', 'trainerBattle', 'wildBattle', 'bossBattle', 'lastFoe', 'foeLevelHigher', 'foeLevelLower'] },
-  { key: 'status', conditions: ['noStatus', 'foeStatus', 'foeAsleep', 'selfStatus', 'noItem', 'noField', 'hasField', 'sunny', 'rainy'] },
+  { key: 'battle', conditions: ['foePhysical', 'foeSpecial', 'trainerBattle', 'wildBattle', 'lastFoe', 'foeLevelHigher', 'foeLevelLower'] },
+  { key: 'status', conditions: ['noStatus', 'foeStatus', 'foeAsleep', 'selfStatus', 'noItem', 'noField', 'hasField'] },
   { key: 'rank', conditions: ['rankUp', 'rankDown', 'foeRankUp', 'foeRankDown'] },
   { key: 'hp', conditions: ['hpFull', 'hpAboveHalf', 'hpTwoThirds', 'hpHalf', 'hpThird', 'hpQuarter'] },
   { key: 'foeHp', conditions: ['foeHpFull', 'foeHpAboveHalf', 'foeHpTwoThirds', 'foeHpHalf', 'foeHpThird', 'foeHpQuarter'] },
 ];
-
-/** Every condition, flat, in picker order. */
-export const CONDITIONS = CONDITION_GROUPS.flatMap((group) => group.conditions);
 
 /**
  * The group a condition belongs to, which also colours its chip.
@@ -121,7 +118,7 @@ function optimizeButton(app, session, applied) {
     if (session.active !== pokemon) return;
     optimizeMoves(pokemon, session.autoBattle);
     applied();
-  }, { className: 'small', title: t('auto.optimizeHint') });
+  }, { className: 'small' });
 }
 
 /**
@@ -203,9 +200,8 @@ function moveRow(app, session, state, index, rebuild) {
 }
 
 /**
- * Choose a condition: the groups down the left, the one open on the right,
- * and what the one under the pointer means along the bottom. A press on a
- * condition takes it.
+ * Choose a condition: the groups down the left and the one open on the right.
+ * A press on a condition takes it.
  *
  * @param {import('../core/app.mjs').App} app
  * @param {string} title
@@ -220,16 +216,6 @@ export function chooseCondition(app, title, current) {
         resolve(value);
       };
       let open = groupOf(current);
-
-      const help = el('p.cond-help');
-      /** @param {string} condition */
-      const explain = (condition) => {
-        help.replaceChildren(
-          el('b', { text: t(`auto.condition.${condition}`) }),
-          ' ',
-          t(`auto.help.${condition}`),
-        );
-      };
 
       const tabs = el('div.cond-groups');
       const options = el('div.cond-options');
@@ -251,8 +237,6 @@ export function chooseCondition(app, title, current) {
         setChildren(options, open.conditions.map((condition) =>
           el(`button.cond-option${condition === current ? '.current' : ''}`, {
             type: 'button',
-            onMouseEnter: () => explain(condition),
-            onFocus: () => explain(condition),
             onClick: () => {
               app.audio.blip('confirm');
               finish(condition);
@@ -261,14 +245,12 @@ export function chooseCondition(app, title, current) {
             el('span', { text: t(`auto.condition.${condition}`) }),
             condition === current ? el('span.cond-current', { text: t('auto.current') }) : null,
           ])));
-        explain(open.conditions.includes(current) ? current : open.conditions[0]);
       };
       draw();
 
       return el('div.panel.cond-picker', {}, [
         el('p.cond-title', { text: title }),
         el('div.cond-body', {}, [tabs, options]),
-        help,
         el('div.cond-actions', {}, [
           el('span.spacer'),
           button(t('common.cancel'), () => {

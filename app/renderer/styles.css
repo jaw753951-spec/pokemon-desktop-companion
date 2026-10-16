@@ -834,6 +834,54 @@ canvas {
   cursor: pointer;
 }
 
+/* ------------------------------------------------------------------ notice */
+
+/* What the game opens on: that it is a fan game, on a plain dark screen, the
+   way fan games have long put it before their title. */
+#notice-screen {
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 0 28px;
+  background: #11151f;
+  color: #e8e8e0;
+  cursor: pointer;
+}
+
+.notice {
+  max-width: 400px;
+  text-align: center;
+  font-size: 10px;
+  line-height: 1.5;
+  /* A Korean line breaks between words, never inside one. */
+  word-break: keep-all;
+}
+
+.notice p {
+  margin: 0 0 5px;
+  color: rgba(232, 232, 224, 0.85);
+}
+
+.notice-title {
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #fff;
+}
+
+.notice-continue {
+  font-size: 9px;
+  color: rgba(232, 232, 224, 0.5);
+  animation: notice-blink 1.6s ease-in-out infinite;
+}
+
+@keyframes notice-blink {
+  50% {
+    opacity: 0.35;
+  }
+}
+
 /* ----------------------------------------------------------------- capture */
 
 .capture-screen {
@@ -1098,6 +1146,16 @@ canvas {
   font-weight: 700;
 }
 
+/* A stat with all the effort it can take: a small star in the hexagon's own
+   pale gold, beside its name. */
+.effort-full {
+  margin-left: 1px;
+  font-style: normal;
+  font-size: 8px;
+  color: #d6a014;
+  text-shadow: 0 0 1px rgba(120, 80, 0, 0.6);
+}
+
 /* The stats a nature moves, coloured as the games colour them since Sun and Moon. */
 .stat-label.raised {
   color: #d8443c;
@@ -1272,8 +1330,10 @@ canvas {
 
 /* A shiny: the red star on the top-right corner, across from the favourite's
    yellow one and as high. It hangs out over the edge less than that one
-   does, so a favourite in the next space along never runs into it. */
-.box-space .shiny-mark {
+   does, so a favourite in the next space along never runs into it. The catch
+   tray puts it in the same corner, across from its Poké Ball. */
+.box-space .shiny-mark,
+.tray-slot .shiny-mark {
   position: absolute;
   top: -2px;
   right: -1px;
@@ -1388,6 +1448,47 @@ canvas {
   flex-wrap: wrap;
 }
 
+/* The search at the end of the pockets, after the purse where there is one:
+   it takes what the row has left, so the bag's seven pockets keep it on
+   their line rather than pushing it onto one of its own. */
+.pocket-tabs .item-search {
+  -webkit-app-region: no-drag;
+  flex: 1 1 64px;
+  max-width: 128px;
+  margin-left: auto;
+  min-width: 0;
+  padding: 2px 8px;
+  border: 1px solid var(--frame-light);
+  border-radius: 10px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: 10px;
+}
+
+/* Empty, it shows a magnifier at its right end; with words in it, the clear
+   button the box brings of its own stands there instead. */
+.pocket-tabs .item-search:placeholder-shown {
+  padding-right: 20px;
+  background: var(--paper) no-repeat right 7px center / 10px 10px
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='6.5' cy='6.5' r='4.75' fill='none' stroke='%236b7280' stroke-width='2'/%3E%3Cpath d='M10 10l4.5 4.5' stroke='%236b7280' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+
+.pocket-tabs .item-search:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.pocket-tabs .shop-money.inline + .item-search {
+  margin-left: 6px;
+}
+
+.item-row[hidden],
+.pocket-heading[hidden],
+.search-empty[hidden] {
+  display: none;
+}
+
 .pocket-filter {
   display: flex;
   justify-content: flex-end;
@@ -1467,15 +1568,28 @@ canvas {
   overflow-y: auto;
 }
 
+/* The same gap between a heading and its button as between every row's
+   label and its own. */
 .item-options-heading {
   flex: none;
   display: flex;
   align-items: center;
+  gap: 8px;
+}
+
+.item-options-heading .option-title {
+  margin-top: 0;
 }
 
 .item-options .meta {
   margin: 0 0 2px;
   line-height: 1.3;
+}
+
+/* What the bag does by itself, a heading over each kind of it. */
+.item-options .option-title {
+  margin-top: 6px;
+  font-size: 11px;
 }
 
 .item-option .label {
@@ -1492,7 +1606,7 @@ canvas {
 .after-battle-choices {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: 3px;
 }
 
@@ -2030,24 +2144,27 @@ canvas {
 
 .cond-groups {
   flex: none;
-  width: 92px;
+  width: 100px;
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
 }
 
+/* A little larger than a line of text, now the picker has no explanation
+   under it to leave room for. */
 .cond-group {
   -webkit-app-region: no-drag;
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 0 6px;
+  gap: 6px;
+  min-height: 19px;
+  padding: 1px 7px;
   border: 1px solid transparent;
   border-radius: 4px;
   background: transparent;
   color: var(--ink-soft);
   font: inherit;
-  font-size: 10px;
+  font-size: 11px;
   text-align: left;
   cursor: pointer;
 }
@@ -2120,20 +2237,6 @@ canvas {
   color: var(--accent-dark);
 }
 
-.cond-help {
-  min-height: 28px;
-  margin: 0;
-  padding: 4px 6px;
-  border-radius: 4px;
-  background: rgba(56, 74, 99, 0.06);
-  font-size: 9px;
-  line-height: 1.4;
-  color: var(--ink-soft);
-}
-
-.cond-help b {
-  color: var(--ink);
-}
 
 .cond-actions {
   display: flex;

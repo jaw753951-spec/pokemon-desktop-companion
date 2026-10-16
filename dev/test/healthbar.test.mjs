@@ -84,18 +84,20 @@ function framesToDrain(lost) {
 
 test('a bigger hit takes proportionally longer to drain', () => {
   const { full } = framesToDrain(1);
-  const small = framesToDrain(Math.round(full * 0.1)).frames;
-  const large = framesToDrain(Math.round(full * 0.8)).frames;
+  const small = framesToDrain(Math.round(full * 0.3)).frames;
+  const large = framesToDrain(Math.round(full * 0.9)).frames;
 
-  // Eight times the damage, eight times the drain — within the rounding that
-  // whole frames and the floor on very small changes introduce.
+  // Three times the damage, three times the drain — within the rounding of
+  // whole frames. (Below the floor on small changes, every one takes the same.)
   const ratio = large / small;
-  assert.ok(ratio > 5 && ratio < 11, `expected roughly eight times as long, got ${ratio.toFixed(1)}`);
+  assert.ok(ratio > 2.6 && ratio < 3.4, `expected roughly three times as long, got ${ratio.toFixed(1)}`);
 });
 
-test('even a scratch is visible rather than instant', () => {
-  const { frames } = framesToDrain(1);
-  assert.ok(frames >= 5, `a one-point hit settled in ${frames} frames`);
+test('even a scratch is seen to move rather than jump', () => {
+  // A quarter of a second and more: a one-point scratch, a tenth of the bar.
+  const { full, frames } = framesToDrain(1);
+  assert.ok(frames >= 16, `a one-point hit settled in ${frames} frames`);
+  assert.ok(framesToDrain(Math.round(full * 0.1)).frames >= 16, 'a tenth of the bar');
 });
 
 test('the number never disagrees with the bar', () => {
