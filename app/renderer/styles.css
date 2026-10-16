@@ -826,6 +826,14 @@ canvas {
   line-height: 1.35;
 }
 
+/* --------------------------------------------------------------- evolution */
+
+/* The whole screen answers a press: it moves the lines on, and while the
+   Pokémon flashes, asks whether to stop it. */
+.evolution-screen {
+  cursor: pointer;
+}
+
 /* ----------------------------------------------------------------- capture */
 
 .capture-screen {

@@ -19,6 +19,7 @@ import { maxPp } from '../engine/pokemon.mjs';
 import { STATS } from '../engine/stats.mjs';
 import { badgeIcon, championIcon } from './badges.mjs';
 import { moveSummary } from './movecard.mjs';
+import { evolutionScene } from '../scenes/evolution.mjs';
 import { chooseAction, chooseFromList, chooseItem, confirm } from './dialog.mjs';
 
 /** Pockets in the order the games show them, and the settings behind them. */
@@ -494,6 +495,24 @@ function itemButtons(app, session, slug, refresh) {
       if (picked !== 'none') choice = { forget: Number(picked) };
     }
     const result = kind === 'equip' ? equipItem(session, slug) : useItem(session, slug, choice);
+    // An evolution the item sets off plays out on its own screen, which says
+    // what the item did first — a Rare Candy's level — and the rest after.
+    const evolution = /** @type {{evolution?: import('../engine/items.mjs').Evolving}} */ (result).evolution ?? null;
+    if (evolution) {
+      app.audio.blip('confirm');
+      app.push(evolutionScene({
+        session,
+        pokemon: session.active,
+        to: evolution.to,
+        stoppable: evolution.stoppable,
+        lead: result.message ? [result.message] : [],
+        onFinish: () => {
+          app.pop();
+          refresh();
+        },
+      }));
+      return;
+    }
     app.toast(result.message ?? t('items.cannotUse'));
     // A refusal is worth a sound too: a TM the companion cannot learn says so
     // and nothing else happens, which used to be silent.

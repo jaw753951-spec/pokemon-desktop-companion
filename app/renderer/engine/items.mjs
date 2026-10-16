@@ -20,6 +20,7 @@ import {
   maxPp,
   movesLearnedBetween,
   noteLearnedMoves,
+  offeredEvolution,
   pendingEvolution,
   setMove,
   statsOf,
@@ -60,7 +61,8 @@ export function itemNeedsChoice(slug) {
  * @param {string} slug
  * @param {ItemChoice} [choice] the move or stat a one-target item is for;
  *   without one it goes to the first move that can use it, or the weakest gene
- * @returns {{used: boolean, ok: boolean, message: string}}
+ * @returns {{used: boolean, ok: boolean, message: string|null, evolution?: Evolving}} an
+ *   evolution it sets off is left for the evolution screen to play out
  */
 export function useItem(session, slug, choice = {}) {
   const item = itemOf(slug);
@@ -142,8 +144,14 @@ export function useItem(session, slug, choice = {}) {
       session.removeItem(slug);
       // A Rare Candy or an Exp. Candy that lifts the level does everything a
       // level won in battle does.
-      const lines = [t('items.used', { name: label }), ...levelledUp(session, pokemon, levelBefore)];
-      return { used: true, ok: true, message: lines.join(' ') };
+      const levelled = levelledUp(session, pokemon, levelBefore);
+      const lines = [t('items.used', { name: label }), ...levelled.lines];
+      return {
+        used: true,
+        ok: true,
+        message: lines.join(' '),
+        ...(levelled.evolution ? { evolution: levelled.evolution } : {}),
+      };
     }
     // An Ability Patch or Capsule on a Pokémon with nothing to change to says
     // so — a bare "cannot be used" read as the item being broken.
@@ -164,21 +172,12 @@ export function useItem(session, slug, choice = {}) {
     }
   }
 
-  // An evolution stone, if this Pokémon is waiting on one. It goes back in
-  // the bag afterwards: an evolution item is kept, not spent.
+  // An evolution stone, if this Pokémon is waiting on one: handed to the
+  // evolution screen, which `completeEvolution` finishes. It goes back in the
+  // bag afterwards — an evolution item is kept, not spent — and, chosen by
+  // the player, it is not one the screen lets them stop, as in the games.
   const evolution = pendingEvolution(pokemon, { item: slug });
-  if (evolution) {
-    const from = nameOf(pokemon);
-    evolveInto(pokemon, evolution.to, session.rng);
-    session.markCaught(evolution.to);
-    const taught = learnOnEvolution(pokemon);
-    const lines = [
-      t('battle.evolving', { name: from, target: localized(speciesOf(pokemon.speciesId)?.name, '') }),
-      ...taught.learned.map((move) => t('battle.learned', { name: nameOf(pokemon), move: localized(moveOf(move)?.name, move) })),
-      ...taught.waiting.map((move) => t('battle.cannotLearnMore', { name: nameOf(pokemon), move: localized(moveOf(move)?.name, move) })),
-    ];
-    return { used: true, ok: true, message: lines.join(' ') };
-  }
+  if (evolution) return { used: true, ok: true, message: null, evolution: { to: evolution.to, stoppable: false } };
 
   // Anything a Pokémon could carry becomes the held item instead of failing.
   if (canHold(slug)) return equipItem(session, slug);
@@ -191,17 +190,18 @@ export function useItem(session, slug, choice = {}) {
  * — which is what a Rare Candy or an Exp. Candy does in the games: the extra
  * hit points, the friendship, the moves of the levels crossed (straight into
  * a free slot, or waiting in the move list when there is none), and an
- * evolution the new level allows, with what evolving teaches and a Nincada's
- * shell. In the order the battle says it.
+ * evolution the new level allows — handed back for the evolution screen, which
+ * the player can stop it on. In the order the battle says it.
  *
  * @param {import('./session.mjs').Session} session
  * @param {import('./pokemon.mjs').Pokemon} pokemon
  * @param {number} before the level it was at
- * @returns {string[]} what to say about it; nothing when the level did not move
+ * @returns {{lines: string[], evolution: Evolving|null}} what to say about it,
+ *   nothing when the level did not move, and the evolution it sets off
  */
 export function levelledUp(session, pokemon, before) {
   const after = levelOf(pokemon);
-  if (after <= before) return [];
+  if (after <= before) return { lines: [], evolution: null };
   const learned = (move) => t('battle.learned', { name: nameOf(pokemon), move: localized(moveOf(move)?.name, move) });
   const waiting = (move) => t('battle.cannotLearnMore', { name: nameOf(pokemon), move: localized(moveOf(move)?.name, move) });
 
@@ -217,24 +217,48 @@ export function levelledUp(session, pokemon, before) {
     }
   }
 
-  const evolution = pendingEvolution(pokemon, {
+  const evolution = offeredEvolution(pokemon, {
     timeOfDay: timeOfDay(),
     box: session.box,
     raining: weatherForArea(session.area) === 'rain',
     areaTags: session.area?.tags ?? [],
   });
-  if (evolution) {
-    const from = nameOf(pokemon);
-    const fromSpecies = pokemon.speciesId;
-    evolveInto(pokemon, evolution.to, session.rng);
-    session.markCaught(evolution.to);
-    lines.push(t('battle.evolving', { name: from, target: localized(speciesOf(pokemon.speciesId)?.name, '') }));
-    const taught = learnOnEvolution(pokemon);
-    lines.push(...taught.learned.map(learned), ...taught.waiting.map(waiting));
-    const shell = shedAfterEvolving(session, fromSpecies, pokemon);
-    if (shell) lines.push(t('battle.shed', { name: nameOf(shell) }));
-  }
 
+  noteLearnedMoves(pokemon, session.machines);
+  return { lines, evolution: evolution ? { to: evolution.to, stoppable: true } : null };
+}
+
+/**
+ * An evolution waiting on the evolution screen: what it becomes, and whether
+ * the player may stop it — a levelling one, yes; one from an item, no.
+ *
+ * @typedef {{to: number, stoppable: boolean}} Evolving
+ */
+
+/**
+ * An evolution the evolution screen has seen through: the new species, its
+ * place in the Pokédex, the moves evolving teaches, and a Nincada's shell.
+ *
+ * @param {import('./session.mjs').Session} session
+ * @param {import('./pokemon.mjs').Pokemon} pokemon
+ * @param {number} to
+ * @returns {string[]} what to say about it, in the order the games say it
+ */
+export function completeEvolution(session, pokemon, to) {
+  const from = nameOf(pokemon);
+  const fromSpecies = pokemon.speciesId;
+  evolveInto(pokemon, to, session.rng);
+  session.markCaught(to);
+  const lines = [t('battle.evolving', { name: from, target: localized(speciesOf(pokemon.speciesId)?.name, '') })];
+  const taught = learnOnEvolution(pokemon);
+  for (const move of taught.learned) {
+    lines.push(t('battle.learned', { name: nameOf(pokemon), move: localized(moveOf(move)?.name, move) }));
+  }
+  for (const move of taught.waiting) {
+    lines.push(t('battle.cannotLearnMore', { name: nameOf(pokemon), move: localized(moveOf(move)?.name, move) }));
+  }
+  const shell = shedAfterEvolving(session, fromSpecies, pokemon);
+  if (shell) lines.push(t('battle.shed', { name: nameOf(shell) }));
   noteLearnedMoves(pokemon, session.machines);
   return lines;
 }

@@ -15,6 +15,7 @@ import { EventScheduler } from '../../app/renderer/engine/events.mjs';
 import {
   battleMedicine,
   canHold,
+  completeEvolution,
   eventModifiers,
   heldPassive,
   itemNeedsChoice,
@@ -266,13 +267,18 @@ test('a candy level does what a battle level does: moves, friendship, evolution'
   assert.ok(learning.message?.includes('battle.learned'), learning.message);
   assert.ok((charmander.friendship ?? 0) > fond, 'a level is worth friendship');
 
-  // And the level it evolves at evolves it there and then.
+  // And the level it evolves at sets off the evolution screen, which the
+  // player may stop; the screen finishes it.
   charmander.experience = experienceForLevel(speciesOf(charmander.speciesId).growthRate, 15);
   const session = candySession(charmander);
   const evolving = useItem(session, 'rare-candy');
+  assert.equal(speciesOf(charmander.speciesId).slug, 'charmander', 'nothing evolves before the screen');
+  assert.equal(evolving.evolution?.stoppable, true);
+  assert.equal(speciesOf(evolving.evolution?.to ?? 0)?.slug, 'charmeleon');
+  const said = completeEvolution(session, charmander, evolving.evolution.to);
   assert.equal(speciesOf(charmander.speciesId).slug, 'charmeleon');
   assert.deepEqual(session.caughtNow, [charmander.speciesId]);
-  assert.ok(evolving.message?.includes('battle.evolving'), evolving.message);
+  assert.ok(said[0].includes('battle.evolving'), said.join(' '));
 });
 
 test('the battle bag lists every medicine, greying out what would do nothing', options, () => {

@@ -60,6 +60,8 @@ import {
  * @property {string} [forme] the alternate forme it is wearing, if any — the
  *   one it stands in (a held mask, a chosen Sky Forme) outside a battle, and
  *   whatever the battle has changed it into inside one, let go of after
+ * @property {number} [evolutionStopped] the level it was stopped from evolving
+ *   at, which it is not asked again until it has left behind
  */
 
 /**
@@ -812,6 +814,30 @@ function matchesTime(required, current) {
 }
 
 /**
+ * The evolution to put on the evolution screen: whatever is pending, unless
+ * it is a levelling one the player stopped at this very level. The games ask
+ * again at the next level, and so does this — a won battle that brought no
+ * level does not.
+ *
+ * @param {Pokemon} pokemon
+ * @param {Parameters<typeof pendingEvolution>[1]} [context]
+ */
+export function offeredEvolution(pokemon, context = {}) {
+  if (!context.item && pokemon.evolutionStopped === levelOf(pokemon)) return null;
+  return pendingEvolution(pokemon, context);
+}
+
+/**
+ * An evolution stopped on the evolution screen, at the level it was stopped.
+ * Only a levelling one can be: an item the player chose to use is not.
+ *
+ * @param {Pokemon} pokemon
+ */
+export function stopEvolution(pokemon) {
+  pokemon.evolutionStopped = levelOf(pokemon);
+}
+
+/**
  * Evolve in place, keeping level, moves and nickname.
  * @param {Pokemon} pokemon
  * @param {number} speciesId
@@ -823,6 +849,7 @@ export function evolveInto(pokemon, speciesId, rng) {
   // A female Lechonk grows into the female Oinkologne.
   speciesId = genderedSpecies(speciesId, pokemon.gender);
   pokemon.speciesId = speciesId;
+  delete pokemon.evolutionStopped;
   const species = speciesOf(speciesId);
   if (!species.abilities.some((entry) => entry.name === pokemon.ability)) {
     // The same slot in the new species' list, which is what the games carry
