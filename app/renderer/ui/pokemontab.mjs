@@ -189,7 +189,7 @@ function moveDetail(app, session, refresh, state) {
   if (!entry || !moveOf(entry.move)) return null;
 
   const card = el('div.move-detail', {}, [
-    moveCard(entry.move),
+    moveCard(entry.move, { slot: entry }),
     button(t('pokemon.replaceMove'), () => openReplace(app, session, slot, refresh), { className: 'small' }),
   ]);
 
@@ -340,7 +340,7 @@ async function openReplace(app, session, slot, refresh) {
   const choices = moves.map((move) => ({
     value: move,
     label: localized(moveOf(move)?.name, move),
-    detail: moveSummary(move),
+    detail: moveSummary(move, pokemon.moves.find((entry) => entry?.move === move) ?? null),
     fresh: fresh.has(move),
     disabled: known.has(move),
   }));

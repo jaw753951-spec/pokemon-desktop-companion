@@ -9,6 +9,7 @@
 import { gameData, moveOf } from '../core/data.mjs';
 import { el } from '../core/dom.mjs';
 import { name as localized, t } from '../core/i18n.mjs';
+import { maxPp } from '../engine/pokemon.mjs';
 import { typeChip } from './typechip.mjs';
 
 /**
@@ -16,12 +17,14 @@ import { typeChip } from './typechip.mjs';
  * status move, and what it costs to throw.
  *
  * A status move has no power and some moves never miss; both are written as a
- * dash rather than left out, so the line has the same shape every time.
+ * dash rather than left out, so the line has the same shape every time. A
+ * move a Pokémon knows costs what its slot holds, which a PP Up raises.
  *
  * @param {string} slug
+ * @param {{move: string, pp: number, ppUp?: number}|null} [slot] the slot it sits in, when known
  * @returns {string}
  */
-export function moveSummary(slug) {
+export function moveSummary(slug, slot = null) {
   const move = moveOf(slug);
   if (!move) return '';
   const type = localized(gameData().types[move.type]?.name, move.type ?? '');
@@ -31,7 +34,7 @@ export function moveSummary(slug) {
     kind,
     `${t('move.power')} ${move.power ?? '—'}`,
     `${t('move.accuracy')} ${move.accuracy ?? '—'}`,
-    `PP ${move.pp ?? '—'}`,
+    `PP ${slot ? maxPp(slot) : move.pp ?? '—'}`,
   ].join('  ·  ');
 }
 
@@ -40,7 +43,8 @@ export function moveSummary(slug) {
  * own description.
  *
  * @param {string} slug
- * @param {{heading?: string|null}} [options] a caption over the card
+ * @param {{heading?: string|null, slot?: {move: string, pp: number, ppUp?: number}|null}} [options]
+ *   a caption over the card, and the slot the move sits in, when known
  * @returns {HTMLElement}
  */
 export function moveCard(slug, options = {}) {
@@ -53,7 +57,7 @@ export function moveCard(slug, options = {}) {
       el('span.move-card-name', { text: localized(move.name, slug) }),
       typeChip(move.type, true),
     ]),
-    el('span.meta', { text: moveSummary(slug) }),
+    el('span.meta', { text: moveSummary(slug, options.slot ?? null) }),
     el('p.move-card-text', { text: localized(move.text, '') || t('move.noText') }),
   ]);
 }
