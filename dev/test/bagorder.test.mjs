@@ -44,6 +44,18 @@ test('the misc pocket puts anyone’s items first, one Pokémon’s together, ev
   together(['cracked-pot', 'chipped-pot']);
 });
 
+test('plates, drives and memories close the misc pocket, each set together in type order', withData, () => {
+  const order = listed('misc');
+  const plates = ['flame-plate', 'splash-plate', 'zap-plate', 'meadow-plate', 'icicle-plate', 'fist-plate', 'toxic-plate', 'earth-plate',
+    'sky-plate', 'mind-plate', 'insect-plate', 'stone-plate', 'spooky-plate', 'draco-plate', 'dread-plate', 'iron-plate', 'pixie-plate'];
+  const drives = ['burn-drive', 'douse-drive', 'shock-drive', 'chill-drive'];
+  const memories = ['fire', 'water', 'electric', 'grass', 'ice', 'fighting', 'poison', 'ground', 'flying', 'psychic', 'bug', 'rock',
+    'ghost', 'dragon', 'dark', 'steel', 'fairy'].map((type) => `${type}-memory`);
+  const sets = [...plates, ...drives, ...memories];
+  // Arceus's, then Genesect's, then Silvally's, by the Pokédex — the last of the pocket.
+  assert.deepEqual(order.slice(-sets.length), sets);
+});
+
 test('medicine, berries and balls go kind by kind, weakest first', withData, () => {
   const before = (order, ...slugs) => {
     for (let index = 1; index < slugs.length; index++) {

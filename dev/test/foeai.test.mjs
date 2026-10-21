@@ -10,7 +10,8 @@ import { NEEDS_ASSETS, useRealGameData } from './helpers/data.mjs';
 import { Rng } from '../../app/renderer/core/rng.mjs';
 import { speciesIdBySlug } from '../../app/renderer/core/data.mjs';
 import { Battle, STATUS } from '../../app/renderer/engine/battle.mjs';
-import { expectedThreat } from '../../app/renderer/engine/foeai.mjs';
+import { expectedThreat, scoreMove, sizeUp } from '../../app/renderer/engine/foeai.mjs';
+import { TERRAIN } from '../../app/renderer/engine/field.mjs';
 import { createPokemon, maxHp, setMove } from '../../app/renderer/engine/pokemon.mjs';
 import { defaultAutoBattle } from '../../app/renderer/engine/session.mjs';
 
@@ -99,4 +100,74 @@ test('the companion\'s moves are not known until shown, and only a trainer remem
   assert.equal(expectedThreat(trainer, /** @type {any} */ (trainer.foe), trainer.player).threat, guessed);
   trainer.seenMoves.add('thunderbolt');
   assert.ok(expectedThreat(trainer, /** @type {any} */ (trainer.foe), trainer.player).threat > guessed * 3);
+});
+
+/** @param {any} player @param {any[]} foes */
+const trainerFight = (player, foes) =>
+  new Battle({ rng: new Rng(3), player, foes, policy: defaultAutoBattle(), trainerBattle: true });
+
+/** @param {Battle} battle @param {string} slug */
+const foeScore = (battle, slug) => {
+  const foe = /** @type {any} */ (battle.foe);
+  return scoreMove(battle, sizeUp(battle, foe, battle.player, battle.movesOf(foe)), slug);
+};
+
+test('a stat that has gone as far as it goes is not pushed again', options, () => {
+  const battle = fight(make('machop', 30, ['karate-chop']), make('clefairy', 30, ['charm', 'pound']));
+  battle.player.stages.atk = -6;
+  assert.equal(foePicks(battle), 'pound');
+  assert.ok(battle.alreadyInPlace(/** @type {any} */ (battle.foe), battle.player, 'charm'));
+
+  const shell = fight(make('pikachu', 30, ['thunder-shock']), make('squirtle', 30, ['withdraw', 'tackle']));
+  shell.foe.stages.def = 6;
+  assert.ok(shell.alreadyInPlace(/** @type {any} */ (shell.foe), shell.player, 'withdraw'));
+  assert.equal(foePicks(shell), 'tackle');
+
+  // A Mist keeps a Growl off as surely as a stage at -6 does.
+  const misted = fight(make('machop', 30, ['karate-chop']), make('eevee', 30, ['growl', 'tackle']));
+  assert.ok(!misted.alreadyInPlace(/** @type {any} */ (misted.foe), misted.player, 'growl'));
+  misted.field.sides.player.mist = 5;
+  assert.ok(misted.alreadyInPlace(/** @type {any} */ (misted.foe), misted.player, 'growl'));
+});
+
+test('a heal at full health, a Yawn into Electric Terrain and a Venom Drench at the unpoisoned are passed over', options, () => {
+  const battle = fight(make('eevee', 30, ['tackle']), make('chansey', 30, ['pound', 'soft-boiled', 'yawn']));
+  const foe = /** @type {any} */ (battle.foe);
+  assert.ok(battle.alreadyInPlace(foe, battle.player, 'soft-boiled'));
+  foe.pokemon.hp = Math.floor(maxHp(foe.pokemon) / 2);
+  assert.ok(!battle.alreadyInPlace(foe, battle.player, 'soft-boiled'));
+
+  assert.ok(!battle.visiblyUseless(foe, battle.player, 'yawn'));
+  battle.field.terrain = TERRAIN.ELECTRIC;
+  assert.ok(battle.visiblyUseless(foe, battle.player, 'yawn'));
+
+  assert.ok(battle.alreadyInPlace(foe, battle.player, 'venom-drench'));
+  battle.player.pokemon.status = STATUS.POISON;
+  assert.ok(!battle.alreadyInPlace(foe, battle.player, 'venom-drench'));
+});
+
+test('the last Pokémon a trainer has does not throw itself away', options, () => {
+  const mementoUser = () => make('murkrow', 30, ['peck', 'memento']);
+  const alone = trainerFight(make('machop', 30, ['karate-chop']), [mementoUser()]);
+  alone.foe.pokemon.hp = 2;
+  assert.equal(foeScore(alone, 'memento'), 0);
+  assert.equal(foePicks(alone), 'peck');
+  // With someone still to come, a Memento on the way down is a parting gift.
+  const backed = trainerFight(make('machop', 30, ['karate-chop']), [mementoUser(), make('pidgey', 30, ['tackle'])]);
+  backed.foe.pokemon.hp = 2;
+  assert.ok(foeScore(backed, 'memento') > 0);
+
+  // An Explosion from the last one only to take the other side down with it.
+  const geodude = trainerFight(make('chansey', 40, ['pound']), [make('geodude', 40, ['tackle', 'self-destruct'])]);
+  geodude.foe.pokemon.hp = 1;
+  assert.equal(foeScore(geodude, 'self-destruct'), 0);
+  geodude.player.pokemon.hp = 5;
+  assert.ok(foeScore(geodude, 'self-destruct') > 0);
+});
+
+test('a status move seen to come to nothing against this target is a poor bet after', options, () => {
+  const battle = fight(make('machop', 30, ['karate-chop']), make('clefairy', 30, ['charm', 'pound']));
+  const before = foeScore(battle, 'charm');
+  battle.foe.marks.fizzled = { target: battle.player, moves: new Set(['charm']) };
+  assert.ok(foeScore(battle, 'charm') < before * 0.2);
 });

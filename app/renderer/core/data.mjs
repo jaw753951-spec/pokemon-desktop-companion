@@ -5,6 +5,7 @@
  * the type chart — as opposed to the save, which holds the player's state.
  */
 import { loadJson } from './bridge.mjs';
+import { resolveParticles } from './korean.mjs';
 
 /**
  * @typedef {Object} GameData
@@ -65,6 +66,7 @@ export async function loadGameData() {
     loadJson('authored', 'ability-texts.json').then((file) => file.abilities ?? {}).catch(() => ({})),
   ]);
   mendItems(items, itemTexts);
+  nameItemUsers(items, species);
   // Moves take the same patch: the newest ones come through with only the
   // English description, and the Korean screen showed it as it was.
   mendItems(moves, moveTexts);
@@ -99,6 +101,52 @@ export function mendItems(items, authored) {
     if (patch.name) item.name = { ...(item.name ?? {}), ...patch.name };
   }
 }
+
+/**
+ * Name the Pokémon in an evolution item's description when only one ever
+ * uses it. The games' "loved by a certain Pokémon" is coy about an
+ * Electirizer nothing but an Electabuzz wants, and the bag has no other way
+ * of saying whose it is; an item several Pokémon use — a Fire Stone, a
+ * Linking Cord — keeps its wording.
+ *
+ * @param {Record<string, any>} items
+ * @param {Record<string, any>} species
+ */
+export function nameItemUsers(items, species) {
+  /** Who uses each item, by name — a regional form shares its species' name. @type {Map<string, Map<string, any>>} */
+  const users = new Map();
+  for (const entry of Object.values(species ?? {})) {
+    for (const evolution of entry.evolutions ?? []) {
+      for (const item of [evolution.item, evolution.heldItem]) {
+        if (!item || !entry.name) continue;
+        if (!users.has(item)) users.set(item, new Map());
+        users.get(item)?.set(entry.name.en ?? entry.slug, entry.name);
+      }
+    }
+  }
+  for (const [slug, named] of users) {
+    const item = items?.[slug];
+    if (named.size !== 1 || item?.category !== 'evolution' || !item.text) continue;
+    const [name] = named.values();
+    if (item.text.ko && name.ko) {
+      item.text.ko = item.text.ko.replace(/(?:어느 특정|어떤|특정) 포켓몬(이|을|은|과)?(?!들)/, (_, particle) => {
+        if (!particle) return name.ko;
+        // A Porygon2 is read with its number: 폴리곤2(이) takes 가.
+        const read = name.ko.replace(/\d$/,(digit) => DIGIT_READINGS[Number(digit)]);
+        return name.ko + resolveParticles(read + KO_PARTICLES[particle]).slice(read.length);
+      });
+    }
+    if (item.text.en && name.en) {
+      item.text.en = item.text.en.replace(/(?:a )?certain (?:species of )?Pokémon/, name.en);
+    }
+  }
+}
+
+/** The neutral form each particle is written in, for `resolveParticles` to settle. */
+const KO_PARTICLES = { 이: '이(가)', 을: '을(를)', 은: '은(는)', 과: '과(와)' };
+
+/** How each digit is read aloud, which is what the particle after it agrees with. */
+const DIGIT_READINGS = ['영', '일', '이', '삼', '사', '오', '육', '칠', '팔', '구'];
 
 /**
  * The same patch for the Pokédex, whose records are filed by number: the

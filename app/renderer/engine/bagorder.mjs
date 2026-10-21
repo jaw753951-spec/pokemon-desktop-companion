@@ -21,13 +21,15 @@
  *   which pushed TM23–99 to the bottom of the list.
  * - **The misc pocket** puts what any Pokémon can use first; then what one
  *   Pokémon uses — a Dialga's orb and crystal, an Arceus's plates, an
- *   Oricorio's nectars — kept together and in the order of the Pokédex; and
- *   last the items that only evolve something, the stones any number of
- *   families use first and then each family's own.
+ *   Oricorio's nectars — kept together and in the order of the Pokédex; then
+ *   the items that only evolve something, the stones any number of families
+ *   use first and then each family's own; and at the very bottom the sets
+ *   collected a type at a time — Arceus's plates, Genesect's drives,
+ *   Silvally's memories — each set together and in the games' type order.
  */
 import { gameData, speciesIdBySlug } from '../core/data.mjs';
 import { name as localized } from '../core/i18n.mjs';
-import { signatureItems } from './forms.mjs';
+import { signatureItems, TYPE_SET_ITEMS } from './forms.mjs';
 import { STATS } from './stats.mjs';
 
 /** @typedef {{slug: string, item: any}} Entry */
@@ -165,30 +167,33 @@ function byMachine(a, b) {
 function byUse(a, b) {
   const left = placeOf(a);
   const right = placeOf(b);
-  return left.group - right.group || left.family - right.family || byName(a, b);
+  return left.group - right.group || left.family - right.family || left.order - right.order || byName(a, b);
 }
 
 /**
  * Where a misc item goes: its group — 0 for anyone, 1 for one Pokémon, 2 for
- * evolving only — and, within the group, the family it belongs to by the
- * Pokédex number of the family's first stage (0 for no one family).
+ * evolving only, 3 for a plate, a drive or a memory — and, within the group,
+ * the family it belongs to by the Pokédex number of the family's first stage
+ * (0 for no one family), then its type's place for one of those sets.
  *
  * @param {Entry} entry
- * @returns {{group: number, family: number}}
+ * @returns {{group: number, family: number, order: number}}
  */
 function placeOf({ slug, item }) {
   const { owners, evolves } = index();
   const owner = owners.get(slug);
-  if (owner !== undefined) return { group: 1, family: owner };
+  const set = TYPE_SET_ITEMS.get(slug);
+  if (set) return { group: 3, family: owner ?? 0, order: set.order };
+  if (owner !== undefined) return { group: 1, family: owner, order: 0 };
   const families = evolves.get(slug);
   // An item with an effect of its own — a King's Rock, a Metal Coat — is held
   // for that, and belongs with the rest of what anyone can hold. The Linking
   // Cord stands in for a trade, which no evolution names an item for, so the
   // data's own word for an evolution item counts as well.
   if ((families || item?.category === 'evolution') && !item?.held && !item?.use) {
-    return { group: 2, family: families?.size === 1 ? [...families][0] : 0 };
+    return { group: 2, family: families?.size === 1 ? [...families][0] : 0, order: 0 };
   }
-  return { group: 0, family: 0 };
+  return { group: 0, family: 0, order: 0 };
 }
 
 /**

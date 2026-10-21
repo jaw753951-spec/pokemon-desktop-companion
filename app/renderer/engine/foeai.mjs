@@ -125,6 +125,8 @@ export function sizeUp(battle, attacker, defender, usable) {
     inDanger: threat >= 1,
     /** And will, before it gets to move. */
     goingDown: threat >= 1 && outsped,
+    /** A trainer has someone still to send out after this one. */
+    othersLeft: attacker.side === 'foe' && battle.foeQueue.some((combatant) => combatant.pokemon.hp > 0),
     myHealth: attacker.pokemon.hp / maxHp(attacker.pokemon),
     theirHealth: defender.pokemon.hp / maxHp(defender.pokemon),
     early: attacker.turnsTaken < 2,
@@ -213,8 +215,18 @@ export function scoreMove(battle, read, slug) {
         score = scoreField(battle, read, slug);
     }
   }
+  // A Memento is a parting gift for whoever comes out next: with nobody
+  // behind it, it throws the last Pokémon away for stat drops that end with
+  // the battle. With somebody, it is a last resort as an Explosion is.
+  if (move.rules?.selfdestruct) {
+    if (!read.othersLeft) return 0;
+    if (read.myHealth > 0.3 && !read.goingDown) return 3;
+  }
   // With a knock-out on the table, anything that is not one waits.
   if (read.canFinish && categoryOf(move) !== 'heal') score *= 0.2;
+  // What has already come to nothing against this target is a poor bet.
+  const fizzled = read.attacker.marks?.fizzled;
+  if (fizzled?.target === read.defender && fizzled.moves.has(slug)) score *= 0.1;
   return score;
 }
 
@@ -238,8 +250,10 @@ function scoreAttack(battle, read, slug, move) {
   // is the only thing that gets to happen at all.
   if (read.goingDown && priority) score += finishes ? 60 : 30;
   // An Explosion is a last resort, not an opening — and never the way to
-  // finish what something else would have.
+  // finish what something else would have. The last Pokémon of all only goes
+  // up to take the other side with it.
   if (move.rules?.selfdestruct) {
+    if (!read.othersLeft && !finishes) return 0;
     if (read.myHealth > 0.3 && !read.goingDown) return 3;
     score *= 0.5;
   }
@@ -305,6 +319,8 @@ function scoreStats(read, move) {
     const self = change.self ?? change.change > 0;
     const target = self ? read.attacker : read.defender;
     const stage = target.stages[change.stat] ?? 0;
+    // A stage already as far as it goes moves no further, either way.
+    if (change.change > 0 ? stage >= 6 : stage <= -6) continue;
     const worth = statWorth(read, change.stat, self);
     if (self && change.change > 0) {
       // Each stage already gained is a reason not to spend another turn.

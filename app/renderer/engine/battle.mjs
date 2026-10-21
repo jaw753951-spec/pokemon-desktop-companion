@@ -202,6 +202,9 @@ const DELAYED_ATTACKS = new Set(['future-sight', 'doom-desire']);
 /** The moves that cannot be used twice running. */
 const NO_REPEAT = new Set(['blood-moon', 'gigaton-hammer']);
 
+/** The heals that clear a condition as well, so are worth a turn at full health. */
+const SELF_CURING_HEALS = new Set(['jungle-healing', 'lunar-blessing']);
+
 /** Status moves a substitute does not stop, as the games list them. */
 const SUBSTITUTE_BYPASS = new Set(['perish-song', 'roar', 'whirlwind', 'transform', 'psych-up', 'role-play', 'spite', 'haze', 'court-change', 'doodle']);
 
@@ -2915,6 +2918,19 @@ export class Battle {
       if (attacker.marks.wasted?.target !== defender) attacker.marks.wasted = { target: defender, moves: new Set() };
       attacker.marks.wasted.moves.add(moveName);
     }
+    // A status move that came to nothing against this target — "But it
+    // failed!", every stat it touched already at its end, a drop refused —
+    // which the other side's judgement is slow to reach for again while the
+    // two of them are still facing each other (see `foeai.mjs`). A Sweet Veil
+    // turns a Yawn away without a word, so the failure is all there is to go on.
+    const cameToNothing = move?.damageClass === 'status' &&
+      lines.some((entry) => entry.kind === 'failed' || entry.kind === 'noEffect' || entry.kind === 'statFailed' ||
+        entry.data?.key === 'stat.notLowered' || entry.data?.key === 'move.mist.protected') &&
+      !lines.some((entry) => entry.kind === 'stat' || entry.kind === 'status' || entry.kind === 'heal');
+    if (cameToNothing) {
+      if (attacker.marks.fizzled?.target !== defender) attacker.marks.fizzled = { target: defender, moves: new Set() };
+      attacker.marks.fizzled.moves.add(moveName);
+    }
 
     // Half the user's health, hit or miss.
     if ((move?.rules?.mindBlownRecoil || moveName === 'chloroblast') && attacker.pokemon.hp > 0 && !attacker.marks.spent) {
@@ -3278,6 +3294,13 @@ export class Battle {
       return !corrodes && Boolean(IMMUNE_TYPES[status]?.some((type) => types.includes(type)));
     }
     if (slug === 'leech-seed') return Boolean(defender.volatile.leechSeed) || types.includes('grass');
+    // A Yawn is a sleep on a delay, and whatever keeps sleep off keeps it off.
+    if (slug === 'yawn') {
+      const infiltrates = this.abilityOf(attacker)?.infiltrates;
+      if (this.field.sides[defender.side].safeguard > 0 && !infiltrates) return true;
+      if (defender.volatile.substitute > 0 && !infiltrates) return true;
+      return terrainBlocksStatus(this.field.terrain, STATUS.SLEEP) && this.grounded(defender);
+    }
     return false;
   }
 
@@ -3365,9 +3388,24 @@ export class Battle {
       case 'haze':
         return Boolean(defender) &&
           [attacker, defender].every((combatant) => Object.values(combatant.stages).every((stage) => stage === 0));
+      // The second running fails.
+      case 'destiny-bond':
+        return attacker.marks.lastDestinyBond === this.turn - 1;
       default:
         break;
     }
+
+    // A heal for itself at full health: "Its HP is full!" and nothing else.
+    // A Jungle Healing still has a condition to clear.
+    if (categoryOf(move) === 'heal' && (move.target === 'user' || move.target === 'user-and-allies')) {
+      const cures = SELF_CURING_HEALS.has(slug) && Boolean(attacker.pokemon.status);
+      if (attacker.pokemon.hp >= attacker.maxHp && !cures) return true;
+    }
+
+    // A move that does nothing but move stats, with every one of them already
+    // as far as it goes — a Withdraw at +6, a Charm at -6, a Growl into a
+    // Mist — which the games answer with "won't go any higher!".
+    if (this.statsAtLimit(attacker, defender, slug, move)) return true;
 
     if (!defender || defender === attacker) return false;
     const theirs = defender.volatile;
@@ -3397,9 +3435,42 @@ export class Battle {
         return this.typesOf(attacker).includes('ghost') && Boolean(theirs.cursed);
       case 'topsy-turvy':
         return Object.values(defender.stages).every((stage) => stage === 0);
+      // Both only work on a condition the target already has.
+      case 'venom-drench':
+        return defender.pokemon.status !== STATUS.POISON;
+      case 'purify':
+        return !defender.pokemon.status;
       default:
         return false;
     }
+  }
+
+  /**
+   * Whether a move that only shifts stats has nowhere left to shift any of
+   * them: each stage it raises already at +6, each it lowers at -6 or kept
+   * off by a Mist. A Contrary reads the direction the other way round.
+   *
+   * Moves that do something besides — a Charge's charge, a Memento's
+   * fainting, a Curse — are not judged here.
+   *
+   * @param {Combatant} attacker
+   * @param {Combatant|null} defender
+   * @param {string} slug
+   * @param {any} move
+   */
+  statsAtLimit(attacker, defender, slug, move) {
+    if (move.meta?.category !== 'net-good-stats' || !move.statChanges?.length) return false;
+    if (move.rules?.volatileStatus || move.rules?.selfdestruct || slug === 'venom-drench') return false;
+    return move.statChanges.every((change) => {
+      const own = change.self ?? change.change > 0;
+      const target = own ? attacker : defender;
+      if (!target) return false;
+      const shift = this.abilityOf(target)?.invertStages ? -change.change : change.change;
+      const stage = target.stages[STAGE_ALIASES[change.stat] ?? change.stat] ?? 0;
+      if (shift > 0) return stage >= 6;
+      const misted = !own && this.field.sides[target.side].mist > 0 && !this.abilityOf(attacker)?.infiltrates;
+      return misted || stage <= -6;
+    });
   }
 
   /**
@@ -5491,7 +5562,12 @@ export function cannotTouch(defender, move) {
  */
 function movesThatCanLand(defender, usable) {
   const left = usable.filter((slot) => !cannotTouch(defender, moveOf(slot.move)));
-  return left.length ? left : usable;
+  const pool = left.length ? left : usable;
+  // Even with nothing that works, a partner's move, a Roar or a Memento is
+  // the worst of the lot: they fail, or end the battle, or faint the user.
+  const tame = pool.filter((slot) =>
+    !neverAutomatic(slot.move) && !(moveOf(slot.move)?.damageClass === 'status' && SELF_KNOCKOUT.has(slot.move)));
+  return tame.length ? tame : pool;
 }
 
 /**
@@ -5516,6 +5592,8 @@ function movesWorthUsing(attacker, defender, usable) {
     // A move that needs a partner, or that sends the other Pokémon away
     // before it is beaten, is not something to reach for unasked.
     if (neverAutomatic(slot.move)) return false;
+    // Nor is fainting for a few stat drops, picked at random.
+    if (move.damageClass === 'status' && SELF_KNOCKOUT.has(slot.move)) return false;
     switch (categoryOf(move)) {
       case 'stat':
         return hasRoomToChange(move, attacker, defender);

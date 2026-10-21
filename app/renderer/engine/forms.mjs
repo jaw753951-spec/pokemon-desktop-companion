@@ -87,6 +87,28 @@ export const HELD_FORMES = new Map([
   ],
 ]);
 
+/** The types in the games' own order, which is the order the plates are numbered in. */
+const TYPE_ORDER = TYPES_WITH_PLATES.map(([, type]) => type);
+
+/**
+ * The sets a Pokémon collects a type at a time — Arceus's plates, Genesect's
+ * drives, Silvally's memories — each item with the place its type takes in
+ * the games' type order.
+ *
+ * @type {Map<string, {species: string, order: number}>}
+ */
+export const TYPE_SET_ITEMS = new Map(
+  ['arceus', 'genesect', 'silvally'].flatMap((species) =>
+    [...(HELD_FORMES.get(species) ?? [])].map(([item, { type }]) => [item, { species, order: TYPE_ORDER.indexOf(type ?? '') }]),
+  ),
+);
+
+/**
+ * Whether an item is one of those sets.
+ * @param {string} slug
+ */
+export const collectedByType = (slug) => TYPE_SET_ITEMS.has(slug);
+
 /**
  * The move whose type follows the held item, by species: Ivy Cudgel the mask,
  * Judgment the plate, Multi-Attack the memory, Techno Blast the drive.
