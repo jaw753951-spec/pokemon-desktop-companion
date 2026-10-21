@@ -1,72 +1,166 @@
-# 포켓몬 데스크탑 컴패니언 (Pokémon Desktop Companion)
+<div align="center">
+  <img src="dev/build/icon.png" width="128" alt="Pokémon Desktop Companion">
+  <h1>Pokémon Desktop Companion</h1>
+  <p>
+    A desktop tamagotchi: in a small window that always floats on top of your screen,<br>
+    a Pokémon travels, battles, farms items and grows up on its own.
+  </p>
+  <p>
+    <a href="https://github.com/jaw753951-spec/pokemon-destop-companion/releases/latest"><img src="https://img.shields.io/github/v/release/jaw753951-spec/pokemon-destop-companion?style=flat-square&label=release" alt="Latest release"></a>
+    <a href="https://github.com/jaw753951-spec/pokemon-destop-companion/releases"><img src="https://img.shields.io/github/downloads/jaw753951-spec/pokemon-destop-companion/total?style=flat-square" alt="Downloads"></a>
+    <img src="https://img.shields.io/badge/fan%20project-non--commercial-ef5350?style=flat-square" alt="Non-commercial fan project">
+  </p>
+  <p>
+    <a href="https://github.com/jaw753951-spec/pokemon-destop-companion/releases/latest"><img src="https://img.shields.io/badge/Windows-0078D6?style=flat-square&logo=windows&logoColor=white" alt="Windows"></a>
+    <a href="https://github.com/jaw753951-spec/pokemon-destop-companion/releases/latest"><img src="https://img.shields.io/badge/macOS-000000?style=flat-square&logo=apple&logoColor=white" alt="macOS"></a>
+    <a href="https://github.com/jaw753951-spec/pokemon-destop-companion/releases/latest"><img src="https://img.shields.io/badge/Linux-FCC624?style=flat-square&logo=linux&logoColor=black" alt="Linux"></a>
+  </p>
+  <img src=".github/readme/field.png" width="720" alt="The companion walking Route 101">
+</div>
 
-화면 위에 항상 떠 있는 작은 창 안에서 포켓몬이 혼자 여행하고, 싸우고, 아이템을 모으며 자라는
-데스크탑 다마고치입니다.
+> [!NOTE]
+> **This is a non-commercial fan project.** All rights to Pokémon and its related names, images and music
+> belong to Nintendo / Creatures Inc. / GAME FREAK inc.
 
-> **비상업 팬 프로젝트입니다.** Pokémon 및 관련 명칭·이미지·음악의 모든 권리는 Nintendo /
-> Creatures Inc. / GAME FREAK inc. 에 있습니다.
+## Download
 
-## 자동 저장
+Grab the file for your OS from the [latest release](https://github.com/jaw753951-spec/pokemon-destop-companion/releases/latest).
 
-진행은 **5분마다 자동 저장**됩니다. 설정의 **저장 후 메인 화면으로** / **저장 후 종료**로 직접 저장하고
-나갈 수도 있습니다.
-
-## 조작 방법
-
-- 창은 **항상 다른 창 위에** 떠 있습니다. 창 위쪽이나 게임 그림 바깥을 끌어 옮기면 위치가 기억됩니다.
-- **화면을 누르고 있으면 빨리 감깁니다.** 손을 떼면 원래 속도로 돌아옵니다.
-- 전투 중에는 화면을 누르면 메시지가 빨리 넘어갑니다.
-- 아래쪽 버튼으로 **가방 · 도감 · 설정 · 상점**을 엽니다. 메뉴를 열어도 포켓몬은 계속 걷습니다.
-
-## 여행
-
-포켓몬은 **호연**(에메랄드)과 **관동**(파이어레드)의 실제 맵을 걷습니다. **1분마다** 나무열매 · 아이템볼 ·
-야생 포켓몬 · 트레이너 중 하나가 일어나고, **이벤트 10번마다 다른 장소**로 옮겨 갑니다. 체력이나 회복약,
-볼이 떨어지면 포켓몬센터가 찾아옵니다.
-
-## 전투
-
-전투는 **자동전투**로 진행됩니다. 어떤 기술을 쓸지는 가방 → 포켓몬 탭의 **자동전투 설정**에서 정합니다.
-
-## 포획
-
-야생 포켓몬을 **전투에서 이기면** 화면 오른쪽 위 **포획 대기**에 올라갑니다. 아이콘을 누르면 포획 화면이
-열리고, 가방의 볼을 골라 **세 번까지** 던질 수 있습니다. 잡은 포켓몬은 박스에 들어갑니다.
-
-## 상점
-
-필드 오른쪽 아래의 **상점** 버튼으로 언제든 엽니다. 돈은 트레이너를 이기면 받고, 지면 냅니다.
-
-## 체육관
-
-체육관 관장은 트레이너 대신 나타나고, 이기면 **배지**를 받습니다. 배지마다 정해진 레벨(12, 20, 28 … 68)에
-닿으면 관장이 곧 찾아오므로, 레벨 70 언저리에서 배지 8개가 모입니다.
-
-## 포켓몬 리그
-
-**배지 8개를 모으면** 필드 아래쪽에 **포켓몬 리그로 간다** 버튼이 생깁니다. 사천왕 4명(레벨 70·72·74·76)과
-챔피언(레벨 80)을 차례로 이기면 챔피언이 됩니다. 중간에 **정비한다**로 나가도 이긴 곳부터 이어서 도전할 수 있습니다. 배지와 챔피언
-칭호는 포켓몬마다 따로입니다.
-
-## 설정
-
-| 탭 | 내용 |
+| OS | File |
 | --- | --- |
-| 화면 | 창 크기 |
-| 소리 | 음악 · 효과음 · 울음소리 음량 |
-| 언어 | 한국어 / English |
-| 크레딧 | 도트 작가 목록 |
+| Windows | `*-win-x64.zip` — unzip it and run `Pokemon Desktop Companion.exe` |
+| macOS | Apple silicon (M1 and later) `*-mac-arm64.dmg` · Intel `*-mac-x64.dmg` |
+| Linux | `*-linux-x86_64.AppImage` |
 
-## 크레딧
+### The first launch
 
-| 내용 | 출처 |
+This is a personal fan project with no signing certificate, so your OS will block it once. You only have to get
+past it the one time.
+
+- **Windows** — there is no installer; just unzip it. If a "Windows protected your PC" window appears, choose
+  **More info → Run anyway**.
+- **macOS** — **right-click the app → Open → Open**. If it is still blocked, run this in Terminal:
+  `xattr -dr com.apple.quarantine "/Applications/Pokemon Desktop Companion.app"`
+- **Linux** — `chmod +x *.AppImage`, then run it.
+
+### Good to know
+
+- The window is small and always stays on top. Hover over the top of the window and a drag
+  bar appears; its position and size are remembered.
+- The three save slots and your settings are stored outside the app (`userData`), so they survive an update.
+
+## Auto save
+
+Progress is **saved automatically every 5 minutes**. You can also save and leave yourself with **Save and return
+to title** / **Save and quit** in the settings.
+
+## Controls
+
+- The window **always floats above other windows**. Drag it by the top edge or anywhere outside the game picture
+  to move it, and the spot is remembered.
+- **Press and hold on the screen to fast-forward.** Let go and it returns to normal speed.
+- During a battle, pressing the screen skips through the messages faster.
+- The buttons along the bottom open the **Bag · Pokédex · Settings · Shop**. Your Pokémon keeps walking while a
+  menu is open.
+
+## The journey
+
+Your Pokémon walks the real maps of **Hoenn** (Emerald) and **Kanto** (FireRed). Along the way it comes across
+berry trees, item balls, wild Pokémon and trainers, and every so often it moves on to a new place. When it runs
+low on health, potions or balls, a Pokémon Center turns up.
+
+<table>
+  <tr>
+    <td width="50%" align="center"><img src=".github/readme/berry.png" alt="A berry tree on the road"><br><sub>A berry tree</sub></td>
+    <td width="50%" align="center"><img src=".github/readme/item-ball.png" alt="An item ball on the road"><br><sub>An item ball</sub></td>
+  </tr>
+  <tr>
+    <td width="50%" align="center"><img src=".github/readme/trainer.png" alt="A trainer waiting on the road"><br><sub>A trainer</sub></td>
+    <td width="50%" align="center"><img src=".github/readme/center.png" alt="A Pokémon Center on the road"><br><sub>A Pokémon Center</sub></td>
+  </tr>
+</table>
+
+## Battles
+
+Battles are fought **automatically**. Which moves get used is up to you, in **Auto-battle** under Bag → Pokémon.
+
+<table>
+  <tr>
+    <td width="50%" align="center"><img src=".github/readme/battle.png" alt="A wild battle"><br><sub>A wild battle</sub></td>
+    <td width="50%" align="center"><img src=".github/readme/auto-battle.png" alt="The auto-battle settings"><br><sub>Auto-battle settings</sub></td>
+  </tr>
+</table>
+
+## Catching
+
+**Win a battle** against a wild Pokémon and it goes up to **To catch** in the top right of the screen. Tap its
+icon to open the catch screen and pick a ball from your bag to throw. What you catch goes into your box.
+
+<table>
+  <tr>
+    <td width="50%" align="center"><img src=".github/readme/to-catch.png" alt="A Pokémon waiting to be caught"><br><sub>Waiting in To catch</sub></td>
+    <td width="50%" align="center"><img src=".github/readme/capture.png" alt="The catch screen"><br><sub>The catch screen</sub></td>
+  </tr>
+</table>
+
+## Shop
+
+Open it any time with the **Shop** button at the bottom right of the field. You earn money by beating trainers,
+and pay out when you lose to them.
+
+## Gyms
+
+Gym Leaders show up in place of trainers as your Pokémon grows, and beating one earns you a **badge**.
+
+<table>
+  <tr>
+    <td width="50%" align="center"><img src=".github/readme/gym.png" alt="Walking into a gym"><br><sub>A gym on the road</sub></td>
+    <td width="50%" align="center"><img src=".github/readme/badges.png" alt="The badge case"><br><sub>The badge case</sub></td>
+  </tr>
+</table>
+
+## The Pokémon League
+
+**Once you have 8 badges**, a **Head for the Pokémon League** button appears at the bottom of the field. Beat the Elite Four
+and then the Champion in turn to become Champion. If you leave partway with
+**Get ready**, you can pick up again from where you won. Badges and the Champion title are kept per Pokémon.
+
+<table>
+  <tr>
+    <td width="50%" align="center"><img src=".github/readme/elite-four.png" alt="An Elite Four battle"><br><sub>The Elite Four</sub></td>
+    <td width="50%" align="center"><img src=".github/readme/champion.png" alt="The Champion battle"><br><sub>The Champion</sub></td>
+  </tr>
+</table>
+
+## Bag, Pokédex and box
+
+<table>
+  <tr>
+    <td width="33%" align="center"><img src=".github/readme/bag.png" alt="The bag"><br><sub>Bag</sub></td>
+    <td width="33%" align="center"><img src=".github/readme/pokedex.png" alt="A Pokédex entry"><br><sub>Pokédex</sub></td>
+    <td width="33%" align="center"><img src=".github/readme/box.png" alt="The box"><br><sub>Box</sub></td>
+  </tr>
+</table>
+
+## Settings
+
+| Tab | What's in it |
 | --- | --- |
-| 포켓몬 데이터, 언어별 공식 명칭·설명 | [PokeAPI](https://github.com/PokeAPI/api-data) |
-| 포켓몬 도트 | 1~649번: 포켓몬 블랙·화이트 공식 도트 · 그 이후와 리전폼: [스모곤 스프라이트 프로젝트](https://www.smogon.com/forums/threads/sword-shield-sprite-project.3647722/) (작가 목록은 게임의 **설정 → 크레딧**) · [PokeAPI/sprites](https://github.com/PokeAPI/sprites) |
-| 울음소리 | [PokeAPI/cries](https://github.com/PokeAPI/cries) |
-| 맵 · 트레이너 도트 · 아이템 아이콘 · BGM | [pret/pokeemerald](https://github.com/pret/pokeemerald), [pret/pokefirered](https://github.com/pret/pokefirered) |
-| 기술 효과 · 분류 | [Pokémon Showdown](https://github.com/smogon/pokemon-showdown) |
-| 한국어 공식 텍스트 | [sv-text](https://github.com/Pokemon-Project-com/sv-text), [PokeMiners/pogo_assets](https://github.com/PokeMiners/pogo_assets) |
+| Display | Window size |
+| Sound | Music · sound effect · cry volume |
+| Language | 한국어 / English |
+| Credits | The list of sprite artists |
 
-Pokémon 및 관련 명칭·이미지·음악의 모든 권리는 Nintendo / Creatures Inc. / GAME FREAK inc. 에 있으며,
-이 게임은 비상업적 팬 프로젝트로서만 사용합니다.
+## Credits
+
+| What | Source |
+| --- | --- |
+| Pokémon data, official names and descriptions in each language | [PokeAPI](https://github.com/PokeAPI/api-data) |
+| Pokémon sprites | #1–649: the official Pokémon Black & White sprites · after that, and regional forms: the [Smogon Sprite Project](https://www.smogon.com/forums/threads/sword-shield-sprite-project.3647722/) (artists listed in the game under **Settings → Credits**) · [PokeAPI/sprites](https://github.com/PokeAPI/sprites) |
+| Cries | [PokeAPI/cries](https://github.com/PokeAPI/cries) |
+| Maps · trainer sprites · item icons · BGM | [pret/pokeemerald](https://github.com/pret/pokeemerald), [pret/pokefirered](https://github.com/pret/pokefirered) |
+| Move effects · categories | [Pokémon Showdown](https://github.com/smogon/pokemon-showdown) |
+| Official Korean text | [sv-text](https://github.com/Pokemon-Project-com/sv-text), [PokeMiners/pogo_assets](https://github.com/PokeMiners/pogo_assets) |
+
+<sub>All rights to Pokémon and its related names, images and music belong to Nintendo / Creatures Inc. /
+GAME FREAK inc. This game uses them solely as a non-commercial fan project.</sub>

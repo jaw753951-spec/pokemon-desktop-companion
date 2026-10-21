@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 
 import { NEEDS_ASSETS, useRealGameData } from './helpers/data.mjs';
@@ -37,19 +38,25 @@ function pocketOf(prefix, pocket, count) {
   return items;
 }
 
-test('every tier gets items, cheapest first', () => {
+test('every tier but the Master Ball\'s gets items, cheapest first', () => {
   const tiers = assignRarityTiers(pocketOf('m', 'medicine', 100));
-  for (const tier of BALL_TIERS) {
-    assert.ok(tiers[tier.ball].length > 0, `${tier.ball} should not be empty`);
-  }
-  // 60 / 25 / 12 / 3 split of a hundred items.
+  // 60 / 25 / 15 split of a hundred items.
   assert.equal(tiers['poke-ball'].length, 60);
   assert.equal(tiers['great-ball'].length, 25);
-  assert.equal(tiers['ultra-ball'].length, 12);
-  assert.equal(tiers['master-ball'].length, 3);
+  assert.equal(tiers['ultra-ball'].length, 15);
+  assert.equal(tiers['master-ball'].length, 0);
 
   assert.ok(tiers['poke-ball'].includes('m0'), 'the cheapest item is common');
-  assert.ok(tiers['master-ball'].includes('m99'), 'the priciest item is the rarest');
+  assert.ok(tiers['ultra-ball'].includes('m99'), 'the priciest item is as rare as the cut goes');
+});
+
+test('the Master Ball\'s pool is the Master Ball alone', () => {
+  const tiers = assignRarityTiers({
+    ...pocketOf('m', 'medicine', 100),
+    'master-ball': item({ pocket: 'pokeballs', cost: 100000 }),
+    'poke-ball': item({ pocket: 'pokeballs', cost: 200 }),
+  });
+  assert.deepEqual(tiers['master-ball'], ['master-ball']);
 });
 
 test('each pocket is split independently so no tier is monopolised', () => {
@@ -57,14 +64,47 @@ test('each pocket is split independently so no tier is monopolised', () => {
     ...pocketOf('m', 'medicine', 100),
     ...pocketOf('b', 'held-items', 20),
   });
-  const rarest = tiers['master-ball'];
-  assert.ok(rarest.some((name) => name.startsWith('m')), 'medicine reaches the rarest tier');
-  assert.ok(rarest.some((name) => name.startsWith('b')), 'a second pocket reaches the rarest tier');
+  const rarest = tiers['ultra-ball'];
+  assert.ok(rarest.some((name) => name.startsWith('m')), 'medicine reaches the rarest tier the cut makes');
+  assert.ok(rarest.some((name) => name.startsWith('b')), 'a second pocket reaches it too');
 });
 
 test('a berry never comes out of a ball on the road', () => {
   const tiers = assignRarityTiers({ ...pocketOf('m', 'medicine', 10), ...pocketOf('b', 'berries', 10) });
   assert.ok(!Object.values(tiers).flat().some((name) => name.startsWith('b')));
+});
+
+test('the shop\'s price ranks an item, not the record\'s', () => {
+  // PokeAPI's records carry no cost: every item at nothing used to be cut by name.
+  const items = pocketOf('m', 'medicine', 100);
+  for (const entry of Object.values(items)) entry.cost = 0;
+  const prices = new Map(Object.keys(items).map((name, index) => [name, (100 - index) * 100]));
+  const tiers = assignRarityTiers(items, {}, prices);
+  assert.ok(tiers['ultra-ball'].includes('m0'), 'the dearest in the shop is the rarest');
+  assert.ok(tiers['poke-ball'].includes('m99'), 'the cheapest is common');
+});
+
+test('items at one price are found in one tier', () => {
+  // Fifty-two at 100, then twenty at 500 across the 60% cut — eight short of
+  // it, twelve past — then the rest dearer.
+  const items = pocketOf('m', 'medicine', 100);
+  Object.keys(items).forEach((name, index) => {
+    items[name].cost = index < 52 ? 100 : index < 72 ? 500 : 1000 + index;
+  });
+  const tiers = assignRarityTiers(items);
+  const tierOf = (/** @type {string} */ name) => BALL_TIERS.findIndex((tier) => tiers[tier.ball].includes(name));
+  const tied = Object.keys(items).slice(52, 72).map(tierOf);
+  assert.equal(new Set(tied).size, 1, 'the twenty at 500 share a tier');
+  assert.equal(tied[0], 1, 'the one most of them fell in');
+});
+
+test('every Mint is as easy to find as every other', withData, () => {
+  /** @type {Record<string, string[]>} */
+  const itemTiers = JSON.parse(readFileSync(new URL('../../data/generated/item-tiers.json', import.meta.url), 'utf8'));
+  const mints = Object.keys(gameData().items).filter((slug) => slug.endsWith('-mint'));
+  assert.equal(mints.length, 21);
+  const tierOf = (/** @type {string} */ slug) => Object.keys(itemTiers).find((ball) => itemTiers[ball].includes(slug));
+  assert.equal(new Set(mints.map(tierOf)).size, 1);
 });
 
 test('a one-item pocket still lands somewhere', () => {
@@ -429,10 +469,10 @@ test('a Shiny Charm raises the odds on the road, is not sold, and is the first t
   assert.equal(itemOf('shiny-charm')?.pocket, 'key');
   assert.deepEqual(itemActions(session, 'shiny-charm'), { use: false, equip: false });
 
-  // Won: eight rolls of the usual one in 4096 — about one in 512.
+  // Won: fifteen rolls of the usual one in 4096 — about one in 274.
   session.addItem(championPrize(session));
-  assert.equal(session.shinyOdds, shinyOddsFor(8));
-  assert.ok(Math.abs(1 / session.shinyOdds - 512) < 3, `1 in ${Math.round(1 / session.shinyOdds)}`);
+  assert.equal(session.shinyOdds, shinyOddsFor(15));
+  assert.ok(Math.abs(1 / session.shinyOdds - 274) < 2, `1 in ${Math.round(1 / session.shinyOdds)}`);
   // And the wild roll uses what it is handed.
   const area = session.area ?? { tags: ['grass'], encounters: [] };
   assert.equal(rollWildPokemon(new Rng(2), area, session.active, null, new Set(), 1).shiny, true);

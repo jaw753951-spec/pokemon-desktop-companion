@@ -66,7 +66,10 @@ export async function loadGameData() {
     loadJson('authored', 'ability-texts.json').then((file) => file.abilities ?? {}).catch(() => ({})),
   ]);
   mendItems(items, itemTexts);
-  nameItemUsers(items, species);
+  // Imported here rather than at the top: the engine reads this module, and
+  // the formes table is only wanted once everything has loaded.
+  const { signatureItems } = await import('../engine/forms.mjs');
+  nameItemUsers(items, species, signatureItems());
   // Moves take the same patch: the newest ones come through with only the
   // English description, and the Korean screen showed it as it was.
   mendItems(moves, moveTexts);
@@ -109,25 +112,50 @@ export function mendItems(items, authored) {
  * of saying whose it is; an item several Pokémon use — a Fire Stone, a
  * Linking Cord — keeps its wording.
  *
+ * The items that exist for one species' sake get the same: a memory "changes
+ * the type of the holder if held by a certain species of Pokémon", and that
+ * species is Silvally. One whose description already names its species —
+ * the DNA Splicers' "certain Pokémon" is the one Kyurem fuses with — keeps
+ * its wording.
+ *
  * @param {Record<string, any>} items
  * @param {Record<string, any>} species
+ * @param {Map<string, string[]>} [signature] item slug to the species slugs
+ *   it is for, from the formes table
  */
-export function nameItemUsers(items, species) {
+export function nameItemUsers(items, species, signature = new Map()) {
   /** Who uses each item, by name — a regional form shares its species' name. @type {Map<string, Map<string, any>>} */
   const users = new Map();
+  /** @param {string} item @param {any} entry */
+  const add = (item, entry) => {
+    if (!users.has(item)) users.set(item, new Map());
+    users.get(item)?.set(entry.name.en ?? entry.slug, entry.name);
+  };
   for (const entry of Object.values(species ?? {})) {
     for (const evolution of entry.evolutions ?? []) {
       for (const item of [evolution.item, evolution.heldItem]) {
-        if (!item || !entry.name) continue;
-        if (!users.has(item)) users.set(item, new Map());
-        users.get(item)?.set(entry.name.en ?? entry.slug, entry.name);
+        if (item && entry.name) add(item, entry);
       }
     }
   }
+  const bySlug = new Map(Object.values(species ?? {}).map((entry) => [entry.slug, entry]));
+  /** The items named for the formes table rather than for an evolution. */
+  const signed = new Set();
+  for (const [item, slugs] of signature) {
+    for (const slug of slugs) {
+      const entry = bySlug.get(slug);
+      if (entry?.name) add(item, entry);
+    }
+    signed.add(item);
+  }
   for (const [slug, named] of users) {
     const item = items?.[slug];
-    if (named.size !== 1 || item?.category !== 'evolution' || !item.text) continue;
+    if (named.size !== 1 || !item?.text) continue;
+    if (item.category !== 'evolution' && !signed.has(slug)) continue;
     const [name] = named.values();
+    const names = (/** @type {string} */ lang) => Boolean(name[lang] && item.text[lang]?.includes(name[lang]));
+    // Not asked of an evolution item: a Magmarizer's 마그마의 에너지 is magma, not Magmar.
+    if (signed.has(slug) && (names('ko') || names('en'))) continue;
     if (item.text.ko && name.ko) {
       item.text.ko = item.text.ko.replace(/(?:어느 특정|어떤|특정) 포켓몬(이|을|은|과)?(?!들)/, (_, particle) => {
         if (!particle) return name.ko;

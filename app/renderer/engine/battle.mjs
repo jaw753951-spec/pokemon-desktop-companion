@@ -2385,7 +2385,7 @@ export class Battle {
         ? choosePolicyMove(this, attacker, defender, usable)
         : (attacker.side === 'foe' ? chooseFoeMove(this, attacker, defender, usable) : null)
           ?? bestDamageMove(this, attacker, defender, usable)
-          ?? this.rng.pick(movesWorthUsing(attacker, defender, usable)).move;
+          ?? this.rng.pick(movesWorthUsing(this, attacker, defender, usable)).move;
 
     if (restriction?.lock) attacker.lockedMove = chosen;
     return chosen;
@@ -5523,8 +5523,9 @@ export function bestDamageMove(battle, attacker, defender, usable) {
   let bestScore = -1;
 
   for (const slot of usable) {
-    const move = moveOf(slot.move);
-    if (!move || move.damageClass === 'status') continue;
+    const entry = moveOf(slot.move);
+    if (!entry || entry.damageClass === 'status') continue;
+    const move = asItWouldLeave(battle, attacker, defender, entry);
     // A type the other side simply does not take is not a choice; the games'
     // own trainers will not throw one either.
     if (cannotTouch(defender, move)) continue;
@@ -5553,15 +5554,47 @@ export function cannotTouch(defender, move) {
 }
 
 /**
+ * A move as it would leave this turn, for weighing it up before it is used:
+ * a Judgment the type of its plate, a Multi-Attack its memory's, a Weather
+ * Ball the weather's, a Pixilate's Normal moves Fairy. Weighed as the bare
+ * entry, a Ghost Judgment was thrown out as a Normal move a Gengar cannot
+ * take, and a Fire one scored below a Body Slam against a Venusaur.
+ *
+ * @param {Battle} battle
+ * @param {Combatant} attacker
+ * @param {Combatant} defender
+ * @param {any} move
+ */
+export function asItWouldLeave(battle, attacker, defender, move) {
+  return battle.effectiveMove(attacker, defender, move, battle.slugOf(move), { peek: true });
+}
+
+/**
+ * {@link cannotTouch}, asked of the move as it would leave rather than its
+ * bare entry.
+ *
+ * @param {Battle} battle
+ * @param {Combatant} attacker
+ * @param {Combatant} defender
+ * @param {any} move
+ */
+function cannotTouchAsUsed(battle, attacker, defender, move) {
+  if (!move || move.damageClass === 'status') return false;
+  return cannotTouch(defender, asItWouldLeave(battle, attacker, defender, move));
+}
+
+/**
  * The moves worth reaching for at all: everything but the attacks that cannot
  * land. An empty answer means every move is one of those, and the caller may
  * as well use any of them.
  *
+ * @param {Battle} battle
+ * @param {Combatant} attacker
  * @param {Combatant} defender
  * @param {Array<{move: string, pp: number}>} usable
  */
-function movesThatCanLand(defender, usable) {
-  const left = usable.filter((slot) => !cannotTouch(defender, moveOf(slot.move)));
+function movesThatCanLand(battle, attacker, defender, usable) {
+  const left = usable.filter((slot) => !cannotTouchAsUsed(battle, attacker, defender, moveOf(slot.move)));
   const pool = left.length ? left : usable;
   // Even with nothing that works, a partner's move, a Roar or a Memento is
   // the worst of the lot: they fail, or end the battle, or faint the user.
@@ -5580,15 +5613,16 @@ function movesThatCanLand(defender, usable) {
  * take, a stage at its limit, a condition already in place, a heal at full
  * health — so nothing subtle is ruled out by guesswork.
  *
+ * @param {Battle} battle
  * @param {Combatant} attacker
  * @param {Combatant} defender
  * @param {Array<{move: string, pp: number}>} usable
  */
-function movesWorthUsing(attacker, defender, usable) {
+function movesWorthUsing(battle, attacker, defender, usable) {
   const worth = usable.filter((slot) => {
     const move = moveOf(slot.move);
     if (!move) return false;
-    if (cannotTouch(defender, move)) return false;
+    if (cannotTouchAsUsed(battle, attacker, defender, move)) return false;
     // A move that needs a partner, or that sends the other Pokémon away
     // before it is beaten, is not something to reach for unasked.
     if (neverAutomatic(slot.move)) return false;
@@ -5605,7 +5639,7 @@ function movesWorthUsing(attacker, defender, usable) {
         return true;
     }
   });
-  return worth.length ? worth : movesThatCanLand(defender, usable);
+  return worth.length ? worth : movesThatCanLand(battle, attacker, defender, usable);
 }
 
 /**
@@ -5637,8 +5671,9 @@ function slugOfEntry(move) {
  * @param {any} move
  */
 export function expectedDamage(attacker, defender, move) {
-  // The fixed-damage moves are worth what they take.
-  const slug = slugOfEntry(move);
+  // The fixed-damage moves are worth what they take. A move already made
+  // over by `asItWouldLeave` carries its slug; the bare entry is looked up.
+  const slug = move.slug ?? slugOfEntry(move);
   const fixed = estimatedFixedDamage(attacker, defender, move, slug);
   if (fixed !== null) return fixed * ((move.accuracy ?? 100) / 100);
   const weighed = weightPower(
@@ -5751,7 +5786,7 @@ export function choosePolicyMove(battle, attacker, defender, usable) {
     // What cannot do anything in a battle of one against one, or would end it
     // unwon, is never reached for by the policy.
     if (neverAutomatic(slot.move)) continue;
-    if (!worthReachingFor(move, categoryOf(move), attacker, defender)) continue;
+    if (!worthReachingFor(battle, move, categoryOf(move), attacker, defender)) continue;
     candidates.push({ move: slot.move, first: moveCondition(policy, slot.move), second: secondCondition(policy, slot.move) });
   }
 
@@ -5773,7 +5808,7 @@ export function choosePolicyMove(battle, attacker, defender, usable) {
   // Nothing the policy allows applies this turn. Rather than stand there
   // repeating an attack the other side cannot take — which never ends and
   // never even reads as a mistake — the fallback is anything that can land.
-  const worth = movesWorthUsing(attacker, defender, usable);
+  const worth = movesWorthUsing(battle, attacker, defender, usable);
   return bestDamageMove(battle, attacker, defender, worth) ?? battle.rng.pick(worth).move;
 }
 
@@ -5782,15 +5817,16 @@ export function choosePolicyMove(battle, attacker, defender, usable) {
  * other side can take, a stat move with a stage left to move, a status for a
  * foe not already suffering one, a heal with health to put back.
  *
+ * @param {Battle} battle
  * @param {any} move
  * @param {string} category
  * @param {Combatant} attacker
  * @param {Combatant} defender
  */
-function worthReachingFor(move, category, attacker, defender) {
+function worthReachingFor(battle, move, category, attacker, defender) {
   switch (category) {
     case 'damage':
-      return !cannotTouch(defender, move);
+      return !cannotTouchAsUsed(battle, attacker, defender, move);
     case 'stat':
       return hasRoomToChange(move, attacker, defender);
     case 'status':
@@ -5886,8 +5922,10 @@ function conditionHolds(condition, battle, attacker, defender, slug) {
     }
     // This move, as it would land now, looks enough to finish the foe.
     case 'canFinish': {
-      const move = moveOf(slug);
-      if (!move || move.damageClass === 'status' || cannotTouch(defender, move)) return false;
+      const entry = moveOf(slug);
+      if (!entry || entry.damageClass === 'status') return false;
+      const move = asItWouldLeave(battle, attacker, defender, entry);
+      if (cannotTouch(defender, move)) return false;
       return expectedDamage(attacker, defender, move) >= defender.pokemon.hp;
     }
     case 'foePhysical':

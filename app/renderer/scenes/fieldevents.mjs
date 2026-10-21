@@ -614,7 +614,7 @@ function firstRunSupply(session, count) {
  * Which potion is the one the level has any use for: five Potions are a
  * kindness at level ten and a rounding error at fifty.
  */
-const SUPPLY_COUNT = 8;
+const SUPPLY_COUNT = 12;
 
 /** @type {Array<{level: number, item: string}>} highest level last */
 const SUPPLIES = [

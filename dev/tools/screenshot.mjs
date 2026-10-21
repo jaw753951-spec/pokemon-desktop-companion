@@ -2,7 +2,7 @@
 /**
  * Capture the running game, for checking screens without a desktop.
  *
- *   xvfb-run -a npx electron tools/screenshot.mjs [--out shots] [--wait 4000] [--until 15-auto-condition]
+ *   xvfb-run -a npx electron tools/screenshot.mjs [--out shots] [--wait 4000] [--until 15-auto-condition] [--lang en] [--hour 12]
  *
  * This is an alternative Electron entry point that boots the real main process
  * modules, then drives the renderer through a short script of clicks so each
@@ -18,17 +18,31 @@ import { join } from 'node:path';
 // starter screen — so the whole script would photograph the wrong screens.
 // `userData` decides where that save lands and is read as `paths.mjs` loads,
 // which is why the main-process modules are imported after it moves.
-app.setPath('userData', await mkdtemp(join(tmpdir(), 'pdc-shots-')));
-
-const { registerHandlers, registerProtocolHandler, registerProtocolScheme } = await import('../../app/main/ipc.mjs');
-const { loadSettings } = await import('../../app/main/settings.mjs');
-const { createWindow } = await import('../../app/main/window.mjs');
+const userData = await mkdtemp(join(tmpdir(), 'pdc-shots-'));
+app.setPath('userData', userData);
 
 const args = process.argv.slice(2);
 const option = (flag, fallback) => {
   const index = args.indexOf(flag);
   return index >= 0 ? args[index + 1] : fallback;
 };
+
+// The screens in another language than the sheet's default (`--lang en`),
+// written where the settings are read from before anything reads them.
+const LANGUAGE = option('--lang', null);
+if (LANGUAGE) await writeFile(join(userData, 'settings.json'), JSON.stringify({ language: LANGUAGE }));
+
+/**
+ * The hour the field is lit for (`--hour 12`), whatever the clock says: the
+ * road is graded by the local time, and a run at midnight photographs every
+ * screen in the dark. Only "now" is moved, by that hour; a date built from
+ * numbers, and every timer, is left alone.
+ */
+const HOUR = option('--hour', null);
+
+const { registerHandlers, registerProtocolHandler, registerProtocolScheme } = await import('../../app/main/ipc.mjs');
+const { loadSettings } = await import('../../app/main/settings.mjs');
+const { createWindow } = await import('../../app/main/window.mjs');
 
 const OUT_DIR = option('--out', join(process.cwd(), 'shots'));
 const SETTLE_MS = Number(option('--wait', '2500'));
@@ -151,6 +165,18 @@ app.whenReady().then(async () => {
   await mkdir(OUT_DIR, { recursive: true });
 
   window.webContents.on('console-message', (_event, _level, message) => console.log(`[renderer] ${message}`));
+  if (HOUR !== null) {
+    await window.webContents.executeJavaScript(`{
+      const Real = Date;
+      window.Date = class extends Real {
+        constructor(...args) {
+          super(...args);
+          if (args.length === 0) this.setHours(${Number(HOUR)});
+        }
+      };
+    }
+    true;`);
+  }
 
   await delay(SETTLE_MS);
 
@@ -185,6 +211,13 @@ const clickImageAlt = (alts) => {
 };
 const app = () => window.__pdcApp;
 const closeAll = () => {
+  // A picker left open sits over the screens rather than on the stack, and was
+  // photographed over the Pokédex: it is cancelled first.
+  for (const modal of document.querySelectorAll('.modal')) {
+    const cancel = [...modal.querySelectorAll('button')].find((node) => ['취소', 'Cancel'].includes(node.textContent.trim()));
+    if (cancel) cancel.click();
+    else modal.remove();
+  }
   // Press the screen's own close button where there is one: popping the stack
   // skips the handler that unpauses the field and puts the companion back on
   // the path, which left later field shots with an empty patch of grass.

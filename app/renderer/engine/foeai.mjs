@@ -22,7 +22,7 @@
  * cannot land — never reaches here (see `Battle.stillAllowed`).
  */
 import { moveOf, typeEffectiveness } from '../core/data.mjs';
-import { categoryOf, cannotTouch, companionArmour, expectedDamage } from './battle.mjs';
+import { asItWouldLeave, categoryOf, cannotTouch, companionArmour, expectedDamage } from './battle.mjs';
 import { FIELD_MOVES } from './field.mjs';
 import { neverAutomatic } from './moveeffects.mjs';
 import { PROTECT_MOVES } from './volatile.mjs';
@@ -93,8 +93,10 @@ export function sizeUp(battle, attacker, defender, usable) {
   const classes = new Set();
   const left = Math.max(1, defender.pokemon.hp);
   for (const slot of usable) {
-    const move = moveOf(slot.move);
-    if (!move || move.damageClass === 'status') continue;
+    const entry = moveOf(slot.move);
+    if (!entry || entry.damageClass === 'status') continue;
+    // As it would leave: a Judgment is weighed as its plate's type.
+    const move = asItWouldLeave(battle, attacker, defender, entry);
     classes.add(move.damageClass);
     if (cannotTouch(defender, move)) continue;
     const armour = companionArmour(defender, typeEffectiveness(move.type, battle.typesOf(defender)));
@@ -165,7 +167,7 @@ export function expectedThreat(battle, attacker, defender) {
   const remembered = defender.side === 'player' && battle.trainerBattle ? battle.seenMoves : [];
   for (const slug of remembered) {
     const move = moveOf(slug);
-    if (move && move.damageClass !== 'status') moves.push(move);
+    if (move && move.damageClass !== 'status') moves.push(asItWouldLeave(battle, defender, attacker, move));
   }
 
   let threat = 0;
