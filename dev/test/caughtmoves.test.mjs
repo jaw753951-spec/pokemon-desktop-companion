@@ -47,4 +47,14 @@ test('an evolution item only one Pokémon uses names it', options, () => {
   assert.match(items['masterpiece-teacup'].text.ko, /차데스를 진화시키는/);
   // Several users: the game's own wording stays.
   assert.match(items['fire-stone'].text.ko, /어느 특정 포켓몬/);
+  // And not on a name that is only a word: a Magmarizer's 마그마 is magma.
+  assert.match(items.magmarizer.text.ko, /마그마가 좋아하는/);
+});
+
+test('an item made for one species names it', options, () => {
+  const { items } = gameData();
+  assert.match(items['fire-memory'].text.ko, /실버디가 지니면/);
+  assert.match(items['fire-memory'].text.en, /held by Silvally/);
+  assert.match(items['red-nectar'].text.ko, /춤추새의 모습을/);
+  assert.match(items['red-nectar'].text.en, /form of Oricorio/);
 });

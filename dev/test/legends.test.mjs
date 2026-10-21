@@ -10,7 +10,7 @@ import { NEEDS_ASSETS, useRealGameData } from './helpers/data.mjs';
 import { Rng } from '../../app/renderer/core/rng.mjs';
 import { gameData, moveOf, speciesIdBySlug } from '../../app/renderer/core/data.mjs';
 import { abilityName } from '../../app/renderer/engine/abilities.mjs';
-import { Battle } from '../../app/renderer/engine/battle.mjs';
+import { Battle, choosePolicyMove } from '../../app/renderer/engine/battle.mjs';
 import { WEATHER } from '../../app/renderer/engine/field.mjs';
 import {
   settleForme,
@@ -156,6 +156,31 @@ test('a held crystal, plate, memory or drive is a shape worn everywhere', option
   const drive = fight(genesect);
   assert.equal(drive.effectiveMove(drive.player, drive.foe, moveOf('techno-blast')).type, 'ice');
   assert.deepEqual(drive.typesOf(drive.player), ['bug', 'steel'], 'a drive changes the move, not the Pokémon');
+});
+
+test('the auto battle weighs a Judgment or a Multi-Attack as the type it leaves as', options, () => {
+  const pick = (/** @type {any} */ player, /** @type {any} */ foe, seed = 3) => {
+    const battle = fight(player, { foes: [foe], rng: new Rng(seed) });
+    return choosePolicyMove(battle, battle.player, /** @type {any} */ (battle.foe), player.moves);
+  };
+  // A Ghost Judgment is not a Normal move a Gengar cannot take — which left
+  // it a coin toss with the Tackle that really cannot.
+  const ghost = make('arceus', 60, ['tackle', 'judgment']);
+  ghost.heldItem = 'spooky-plate';
+  settleForme(ghost);
+  for (let seed = 1; seed <= 8; seed++) assert.equal(pick(ghost, make('gengar', 60, ['tackle']), seed), 'judgment');
+
+  // A Fire one on a Venusaur outhits a Body Slam.
+  const fire = make('arceus', 60, ['body-slam', 'judgment']);
+  fire.heldItem = 'flame-plate';
+  settleForme(fire);
+  assert.equal(pick(fire, make('venusaur', 60, ['tackle'])), 'judgment');
+
+  // A Fighting Multi-Attack on a Snorlax, the same.
+  const silvally = make('silvally', 60, ['body-slam', 'multi-attack']);
+  silvally.heldItem = 'fighting-memory';
+  settleForme(silvally);
+  assert.equal(pick(silvally, make('snorlax', 60, ['tackle'])), 'multi-attack');
 });
 
 test('a key item steps its legendary through its shapes and is kept', options, () => {

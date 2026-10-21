@@ -12,7 +12,9 @@ import { crop, opaqueBounds } from '../lib/image.mjs';
 import { defaultLanguage } from '../../../app/shared/languages.mjs';
 import { LANGUAGES } from '../languages.mjs';
 import { BALL_TIERS, SPRITES } from '../sources.mjs';
+import { setGameData } from '../../../app/renderer/core/data.mjs';
 import { signatureItems } from '../../../app/renderer/engine/forms.mjs';
+import { priceOf } from '../../../app/renderer/engine/shop.mjs';
 
 /**
  * The language the tiers and the generated document are judged in: an item with
@@ -73,14 +75,42 @@ export async function buildItems({ assetDir, dataDir, docsDir, log, pool }) {
     if (item.pocket === 'machines') item.move = machines[name] ?? null;
   }
 
-  const tiers = assignRarityTiers(items, moves);
+  const prices = await shopPrices(dataDir, items, moves);
+  const tiers = assignRarityTiers(items, moves, prices);
   await writeOut(join(dataDir, 'items.json'), JSON.stringify(items));
   await writeOut(join(dataDir, 'item-tiers.json'), JSON.stringify(tiers));
-  await writeOut(join(docsDir, 'item-rarity.md'), renderTierDocument(items, tiers, moves));
+  await writeOut(join(docsDir, 'item-rarity.md'), renderTierDocument(items, tiers, moves, prices));
 
   log(`item icons ${saved}/${Object.keys(items).length} (${withoutIcon.length} without art)`);
   for (const tier of BALL_TIERS) log(`  ${tier.ball.padEnd(12)} ${tiers[tier.ball].length} items @ ${tier.chance}%`);
   return tiers;
+}
+
+/**
+ * What the shop asks for every item it sells, worked out by the game's own
+ * `priceOf` over the data just built — the one price list there is, since
+ * PokeAPI's records carry none.
+ *
+ * @param {string} dataDir
+ * @param {Record<string, any>} items
+ * @param {Record<string, any>} moves
+ * @returns {Promise<Map<string, number>>}
+ */
+async function shopPrices(dataDir, items, moves) {
+  // An evolution item is priced up, which takes the species to tell.
+  const species = JSON.parse(await readFile(join(dataDir, 'species.json'), 'utf8'));
+  setGameData(/** @type {any} */ ({ items, moves, species }));
+  try {
+    /** @type {Map<string, number>} */
+    const prices = new Map();
+    for (const name of Object.keys(items)) {
+      const price = priceOf(name);
+      if (price !== null) prices.set(name, price);
+    }
+    return prices;
+  } finally {
+    setGameData(null);
+  }
 }
 
 /**
@@ -335,20 +365,35 @@ function shrunk(source, size) {
 /**
  * Split the droppable items into one pool per ball tier.
  *
- * Rarity follows the games' own economy — shop cost first, with held items and
- * TMs weighted up because they are permanent gains here — but the cut points
- * are quantiles rather than fixed prices. Absolute prices cluster badly (most
- * of the dex's items are worth a few hundred, and the truly rare ones are
- * priceless, so they read as free), and quantiles guarantee every tier has
- * something to hand out.
+ * Rarity follows the game's own economy — the shop's price first, with held
+ * items and TMs weighted up because they are permanent gains here — but the
+ * cut points are quantiles rather than fixed prices. Absolute prices cluster
+ * badly (most of the dex's items are worth a few hundred, and the truly rare
+ * ones are priceless, so they read as free), and quantiles guarantee every
+ * tier has something to hand out.
+ *
+ * The prices are the shop's (`priceOf`), handed in by the build: PokeAPI's
+ * records stopped carrying a cost, and with every item at nothing the cut
+ * fell by name — a Potion rarer than a Hyper Potion, and the Timid Mint
+ * alone of the twenty-one in the Master Ball's pool, for being last in the
+ * alphabet. Items at one price are found in one tier: the cut goes where
+ * most of them would have fallen.
+ *
+ * The Master Ball's own pool is the Master Ball and nothing else: a one in a
+ * thousand ball is the sure catch, and what was cut into it beside — the
+ * Ability Patch, the Lucky Egg, the strongest TMs — sits at the top of the
+ * Ultra Ball's instead.
  *
  * @param {Record<string, any>} items
  * @param {Record<string, any>} moves keyed by move name, for scoring TMs
+ * @param {Map<string, number>} [prices] what the shop asks for each item it sells
  * @returns {Record<string, string[]>}
  */
-export function assignRarityTiers(items, moves = {}) {
+export function assignRarityTiers(items, moves = {}, prices = new Map()) {
   /** @type {Map<string, Array<{name: string, score: number}>>} */
   const byPocket = new Map();
+  /** @type {Record<string, string[]>} */
+  const tiers = Object.fromEntries(BALL_TIERS.map((tier) => [tier.ball, []]));
   // What a TM or an HM teaches, so a record that teaches the same can be left
   // out.
   const taughtByMachine = new Set(
@@ -372,8 +417,13 @@ export function assignRarityTiers(items, moves = {}) {
     if (SIGNATURE.has(name)) continue;
     if (EXCLUDED_CATEGORIES.has(item.category)) continue;
     if (unnamed(item)) continue;
+    if (MASTER_TIER_ONLY.has(name)) {
+      tiers[MASTER_TIER.ball].push(name);
+      continue;
+    }
 
-    let score = item.cost > 0 ? item.cost : UNPRICED_SCORE[item.pocket] ?? 3000;
+    const price = prices.get(name) ?? item.cost;
+    let score = price > 0 ? price : UNPRICED_SCORE[item.pocket] ?? 3000;
     // Every TM is priced the same in the data, so rank them by the move they
     // teach instead — otherwise the rarest tiers fill up with TMs in number
     // order and nothing else.
@@ -385,28 +435,45 @@ export function assignRarityTiers(items, moves = {}) {
     byPocket.set(item.pocket, list);
   }
 
-  /** @type {Record<string, string[]>} */
-  const tiers = Object.fromEntries(BALL_TIERS.map((tier) => [tier.ball, []]));
-
   // Quantiles are taken per pocket rather than over the whole pool, so that
   // every tier offers a mix of medicine, berries, held items, balls and TMs
   // instead of one pocket monopolising the rare end.
   for (const list of byPocket.values()) {
-    // Ties must not straddle a tier boundary unpredictably, so sort by name too.
     list.sort((a, b) => a.score - b.score || a.name.localeCompare(b.name));
-    let start = 0;
-    BALL_TIERS.forEach((tier, index) => {
-      const end = index === BALL_TIERS.length - 1
-        ? list.length
-        : Math.round(list.length * TIER_QUANTILES[index]);
-      const slice = list.slice(start, Math.max(end, Math.min(start + 1, list.length)));
-      tiers[tier.ball].push(...slice.map((entry) => entry.name));
-      start = Math.max(end, Math.min(start + 1, list.length));
-    });
+    const tierAt = quantileTiers(list.length);
+    // One run of equal scores at a time, into the tier its middle falls in.
+    for (let start = 0; start < list.length;) {
+      let end = start + 1;
+      while (end < list.length && list[end].score === list[start].score) end++;
+      const tier = QUANTILE_TIERS[tierAt[Math.floor((start + end - 1) / 2)]];
+      tiers[tier.ball].push(...list.slice(start, end).map((entry) => entry.name));
+      start = end;
+    }
   }
 
   for (const list of Object.values(tiers)) list.sort();
   return tiers;
+}
+
+/**
+ * Which tier each place in a pocket of `count` items, cheapest first, falls
+ * in by the quantiles alone: an index into `QUANTILE_TIERS`. Every tier gets
+ * at least one place while there are places to go round.
+ *
+ * @param {number} count
+ * @returns {number[]}
+ */
+function quantileTiers(count) {
+  /** @type {number[]} */
+  const out = [];
+  let start = 0;
+  QUANTILE_TIERS.forEach((tier, index) => {
+    const end = index === QUANTILE_TIERS.length - 1 ? count : Math.round(count * TIER_QUANTILES[index]);
+    const stop = Math.max(end, Math.min(start + 1, count));
+    while (out.length < stop) out.push(index);
+    start = stop;
+  });
+  return out;
 }
 
 /**
@@ -431,8 +498,17 @@ const POCKET_LABELS = {
   misc: '도구',
 };
 
-/** Cumulative share of the item pool below each tier boundary. */
-const TIER_QUANTILES = [0.6, 0.85, 0.97];
+/** The rarest tier, which the cut never reaches. */
+const MASTER_TIER = BALL_TIERS[BALL_TIERS.length - 1];
+
+/** What the Master Ball's pool holds, and all it holds. */
+const MASTER_TIER_ONLY = new Set(['master-ball']);
+
+/** The tiers the quantiles share out, commonest first. */
+const QUANTILE_TIERS = BALL_TIERS.slice(0, -1);
+
+/** Cumulative share of the item pool below each boundary between them. */
+const TIER_QUANTILES = [0.6, 0.85];
 
 /** Categories that would be meaningless or game-breaking as a field pickup. */
 /** The items that are one species' own. */
@@ -466,8 +542,9 @@ const UNPRICED_SCORE = {
  * @param {Record<string, any>} items
  * @param {Record<string, string[]>} tiers
  * @param {Record<string, any>} moves
+ * @param {Map<string, number>} [prices]
  */
-function renderTierDocument(items, tiers, moves = {}) {
+function renderTierDocument(items, tiers, moves = {}, prices = new Map()) {
   const lines = [
     '# 아이템 희귀도 티어',
     '',
@@ -488,7 +565,7 @@ function renderTierDocument(items, tiers, moves = {}) {
       const item = items[name];
       const note = item.pocket === 'machines'
         ? label(moves[item.move], item.move ?? '-')
-        : item.cost > 0 ? `${item.cost}원` : '-';
+        : prices.has(name) ? `${prices.get(name)}원` : '-';
       lines.push(`| ${label(item, name)} | ${POCKET_LABELS[item.pocket] ?? item.pocket} | ${note} |`);
     }
     lines.push('');

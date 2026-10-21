@@ -41,6 +41,7 @@
 import { moveOf } from '../core/data.mjs';
 import { categoryOf, FIRST_TURN_ONLY } from './battle.mjs';
 import { FIELD_MOVES } from './field.mjs';
+import { signatureType } from './forms.mjs';
 import { neverAutomatic, RETALIATES } from './moveeffects.mjs';
 import { statsOf } from './pokemon.mjs';
 import { PROTECT_MOVES } from './volatile.mjs';
@@ -124,7 +125,11 @@ export function profileOf(pokemon) {
   const stats = statsOf(pokemon);
   const slugs = new Set(pokemon.moves.map((slot) => slot.move).filter((slug) => moveOf(slug)));
   const attacks = [...slugs]
-    .map((slug) => ({ slug, move: moveOf(slug) }))
+    .map((slug) => {
+      // A Judgment is the type of the plate behind it, which is what a Sunny Day is weighed against.
+      const type = signatureType(pokemon, slug);
+      return { slug, move: type ? { ...moveOf(slug), type } : moveOf(slug) };
+    })
     .filter(({ move }) => move.damageClass !== 'status');
   const classes = new Set(attacks.filter(({ move }) => move.power).map(({ move }) => move.damageClass));
   const leaning = stats.atk >= stats.spa ? 'physical' : 'special';
