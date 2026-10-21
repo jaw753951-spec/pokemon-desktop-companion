@@ -294,10 +294,20 @@ export function abilitySlot(pokemon) {
  */
 export const DEFAULT_ATTACK = 'tackle';
 
-/** Whether a move actually does damage, as opposed to setting something up. */
+/**
+ * The attacks that only answer one: they do nothing until the other side has
+ * hit first, so they are no way to start a fight.
+ */
+const ANSWERING_ATTACKS = new Set(['counter', 'mirror-coat', 'metal-burst', 'bide', 'comeuppance']);
+
+/**
+ * Whether a move actually does damage, as opposed to setting something up. A
+ * Low Kick, a Seismic Toss or a Night Shade has no listed power, its damage
+ * worked out as it lands, and hits all the same.
+ */
 export const isAttack = (slug) => {
   const move = moveOf(slug);
-  return Boolean(move && move.damageClass !== 'status' && (move.power ?? 0) > 0);
+  return Boolean(move && move.damageClass !== 'status' && ((move.power ?? 0) > 0 || !ANSWERING_ATTACKS.has(slug)));
 };
 
 /** The level every Pokémon is when it is caught, whatever level it was met at. */
@@ -348,7 +358,7 @@ export function defaultMoves(pokemon) {
     chosen = fallback ? [fallback] : [];
   }
 
-  return withAttack(chosen, species);
+  return withAttack(chosen, species, level);
 }
 
 /**
@@ -358,25 +368,29 @@ export function defaultMoves(pokemon) {
  * a Smeargle knows only Sketch, a Magikarp only Splash and a Tackle it gets at
  * fifteen, a Metapod only Harden — and a companion that fights on its own for
  * hours had no way to win those fights: it stood there raising its defence
- * until something knocked it over. So the last slot is given the best hitting
- * move the species has anywhere in its level-up list, and failing that the
- * fallback above.
+ * until something knocked it over. So the last slot is given a hitting move
+ * from the species' level-up list, and failing that the fallback above.
+ *
+ * The move is the one nearest the level: the latest attack it has already
+ * learned by then, which the four newest moves pushed out, or else the first
+ * it would learn next. Handing it the best attack in the whole list gave a
+ * Pokémon caught and put back to level 5 a Dark Pulse it learns at 93.
  *
  * The move is chosen from the species' own learnset first, so a Metapod gets
  * its own Tackle back rather than being handed one it was never meant to know.
  *
  * @param {string[]} moves
  * @param {any} species
+ * @param {number} level
  * @returns {string[]}
  */
-function withAttack(moves, species) {
+function withAttack(moves, species, level) {
   if (moves.some(isAttack)) return moves;
 
-  const fromSpecies = (species?.learnset?.level ?? [])
-    .map(([, move]) => move)
-    .filter((move) => isAttack(move));
-  // The last one it would learn is the strongest thing it has a claim to.
-  const attack = fromSpecies.at(-1) ?? (moveOf(DEFAULT_ATTACK) ? DEFAULT_ATTACK : null);
+  const attacks = (species?.learnset?.level ?? []).filter(([, move]) => isAttack(move));
+  const known = attacks.filter(([at]) => at <= level).at(-1);
+  const next = attacks.find(([at]) => at > level);
+  const attack = (known ?? next)?.[1] ?? (moveOf(DEFAULT_ATTACK) ? DEFAULT_ATTACK : null);
   if (!attack || moves.includes(attack)) return moves;
 
   // Replace the last slot rather than the first: a full set keeps the three
@@ -403,7 +417,7 @@ export function ensureAttack(pokemon) {
   if (known.some(isAttack)) return null;
 
   const species = speciesOf(pokemon.speciesId);
-  const [taught] = withAttack(known, species).filter((move) => !known.includes(move));
+  const [taught] = withAttack(known, species, levelOf(pokemon)).filter((move) => !known.includes(move));
   if (!taught) return null;
 
   setMove(pokemon, Math.min(3, Math.max(0, known.length)), taught);

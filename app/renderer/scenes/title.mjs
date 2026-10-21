@@ -5,7 +5,7 @@
  * game already looks like the world it drops you into.
  */
 import { timeOfDay } from '../../shared/constants.mjs';
-import { url } from '../core/bridge.mjs';
+import { appControl, url } from '../core/bridge.mjs';
 import { gameData } from '../core/data.mjs';
 import { button, el } from '../core/dom.mjs';
 import { t } from '../core/i18n.mjs';
@@ -44,6 +44,11 @@ export function titleScene({ slots }) {
           button(t('title.settings'), () => {
             app.audio.blip('select');
             app.push(settingsScene({ onClose: () => app.pop() }));
+          }),
+          // No run is open here, so there is nothing to save on the way out.
+          button(t('title.quit'), () => {
+            app.audio.blip('cancel');
+            appControl.quit();
           }),
         ]),
       ]);

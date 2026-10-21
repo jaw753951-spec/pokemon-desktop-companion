@@ -24,6 +24,24 @@ import { EMERALD, FIRERED } from '../sources.mjs';
 const PALETTE_COUNT = 16;
 
 /**
+ * Tiles that only make sense moving, left empty in a still picture, as
+ * `[first, count]` runs per tileset.
+ *
+ * Lavaridge's steam vents — the town's hot springs, and the ones along the
+ * floor of the Fiery Path — are drawn by `QueueAnimTiles_Lavaridge_Steam`
+ * (`src/tileset_anims.c`), which writes a puff over tiles 288-295 every few
+ * frames. What `tiles.png` keeps there is the puff's first frame, a dot of
+ * white, and drawn still it scattered white dots across the cave floor. The
+ * floor is under it on the bottom layer, so with the steam gone the vent is
+ * plain ground.
+ *
+ * @type {Record<string, Array<[number, number]>>}
+ */
+const STILL_BLANK_TILES = {
+  'secondary/gTileset_Lavaridge': [[288, 8]],
+};
+
+/**
  * The metatile behaviours the cartridge lets a player surf on
  * (`TILE_FLAG_SURFABLE` in `src/metatile_behavior.c`): ponds, the sea, deep
  * water, waterfalls and currents. Their collision is clear — a Pokémon can
@@ -215,6 +233,9 @@ async function loadTileset(cache, pool, root, role, symbol) {
 
   const base = `${root}/data/tilesets/${role}/${tilesetDirName(symbol)}`;
   const tiles = sliceTiles(decodePng(await fetchBuffer(`${base}/tiles.png`)));
+  for (const [from, count] of STILL_BLANK_TILES[key] ?? []) {
+    for (let index = from; index < from + count && index < tiles.length; index++) tiles[index] = new Uint8Array(tiles[index].length);
+  }
 
   /** @type {Array<Array<[number, number, number]>>} */
   const palettes = new Array(PALETTE_COUNT);

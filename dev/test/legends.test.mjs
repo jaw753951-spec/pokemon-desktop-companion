@@ -19,7 +19,14 @@ import {
   standingTypes,
   useFormeItem,
 } from '../../app/renderer/engine/forms.mjs';
-import { FIRST_RUN_SIGNATURE_FIND_CHANCE, itemActions, signatureFind, SIGNATURE_FIND_CHANCE, useItem } from '../../app/renderer/engine/items.mjs';
+import {
+  COLLECTION_FIND_CHANCE,
+  FIRST_RUN_SIGNATURE_FIND_CHANCE,
+  itemActions,
+  signatureFind,
+  SIGNATURE_FIND_CHANCE,
+  useItem,
+} from '../../app/renderer/engine/items.mjs';
 import { createPokemon, maxHp, setMove } from '../../app/renderer/engine/pokemon.mjs';
 import { defaultAutoBattle, Session } from '../../app/renderer/engine/session.mjs';
 
@@ -223,6 +230,24 @@ test("a legendary's own item is rarer on the save's first run", options, () => {
   };
   assert.equal(askedAt(true), FIRST_RUN_SIGNATURE_FIND_CHANCE);
   assert.equal(askedAt(false), SIGNATURE_FIND_CHANCE);
+});
+
+test('plates, memories and drives turn up more often than a one-off item, once there is a champion', options, () => {
+  assert.ok(COLLECTION_FIND_CHANCE > SIGNATURE_FIND_CHANCE && COLLECTION_FIND_CHANCE < 1);
+  /** @param {string} slug @param {boolean} firstRun */
+  const askedFor = (slug, firstRun) => {
+    let odds = null;
+    const session = fakeSession({}, make(slug));
+    session.firstRun = firstRun;
+    session.rng.chance = (/** @type {number} */ chance) => ((odds = chance), true);
+    return { item: signatureFind(session), odds };
+  };
+  for (const [slug, pattern] of /** @type {Array<[string, RegExp]>} */ ([['arceus', /-plate$/], ['silvally', /-memory$/], ['genesect', /-drive$/]])) {
+    const found = askedFor(slug, false);
+    assert.match(String(found.item), pattern, slug);
+    assert.equal(found.odds, COLLECTION_FIND_CHANCE, slug);
+    assert.equal(askedFor(slug, true).odds, FIRST_RUN_SIGNATURE_FIND_CHANCE, slug);
+  }
 });
 
 test('every forme a battle or a bag can reach is named in Korean', options, () => {

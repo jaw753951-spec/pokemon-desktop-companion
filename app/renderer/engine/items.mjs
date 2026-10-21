@@ -32,7 +32,17 @@ import {
   statsOf,
 } from './pokemon.mjs';
 import { EFFORT_STAT_MAX, experienceForLevel, STATS } from './stats.mjs';
-import { FORME_MOVE_RULES, nextForme, SET_FORMES, settleForme, signatureItems, standingTypes, USE_FORMES, useFormeItem } from './forms.mjs';
+import {
+  collectedByType,
+  FORME_MOVE_RULES,
+  nextForme,
+  SET_FORMES,
+  settleForme,
+  signatureItems,
+  standingTypes,
+  USE_FORMES,
+  useFormeItem,
+} from './forms.mjs';
 
 /**
  * What a player picks for an item that works on one move or one stat — or,
@@ -1313,6 +1323,16 @@ export const SIGNATURE_FIND_CHANCE = 0.1;
  */
 export const FIRST_RUN_SIGNATURE_FIND_CHANCE = 0.03;
 
+/**
+ * How often a find is one of a set a Pokémon collects a type at a time —
+ * Arceus's plates, Silvally's memories, Genesect's drives — once the save has
+ * a champion: three times the one-off items' odds. Seventeen plates at the
+ * rate of one orb took the best part of a day's walking to gather, and each is
+ * only one type of the many the Pokémon is meant to switch between. The first
+ * run keeps the one-off items' slow rate for these too.
+ */
+export const COLLECTION_FIND_CHANCE = 0.3;
+
 /** Built once: which species each signature item is for. */
 let signature = /** @type {Map<string, string[]>|null} */ (null);
 
@@ -1337,7 +1357,9 @@ export function signatureFind(session) {
     ...[...signature].filter(([, owners]) => owners.includes(slug)).map(([item]) => item),
     ...evolvesBy,
   ].filter((item, index, all) => all.indexOf(item) === index && itemOf(item) && !held.has(item) && session.countOf(item) === 0);
-  const chance = session.firstRun ? FIRST_RUN_SIGNATURE_FIND_CHANCE : SIGNATURE_FIND_CHANCE;
+  const chance = session.firstRun
+    ? FIRST_RUN_SIGNATURE_FIND_CHANCE
+    : (wanted.some(collectedByType) ? COLLECTION_FIND_CHANCE : SIGNATURE_FIND_CHANCE);
   if (!wanted.length || !session.rng.chance(chance)) return null;
   return session.rng.pick(wanted);
 }

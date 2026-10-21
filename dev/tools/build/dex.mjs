@@ -2499,8 +2499,8 @@ const EVOLUTION_TWEAKS = {
 const SWEET_SLUGS = ['strawberry-sweet', 'love-sweet', 'berry-sweet', 'clover-sweet', 'flower-sweet', 'star-sweet', 'ribbon-sweet'];
 const SWEET_NAME = { ko: '사탕공예', en: 'Sweet' };
 const SWEET_TEXT = {
-  ko: '알록달록한 사탕공예. 마빌크에게 지니게 하면 빙빙 돌며 기뻐한다. 어떤 모습이 될지는 진화해 봐야 안다.',
-  en: 'A colourful sweet. When a Milcery holds this, it spins around happily. What it turns into is left to chance.',
+  ko: '알록달록한 사탕공예. 마빌크에게 지니게 하면 빙빙 돌며 기뻐한다.',
+  en: 'A colourful sweet. When a Milcery holds this, it spins around happily.',
 };
 
 /** The Sweets a Milcery can be holding when it evolves. */

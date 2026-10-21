@@ -1,28 +1,28 @@
 {
-  "_comment": "PokeAPI가 설명문이나 한국어 이름을 싣지 않은 아이템의 설명과 이름. 게임이 데이터를 불러올 때 생성 데이터 위에 덮어쓴다(core/data.mjs). 효과는 이 게임에서 실제로 하는 일과 어긋나지 않게 쓴다. 이름은 확인된 공식 명칭만 쓴다: 로셀열매는 PokeAPI의 item_names.csv, 순백떡은 한국어 포켓몬 위키. 전설 포켓몬의 폼체인지 도구는 이 게임에서 실제로 하는 일(지니게 하면/사용하면 어떤 모습이 되는지)로 설명을 바꿔 쓴다.",
+  "_comment": "PokeAPI가 설명문이나 한국어 이름을 싣지 않은 아이템의 설명과 이름. 게임이 데이터를 불러올 때 생성 데이터 위에 덮어쓴다(core/data.mjs). 효과는 이 게임에서 실제로 하는 일과 어긋나지 않게 쓴다. 이름은 확인된 공식 명칭만 쓴다: 로셀열매는 PokeAPI의 item_names.csv, 순백떡은 한국어 포켓몬 위키. 전설 포켓몬의 폼체인지 도구는 이 게임에서 실제로 하는 일(지니게 하면/사용하면 어떤 모습이 되는지)로 설명을 바꿔 쓴다. 원시회귀 구슬(쪽빛구슬·주홍구슬)은 본가 설명을 그대로 쓰고, 쓰고 나면 없어지는지/남는지는 적지 않는다.",
   "items": {
     "booster-energy": {
       "text": {
-        "ko": "지니게 하면 고대활성이나 쿼크차지 특성을 가진 포켓몬의 가장 높은 능력이 오른다. 한 번 쓰면 없어진다.",
-        "en": "When held by a Pokémon with Protosynthesis or Quark Drive, raises its highest stat. Consumed after use."
+        "ko": "에너지가 가득한 캡슐. 어떤 특성을 가진 포켓몬에게 지니게 하면 그 힘을 증폭시킨다.",
+        "en": "An item to be held by Pokémon with certain Abilities. The energy that fills this capsule boosts the strength of the Pokémon."
       }
     },
     "ability-shield": {
       "text": {
-        "ko": "지니게 하면 상대의 기술이나 특성 때문에 자신의 특성이 바뀌거나 없어지지 않는다.",
-        "en": "When held, the holder's Ability cannot be changed or suppressed by other moves or Abilities."
+        "ko": "귀엽고 개성적인 방패. 지니게 하면 상대에 의해 특성이 바뀌지 않는다.",
+        "en": "An item to be held by a Pokémon. This cute and rather unique-looking shield protects the holder from having its Ability changed by others."
       }
     },
     "mirror-herb": {
       "text": {
-        "ko": "지니게 하면 상대가 능력을 올렸을 때 한 번 그대로 흉내 내서 자신의 능력도 같은 만큼 올린다.",
-        "en": "When held, copies a stat increase the opponent makes, once."
+        "ko": "지니게 한 포켓몬은 한 번에 한해 상대의 능력이 올랐을 때 흉내 내어 똑같이 능력을 올린다.",
+        "en": "An item to be held by a Pokémon. This herb will allow the holder to mirror an opponent’s stat increases to boost its own stats—but only once."
       }
     },
     "punching-glove": {
       "text": {
-        "ko": "지니게 하면 펀치 기술의 위력이 오르고, 펀치 기술로 공격해도 상대에게 닿지 않는다.",
-        "en": "When held, punching moves are more powerful and no longer make contact."
+        "ko": "주먹을 보호하는 글러브. 지니게 하면 펀치 기술의 위력이 오르고 상대에게 접촉하지 않는 펀치가 된다.",
+        "en": "An item to be held by a Pokémon. This protective glove boosts the power of the holder’s punching moves and prevents direct contact with targets."
       }
     },
     "fairy-feather": {
@@ -33,20 +33,20 @@
     },
     "wellspring-mask": {
       "text": {
-        "ko": "오거폰이 지니면 우물의가면의 모습이 되고, 공격하는 기술의 위력이 오른다.",
-        "en": "When held by Ogerpon, it takes the Wellspring Mask form and its moves become more powerful."
+        "ko": "오거폰이 지니면 우물의가면의 모습이 된다.",
+        "en": "When held by Ogerpon, it takes the Wellspring Mask form."
       }
     },
     "hearthflame-mask": {
       "text": {
-        "ko": "오거폰이 지니면 화덕의가면의 모습이 되고, 공격하는 기술의 위력이 오른다.",
-        "en": "When held by Ogerpon, it takes the Hearthflame Mask form and its moves become more powerful."
+        "ko": "오거폰이 지니면 화덕의가면의 모습이 된다.",
+        "en": "When held by Ogerpon, it takes the Hearthflame Mask form."
       }
     },
     "cornerstone-mask": {
       "text": {
-        "ko": "오거폰이 지니면 주춧돌의가면의 모습이 되고, 공격하는 기술의 위력이 오른다.",
-        "en": "When held by Ogerpon, it takes the Cornerstone Mask form and its moves become more powerful."
+        "ko": "오거폰이 지니면 주춧돌의가면의 모습이 된다.",
+        "en": "When held by Ogerpon, it takes the Cornerstone Mask form."
       }
     },
     "loaded-dice": {
@@ -103,8 +103,8 @@
     },
     "linking-cord": {
       "text": {
-        "ko": "통신교환으로 진화하는 포켓몬에게 사용하면 진화한다. 사용하면 없어진다.",
-        "en": "Use it on a Pokémon that evolves by trade and it evolves. It is used up."
+        "ko": "통신교환으로 진화하는 포켓몬에게 사용하면 진화한다.",
+        "en": "Use it on a Pokémon that evolves by trade and it evolves."
       }
     },
     "black-augurite": {
@@ -195,18 +195,6 @@
         "en": "When held by Giratina, it takes its Origin Forme and its Dragon- and Ghost-type moves grow stronger."
       }
     },
-    "blue-orb": {
-      "text": {
-        "ko": "가이오가에게 지니게 하면 전투가 시작될 때 원시회귀해서 원시가이오가가 된다.",
-        "en": "When held by Kyogre, it undergoes Primal Reversion as a battle begins."
-      }
-    },
-    "red-orb": {
-      "text": {
-        "ko": "그란돈에게 지니게 하면 전투가 시작될 때 원시회귀해서 원시그란돈이 된다.",
-        "en": "When held by Groudon, it undergoes Primal Reversion as a battle begins."
-      }
-    },
     "rusted-sword": {
       "text": {
         "ko": "자시안에게 지니게 하면 전투가 시작될 때 검왕의 모습이 된다.",
@@ -227,56 +215,56 @@
     },
     "n-solarizer--merge": {
       "text": {
-        "ko": "네크로즈마에게 사용하면 황혼의 갈기 모습이 된다. 한 번 더 사용하면 원래 모습으로 돌아온다. 쓰고 나도 없어지지 않는다.",
-        "en": "Use it on Necrozma to turn it into Dusk Mane Necrozma; use it again to return it to normal. It is not used up."
+        "ko": "네크로즈마에게 사용하면 황혼의 갈기 모습이 된다. 한 번 더 사용하면 원래 모습으로 돌아온다.",
+        "en": "Use it on Necrozma to turn it into Dusk Mane Necrozma; use it again to return it to normal."
       }
     },
     "n-lunarizer--merge": {
       "text": {
-        "ko": "네크로즈마에게 사용하면 새벽의 날개 모습이 된다. 한 번 더 사용하면 원래 모습으로 돌아온다. 쓰고 나도 없어지지 않는다.",
-        "en": "Use it on Necrozma to turn it into Dawn Wings Necrozma; use it again to return it to normal. It is not used up."
+        "ko": "네크로즈마에게 사용하면 새벽의 날개 모습이 된다. 한 번 더 사용하면 원래 모습으로 돌아온다.",
+        "en": "Use it on Necrozma to turn it into Dawn Wings Necrozma; use it again to return it to normal."
       }
     },
     "dna-splicers": {
       "text": {
-        "ko": "큐레무에게 사용할 때마다 블랙큐레무, 화이트큐레무, 원래 모습 순서로 바뀐다. 쓰고 나도 없어지지 않는다.",
-        "en": "Each use on Kyurem turns it into Black Kyurem, then White Kyurem, then back to normal. It is not used up."
+        "ko": "큐레무에게 사용할 때마다 블랙큐레무, 화이트큐레무, 원래 모습 순서로 바뀐다.",
+        "en": "Each use on Kyurem turns it into Black Kyurem, then White Kyurem, then back to normal."
       }
     },
     "prison-bottle": {
       "text": {
-        "ko": "후파에게 사용하면 굴레를 벗어난 모습이 된다. 한 번 더 사용하면 굴레에 갇힌 모습으로 돌아온다. 쓰고 나도 없어지지 않는다.",
-        "en": "Use it on Hoopa to unbind it; use it again to confine it. It is not used up."
+        "ko": "후파에게 사용하면 굴레를 벗어난 모습이 된다. 한 번 더 사용하면 굴레에 갇힌 모습으로 돌아온다.",
+        "en": "Use it on Hoopa to unbind it; use it again to confine it."
       }
     },
     "gracidea": {
       "text": {
-        "ko": "쉐이미에게 사용하면 스카이폼이 된다. 한 번 더 사용하면 랜드폼으로 돌아온다. 쓰고 나도 없어지지 않는다.",
-        "en": "Use it on Shaymin to change it into its Sky Forme; use it again to return it to its Land Forme. It is not used up."
+        "ko": "쉐이미에게 사용하면 스카이폼이 된다. 한 번 더 사용하면 랜드폼으로 돌아온다.",
+        "en": "Use it on Shaymin to change it into its Sky Forme; use it again to return it to its Land Forme."
       }
     },
     "reveal-glass": {
       "text": {
-        "ko": "토네로스, 볼트로스, 랜드로스, 러브로스에게 사용하면 영물폼이 된다. 한 번 더 사용하면 화신폼으로 돌아온다. 쓰고 나도 없어지지 않는다.",
-        "en": "Use it on Tornadus, Thundurus, Landorus or Enamorus to change it into its Therian Forme; use it again to return it to its Incarnate Forme. It is not used up."
+        "ko": "토네로스, 볼트로스, 랜드로스, 러브로스에게 사용하면 영물폼이 된다. 한 번 더 사용하면 화신폼으로 돌아온다.",
+        "en": "Use it on Tornadus, Thundurus, Landorus or Enamorus to change it into its Therian Forme; use it again to return it to its Incarnate Forme."
       }
     },
     "reins-of-unity": {
       "text": {
-        "ko": "버드렉스에게 사용할 때마다 백마 탄 모습, 흑마 탄 모습, 원래 모습 순서로 바뀐다. 쓰고 나도 없어지지 않는다.",
-        "en": "Each use on Calyrex makes it the Ice Rider, then the Shadow Rider, then itself again. It is not used up."
+        "ko": "버드렉스에게 사용할 때마다 백마 탄 모습, 흑마 탄 모습, 원래 모습 순서로 바뀐다.",
+        "en": "Each use on Calyrex makes it the Ice Rider, then the Shadow Rider, then itself again."
       }
     },
     "meteorite": {
       "text": {
-        "ko": "테오키스에게 사용할 때마다 어택폼, 디펜스폼, 스피드폼, 노말폼 순서로 바뀐다. 쓰고 나도 없어지지 않는다.",
-        "en": "Each use on Deoxys changes it into its Attack, Defense, then Speed Forme, then back to Normal. It is not used up."
+        "ko": "테오키스에게 사용할 때마다 어택폼, 디펜스폼, 스피드폼, 노말폼 순서로 바뀐다.",
+        "en": "Each use on Deoxys changes it into its Attack, Defense, then Speed Forme, then back to Normal."
       }
     },
     "zygarde-cube": {
       "text": {
-        "ko": "지가르데에게 사용하면 10%폼이 된다. 한 번 더 사용하면 50%폼으로 돌아온다. 쓰고 나도 없어지지 않는다.",
-        "en": "Use it on Zygarde to change it into its 10% Forme; use it again to return it to its 50% Forme. It is not used up."
+        "ko": "지가르데에게 사용하면 10%폼이 된다. 한 번 더 사용하면 50%폼으로 돌아온다.",
+        "en": "Use it on Zygarde to change it into its 10% Forme; use it again to return it to its 50% Forme."
       }
     },
     "burn-drive": {
@@ -335,8 +323,8 @@
     },
     "meltan-candy": {
       "text": {
-        "ko": "레벨 48 이상인 멜탄에게 사용하면 멜메탈로 진화한다. 사용하면 없어진다.",
-        "en": "Use it on a Meltan of level 48 or higher to evolve it into Melmetal. It is used up."
+        "ko": "레벨 48 이상인 멜탄에게 사용하면 멜메탈로 진화한다.",
+        "en": "Use it on a Meltan of level 48 or higher to evolve it into Melmetal."
       }
     },
     "hm08": {

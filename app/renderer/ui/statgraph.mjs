@@ -7,7 +7,7 @@
  * which is the thing the player is really watching grow.
  */
 import { t } from '../core/i18n.mjs';
-import { EFFORT_STAT_MAX, STATS } from '../engine/stats.mjs';
+import { EFFORT_STAT_MAX, EFFORT_TOTAL_MAX, effortTotal, settledEffort, STATS } from '../engine/stats.mjs';
 
 const SIZE = 104;
 const CENTRE = SIZE / 2;
@@ -21,7 +21,8 @@ const AXES = ['hp', 'atk', 'def', 'spe', 'spd', 'spa'];
  *   `base` is the untrained baseline at the same level, so the two shapes are
  *   directly comparable and the gap between them is the training so far;
  *   `effort` is drawn faintly beneath them, as Scarlet and Violet draw it,
- *   every axis reaching the rim at 252
+ *   every axis reaching the rim at 252 — and in the games' pale blue once all
+ *   510 are in
  * @returns {SVGSVGElement}
  */
 export function statHexagon({ base, actual, effort = {} }) {
@@ -73,12 +74,15 @@ export function statHexagon({ base, actual, effort = {} }) {
 
   // The effort, in the games' pale gold, laid faintly over the other two: a
   // different scale from them — a stat's own 252, not the stats' ceiling — so
-  // it is a shape of its own rather than a part of either.
+  // it is a shape of its own rather than a part of either. Once all 510 are
+  // in, it turns from gold to pale blue, as the games show a Pokémon whose
+  // training is done.
   if (AXES.some((stat) => (effort[stat] ?? 0) > 0)) {
+    const done = effortTotal(settledEffort(effort)) >= EFFORT_TOTAL_MAX;
     svg.append(element('polygon', {
       points: hexPoints(AXES.map((stat) => Math.min(1, (effort[stat] ?? 0) / EFFORT_STAT_MAX))),
-      fill: 'rgba(240, 192, 40, 0.38)',
-      stroke: 'rgba(214, 160, 20, 0.9)',
+      fill: done ? 'rgba(120, 196, 240, 0.42)' : 'rgba(240, 192, 40, 0.38)',
+      stroke: done ? 'rgba(60, 150, 214, 0.9)' : 'rgba(214, 160, 20, 0.9)',
       'stroke-width': '1',
       'stroke-linejoin': 'round',
       class: 'stat-hex-effort',
