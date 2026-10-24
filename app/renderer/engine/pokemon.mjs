@@ -155,10 +155,9 @@ export function createPokemon(rng, speciesId, level, options = {}) {
   // its own in the dex, with its own stats, abilities and moves.
   const gendered = genderedSpecies(speciesId, pokemon.gender);
   if (gendered !== speciesId) {
-    const slot = abilitySlot(pokemon);
     pokemon.speciesId = gendered;
     const variant = speciesOf(gendered);
-    pokemon.ability = (variant.abilities[slot] ?? variant.abilities[0])?.name ?? pokemon.ability;
+    pokemon.ability = abilityInSameSlot(species.abilities, variant.abilities, pokemon.ability) ?? pokemon.ability;
     pokemon.experience = experienceForLevel(variant.growthRate, Math.max(1, level));
   }
 
@@ -205,8 +204,8 @@ export function genderedSpecies(speciesId, gender) {
  * games' trainers do. Something met in the wild draws from the whole pool with
  * the hidden ability among them and no better or worse odds than the rest:
  * the cartridges gate hidden abilities behind raids and Ability Patches, and
- * this game has neither, so a Pokémon walking around out there is the only
- * place one can come from.
+ * this game has no raids and only a rare, dear Patch, so a Pokémon walking
+ * around out there is where most of them come from.
  *
  * @param {import('../core/rng.mjs').Rng} rng
  * @param {any} species
@@ -282,6 +281,32 @@ export function rollWildHeldItem(rng, pokemon, options = {}) {
 export function abilitySlot(pokemon) {
   const species = speciesOf(pokemon.speciesId);
   return (species?.abilities ?? []).findIndex((entry) => entry.name === pokemon.ability);
+}
+
+/**
+ * The ability in the same slot of another list — an evolution's, a female
+ * variant's, a forme's — as the games carry a slot across: the hidden one
+ * for the hidden one, and the first or second ordinary one by its own count,
+ * a second going to a list with only one taking that one.
+ *
+ * Read by place in the whole list, as it used to be, the hidden ability is
+ * second wherever there is only one ordinary ability: an Eevee with
+ * Adaptability evolved into a Vaporeon with the hidden Hydration, and a
+ * Spewpa's hidden Friend Guard came out of the cocoon as Compound Eyes.
+ *
+ * @param {Array<{name: string, hidden?: boolean}>} from the list the ability is read in
+ * @param {Array<{name: string, hidden?: boolean}>} to the list to find its place in
+ * @param {string} name
+ * @returns {string|null} null when the new list is empty
+ */
+export function abilityInSameSlot(from, to, name) {
+  if (!to?.length) return null;
+  const ordinary = to.filter((entry) => !entry.hidden);
+  if (from.find((entry) => entry.name === name)?.hidden) {
+    return (to.find((entry) => entry.hidden) ?? ordinary[0] ?? to[0]).name;
+  }
+  const index = from.filter((entry) => !entry.hidden).findIndex((entry) => entry.name === name);
+  return (ordinary[Math.max(0, index)] ?? ordinary[0] ?? to[0]).name;
 }
 
 /**
@@ -908,7 +933,7 @@ export function stopEvolution(pokemon) {
  */
 export function evolveInto(pokemon, speciesId, rng) {
   const ratio = pokemon.hp / maxHp(pokemon);
-  const slot = abilitySlot(pokemon);
+  const before = speciesOf(pokemon.speciesId)?.abilities ?? [];
   // A female Lechonk grows into the female Oinkologne.
   speciesId = genderedSpecies(speciesId, pokemon.gender);
   pokemon.speciesId = speciesId;
@@ -916,10 +941,9 @@ export function evolveInto(pokemon, speciesId, rng) {
   const species = speciesOf(speciesId);
   if (!species.abilities.some((entry) => entry.name === pokemon.ability)) {
     // The same slot in the new species' list, which is what the games carry
-    // across; a species with fewer abilities than the last falls back to its
-    // first, and a hidden ability stays hidden where there is one to stay in.
-    const kept = species.abilities[slot] ?? species.abilities[0];
-    pokemon.ability = kept?.name ?? pokemon.ability;
+    // across: a hidden ability stays hidden, and a second ordinary one goes
+    // to the first where there is only one.
+    pokemon.ability = abilityInSameSlot(before, species.abilities, pokemon.ability) ?? pokemon.ability;
   }
   // Whatever sweet the Milcery held, the Alcremie's look is left to chance.
   if (species.slug === 'alcremie') pokemon.look = randomLook(rng);

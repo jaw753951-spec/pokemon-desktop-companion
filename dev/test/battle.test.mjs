@@ -5,6 +5,7 @@ import { NEEDS_ASSETS, useRealGameData } from './helpers/data.mjs';
 import { Rng } from '../../app/renderer/core/rng.mjs';
 import { moveOf, typeEffectiveness } from '../../app/renderer/core/data.mjs';
 import {
+  asItWouldLeave,
   Battle,
   categoryOf,
   choosePolicyMove,
@@ -866,11 +867,13 @@ test('a Charcoal lifts fire moves and leaves the rest alone', options, () => {
     policy: defaultAutoBattle(),
   });
 
-  const fire = expectedDamage(battle.player, /** @type {any} */ (battle.foe), moveOf('flamethrower'));
+  const fire = expectedDamage(battle, battle.player, /** @type {any} */ (battle.foe), moveOf('flamethrower'));
   player.heldItem = 'charcoal';
+  // The planner's view sees the Charcoal too: it is the hit's own formula.
+  const planned = expectedDamage(battle, battle.player, /** @type {any} */ (battle.foe), moveOf('flamethrower'));
+  assert.ok(Math.abs(planned / fire - 1.2) < 0.05, `planned ${planned} against ${fire}`);
 
-  // `expectedDamage` is the planner's view and does not read held items, so
-  // the real roll is what this compares: twenty per cent more, every time.
+  // And the real roll: twenty per cent more, every time.
   const roll = (seed) => {
     const fight = new Battle({
       rng: new Rng(seed),
@@ -915,8 +918,8 @@ test('expected damage ranks a super-effective move above a resisted one', option
     policy: null,
   });
 
-  const fire = expectedDamage(battle.player, /** @type {any} */ (battle.foe), moveFixture('special', 90, 'fire'));
-  const water = expectedDamage(battle.player, /** @type {any} */ (battle.foe), moveFixture('special', 90, 'water'));
+  const fire = expectedDamage(battle, battle.player, /** @type {any} */ (battle.foe), moveFixture('special', 90, 'fire'));
+  const water = expectedDamage(battle, battle.player, /** @type {any} */ (battle.foe), moveFixture('special', 90, 'water'));
   assert.ok(fire > water, 'Fire beats Water into a Grass type');
 });
 
@@ -1082,6 +1085,145 @@ test('a Burning Jealousy burns only a target whose stats went up this turn', opt
   battle.foe.marks.raisedTurn = 3;
   battle.applySecondaryEffects(battle.player, battle.foe, move, []);
   assert.equal(battle.foe.pokemon.status, STATUS.BURN);
+});
+
+test('a move whose power hangs on the turn order is weighed up from Speed', options, () => {
+  const SNORLAX = 143;
+  const JOLTEON = 135;
+  const power = (/** @type {number} */ user, /** @type {number} */ foe, /** @type {string} */ move) => {
+    const battle = new Battle({
+      rng: new Rng(2),
+      player: makeFixed(user, 50, [move]),
+      foes: [makeFixed(foe, 50, ['tackle'])],
+      policy: defaultAutoBattle(),
+    });
+    return asItWouldLeave(battle, battle.player, battle.foe, moveOf(move)).power;
+  };
+  // Nothing has happened yet when a move is chosen: a slow Snorlax's Payback
+  // and Avalanche will come after the foe's move, a fast Jolteon's before it.
+  assert.equal(power(SNORLAX, JOLTEON, 'payback'), 100);
+  assert.equal(power(JOLTEON, SNORLAX, 'payback'), 50);
+  assert.equal(power(SNORLAX, JOLTEON, 'avalanche'), 120);
+  assert.equal(power(JOLTEON, SNORLAX, 'avalanche'), 60);
+  // And a Bolt Beak only doubles for the one that goes first.
+  assert.equal(power(SNORLAX, JOLTEON, 'bolt-beak'), 85);
+  assert.equal(power(JOLTEON, SNORLAX, 'bolt-beak'), 170);
+
+  // Used, it reads what did happen: a Payback after a foe that has not moved is plain.
+  const battle = new Battle({
+    rng: new Rng(2),
+    player: makeFixed(SNORLAX, 50, ['payback']),
+    foes: [makeFixed(JOLTEON, 50, ['tackle'])],
+    policy: defaultAutoBattle(),
+  });
+  assert.equal(battle.effectiveMove(battle.player, battle.foe, moveOf('payback')).power, 50);
+});
+
+test('the auto battle weighs a move with everything the hit itself would have', options, () => {
+  const MEW = 151;
+  const SNORLAX = 143;
+  // Neither move is Mew's own type, and Snorlax takes both alike: the weather
+  // is all that tells them apart.
+  const pick = (/** @type {string|null} */ weather) => {
+    const player = makeFixed(MEW, 50, ['surf', 'flamethrower']);
+    const battle = new Battle({ rng: new Rng(2), player, foes: [makeFixed(SNORLAX, 50, ['tackle'])], policy: defaultAutoBattle() });
+    battle.field.weather = weather;
+    return choosePolicyMove(battle, battle.player, /** @type {any} */ (battle.foe), player.moves);
+  };
+  assert.equal(pick('sun'), 'flamethrower');
+  assert.equal(pick('rain'), 'surf');
+
+  // A Scrappy's Normal moves reach a Ghost, so the Body Slam is not passed over.
+  const KANGASKHAN = 115;
+  const GENGAR = 94;
+  const kangaskhan = makeFixed(KANGASKHAN, 50, ['ember', 'body-slam']);
+  kangaskhan.ability = 'scrappy';
+  const ghost = new Battle({ rng: new Rng(2), player: kangaskhan, foes: [makeFixed(GENGAR, 50, ['tackle'])], policy: defaultAutoBattle() });
+  assert.equal(choosePolicyMove(ghost, ghost.player, /** @type {any} */ (ghost.foe), kangaskhan.moves), 'body-slam');
+});
+
+test('an Assurance or a Lash Out is weighed by what the foe has shown', options, () => {
+  const ABSOL = 359;
+  const JOLTEON = 135;
+  const SNORLAX = 143;
+  const setUp = (/** @type {number} */ foe, /** @type {string[]} */ shown) => {
+    const battle = new Battle({
+      rng: new Rng(2),
+      player: makeFixed(ABSOL, 50, ['assurance', 'lash-out']),
+      foes: [makeFixed(foe, 50, ['double-edge', 'growl'])],
+      policy: defaultAutoBattle(),
+    });
+    for (const slug of shown) battle.foe.usedOn[slug] = 1;
+    return battle;
+  };
+  const power = (/** @type {Battle} */ battle, /** @type {string} */ slug) =>
+    asItWouldLeave(battle, battle.player, /** @type {any} */ (battle.foe), moveOf(slug)).power;
+
+  // A faster Jolteon that has only used Double-Edge will have hurt itself first.
+  assert.equal(power(setUp(JOLTEON, ['double-edge']), 'assurance'), 120);
+  // Half of what it has shown is Growl, which lowers the Absol first half the time.
+  assert.equal(power(setUp(JOLTEON, ['double-edge', 'growl']), 'lash-out'), 112);
+  // Nothing shown, or slower than the Absol: nothing to count on.
+  assert.equal(power(setUp(JOLTEON, []), 'assurance'), 60);
+  assert.equal(power(setUp(SNORLAX, ['double-edge', 'growl']), 'lash-out'), 75);
+
+  // In the turn itself, a foe below the health it started the turn on has been hurt.
+  const battle = setUp(SNORLAX, []);
+  battle.foe.turn.startHp = battle.foe.pokemon.hp;
+  battle.foe.pokemon.hp -= 10;
+  assert.equal(battle.effectiveMove(battle.player, /** @type {any} */ (battle.foe), moveOf('assurance')).power, 120);
+});
+
+test('a move that aims every hit again is weighed hit by hit', options, () => {
+  const battle = new Battle({
+    rng: new Rng(2),
+    player: makeFixed(CHARIZARD, 50, ['triple-axel']),
+    foes: [makeFixed(BLASTOISE, 50, ['tackle'])],
+    policy: defaultAutoBattle(),
+  });
+  const once = (/** @type {string} */ slug) => ({ ...moveOf(slug), meta: { ...moveOf(slug).meta, minHits: null } });
+  const ratio = (/** @type {string} */ slug) =>
+    expectedDamage(battle, battle.player, battle.foe, moveOf(slug)) / expectedDamage(battle, battle.player, battle.foe, once(slug));
+  // A Triple Axel at 90%: 20, then 40 if that landed, then 60 — 0.9·1 + 0.81·2 + 0.729·3
+  // of a single 20, where a single 20 is itself 0.9 of one.
+  assert.ok(Math.abs(ratio('triple-axel') - 4.707 / 0.9) < 0.3, `triple axel ${ratio('triple-axel').toFixed(2)}`);
+  // Ten Population Bomb hits at 90% each land about 5.9 times, not 9.
+  assert.ok(Math.abs(ratio('population-bomb') - 5.862 / 0.9) < 0.3, `population bomb ${ratio('population-bomb').toFixed(2)}`);
+});
+
+test('a multi-hit move rolls for its effect on every hit', options, () => {
+  const BEEDRILL = 15;
+  const SNORLAX = 143;
+  const battle = new Battle({
+    rng: new Rng(11),
+    player: makeFixed(BEEDRILL, 30, ['twineedle']),
+    foes: [makeFixed(SNORLAX, 100, ['tackle'])],
+    policy: defaultAutoBattle(),
+  });
+  const twineedle = moveOf('twineedle');
+  const tries = 3000;
+  let poisoned = 0;
+  for (let i = 0; i < tries; i++) {
+    battle.foe.pokemon.status = null;
+    battle.foe.pokemon.hp = maxHp(battle.foe.pokemon);
+    battle.applyDamagingMove(battle.player, battle.foe, twineedle, []);
+    if (battle.foe.pokemon.status === STATUS.POISON) poisoned++;
+  }
+  // Two needles at 20% each: 1 - 0.8² = 36%, where one roll for the move was 20%.
+  const share = poisoned / tries;
+  assert.ok(share > 0.32 && share < 0.4, `poisoned ${(share * 100).toFixed(1)}% of the time`);
+
+  // What a move pays for itself is still paid once, however many hits it took.
+  const GARCHOMP = 445;
+  const shooter = new Battle({
+    rng: new Rng(4),
+    player: makeFixed(GARCHOMP, 60, ['scale-shot']),
+    foes: [makeFixed(SNORLAX, 100, ['tackle'])],
+    policy: defaultAutoBattle(),
+  });
+  shooter.applyDamagingMove(shooter.player, shooter.foe, moveOf('scale-shot'), []);
+  assert.equal(shooter.player.stages.def, -1);
+  assert.equal(shooter.player.stages.spe, 1);
 });
 
 test('an Explosion takes its user down with it, hit or not', options, () => {

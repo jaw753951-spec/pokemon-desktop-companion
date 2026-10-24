@@ -100,7 +100,7 @@ export function sizeUp(battle, attacker, defender, usable) {
     classes.add(move.damageClass);
     if (cannotTouch(defender, move)) continue;
     const armour = companionArmour(defender, typeEffectiveness(move.type, battle.typesOf(defender)));
-    dealt.set(slot.move, (expectedDamage(attacker, defender, move) * armour) / left);
+    dealt.set(slot.move, (expectedDamage(battle, attacker, defender, move) * armour) / left);
   }
 
   // The worst the other side can do back, and with what — as far as can be
@@ -177,7 +177,7 @@ export function expectedThreat(battle, attacker, defender) {
   for (const move of moves) {
     if (cannotTouch(attacker, move)) continue;
     const armour = companionArmour(attacker, typeEffectiveness(move.type, battle.typesOf(attacker)));
-    const share = (expectedDamage(defender, attacker, move) * armour) / own;
+    const share = (expectedDamage(battle, defender, attacker, move) * armour) / own;
     if (share > threat) {
       threat = share;
       threatClass = move.damageClass;

@@ -126,15 +126,33 @@ export const LEAVES_BATTLE = new Set(['roar', 'whirlwind', 'teleport']);
  * @param {any} user
  * @param {any} target
  * @param {any} move
+ * @param {boolean} [peek] weighed up before the turn, when nothing has
+ *   happened in it yet: what the turn will bring is guessed from Speed
  * @returns {number|null} the power to use, or null to keep the listed one
  */
-export function variablePower(battle, user, target, move) {
+export function variablePower(battle, user, target, move, peek = false) {
   const slug = battle.slugOf(move);
   const rule = POWER[slug];
-  return rule ? Math.max(1, Math.floor(rule(battle, user, target, move))) : null;
+  return rule ? Math.max(1, Math.floor(rule(battle, user, target, move, peek))) : null;
 }
 
-/** @type {Record<string, (battle: any, user: any, target: any, move: any) => number>} */
+/**
+ * Whether the target has moved this turn — or, weighed up before the turn,
+ * whether it will have by the time this move goes: when it is the faster.
+ *
+ * @param {any} battle @param {any} user @param {any} target @param {boolean} peek
+ */
+const movedBefore = (battle, user, target, peek) => (peek ? battle.outpaces(target, user) : target.turn.moved);
+
+/**
+ * Whether the target hit the user this turn — or, weighed up before it, is
+ * the faster and so will have, as a foe that attacks at all usually does.
+ *
+ * @param {any} battle @param {any} user @param {any} target @param {boolean} peek
+ */
+const hitFirst = (battle, user, target, peek) => (peek ? battle.outpaces(target, user) : user.turn.hitBy.includes(target));
+
+/** @type {Record<string, (battle: any, user: any, target: any, move: any, peek: boolean) => number>} */
 const POWER = {
   flail: (battle, user) => reversalPower(user),
   reversal: (battle, user) => reversalPower(user),
@@ -162,13 +180,20 @@ const POWER = {
   acrobatics: (battle, user, target, move) => move.power * (user.pokemon.heldItem ? 1 : 2),
   'stored-power': (battle, user) => 20 + 20 * positiveStages(user),
   'power-trip': (battle, user) => 20 + 20 * positiveStages(user),
-  avalanche: (battle, user, target, move) => move.power * (user.turn.hitBy.includes(target) ? 2 : 1),
-  revenge: (battle, user, target, move) => move.power * (user.turn.hitBy.includes(target) ? 2 : 1),
-  payback: (battle, user, target, move) => move.power * (target.turn.moved ? 2 : 1),
-  assurance: (battle, user, target, move) => move.power * (target.turn.damage > 0 ? 2 : 1),
-  'bolt-beak': (battle, user, target, move) => move.power * (target.turn.moved ? 1 : 2),
-  'fishious-rend': (battle, user, target, move) => move.power * (target.turn.moved ? 1 : 2),
-  'lash-out': (battle, user, target, move) => move.power * (user.turn.lowered ? 2 : 1),
+  avalanche: (battle, user, target, move, peek) => move.power * (hitFirst(battle, user, target, peek) ? 2 : 1),
+  revenge: (battle, user, target, move, peek) => move.power * (hitFirst(battle, user, target, peek) ? 2 : 1),
+  payback: (battle, user, target, move, peek) => move.power * (movedBefore(battle, user, target, peek) ? 2 : 1),
+  // Hurt by anything this turn — hit, or its own recoil, Life Orb or
+  // confusion; weighed up beforehand, as likely as that looks.
+  assurance: (battle, user, target, move, peek) =>
+    move.power *
+    (peek
+      ? 1 + battle.hurtFirstChance(target, user)
+      : target.turn.damage > 0 || target.pokemon.hp < target.turn.startHp ? 2 : 1),
+  'bolt-beak': (battle, user, target, move, peek) => move.power * (movedBefore(battle, user, target, peek) ? 1 : 2),
+  'fishious-rend': (battle, user, target, move, peek) => move.power * (movedBefore(battle, user, target, peek) ? 1 : 2),
+  'lash-out': (battle, user, target, move, peek) =>
+    move.power * (peek ? 1 + battle.loweredFirstChance(user, target) : user.turn.lowered ? 2 : 1),
   'stomping-tantrum': (battle, user, target, move) => move.power * (user.marks.lastFailed ? 2 : 1),
   'temper-flare': (battle, user, target, move) => move.power * (user.marks.lastFailed ? 2 : 1),
   'rage-fist': (battle, user) => Math.min(350, 50 + 50 * (user.marks.timesHit ?? 0)),
@@ -702,11 +727,7 @@ export const STATUS_MOVES = {
   'no-retreat': ({ battle, user, move, log }) => {
     if (user.volatile.noRetreat) return false;
     user.volatile.noRetreat = true;
-    let raised = false;
-    for (const change of move.statChanges ?? []) {
-      if (battle.applyStage(user, change.stat, change.change, log, { source: 'self' })) raised = true;
-    }
-    return raised;
+    return boostSelf(battle, user, move, log);
   },
   electrify: ({ battle, target }) => {
     target.volatile.electrified = battle.turn;
@@ -902,11 +923,7 @@ export const STATUS_MOVES = {
         battle.say(combatant, 'move.substitute.end');
       }
     }
-    let raised = false;
-    for (const change of move.statChanges ?? []) {
-      if (battle.applyStage(user, change.stat, change.change, log, { source: 'self' })) raised = true;
-    }
-    return raised;
+    return boostSelf(battle, user, move, log);
   },
 
   // ---- Leaving.
@@ -924,6 +941,19 @@ export const STATUS_MOVES = {
     return true;
   },
 };
+
+/**
+ * Every stage the move lists, on its user. Whether any of them moved.
+ *
+ * @param {any} battle @param {any} user @param {any} move @param {any[]} log
+ */
+function boostSelf(battle, user, move, log) {
+  let raised = false;
+  for (const change of move.statChanges ?? []) {
+    if (battle.applyStage(user, change.stat, change.change, log, { source: 'self' })) raised = true;
+  }
+  return raised;
+}
 
 /**
  * @param {any} battle @param {any} user @param {any} move @param {any[]} log

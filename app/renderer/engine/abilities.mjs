@@ -92,7 +92,9 @@ export const ABILITIES = {
     taken: (ctx, move) => (hasFlag(move, 'sound') ? 0.5 : 1),
   },
   technician: { power: (ctx, move) => ((move.power ?? 0) > 0 && move.power <= 60 ? 1.5 : 1) },
-  reckless: { power: (ctx, move) => ((move.meta?.drain ?? 0) < 0 ? 1.2 : 1) },
+  // A move with recoil, and one that crashes into its user when it misses —
+  // a High Jump Kick — both, as the games count them.
+  reckless: { power: (ctx, move) => ((move.meta?.drain ?? 0) < 0 || move.rules?.hasCrashDamage ? 1.2 : 1) },
   // Half again on top of the half again a matching type already gives, which
   // comes to four thirds of the ordinary bonus.
   adaptability: { power: (ctx, move) => (stab(ctx.self, move) ? 4 / 3 : 1) },

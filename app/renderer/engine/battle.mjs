@@ -91,7 +91,7 @@ import { stageMultiplier } from './stats.mjs';
  * @property {number} repeats how many turns running that has been the move
  * @property {boolean} movedLast whether it acted second on the previous turn
  * @property {number} maxHp
- * @property {{hitBy: any[], damage: number, lastHit: any, moved: boolean, lowered: boolean, flung: string|null}} turn what it did
+ * @property {{startHp: number, hitBy: any[], damage: number, lastHit: any, moved: boolean, lowered: boolean, flung: string|null}} turn what it did
  *   and had done to it this turn
  * @property {{speciesId: number, forme: string|null, stats: Record<string, number>, moves: Array<{move: string, pp: number}>}} [transform]
  *   what a Transform or an Imposter made it, for the rest of the battle
@@ -205,14 +205,19 @@ const NO_REPEAT = new Set(['blood-moon', 'gigaton-hammer']);
 /** The heals that clear a condition as well, so are worth a turn at full health. */
 const SELF_CURING_HEALS = new Set(['jungle-healing', 'lunar-blessing']);
 
-/** Status moves a substitute does not stop, as the games list them. */
-const SUBSTITUTE_BYPASS = new Set(['perish-song', 'roar', 'whirlwind', 'transform', 'psych-up', 'role-play', 'spite', 'haze', 'court-change', 'doodle']);
-
 /** The field clocks whose running out is one of the move lines. */
 const FIELD_MESSAGES = new Set(['gravity', 'wonderRoom', 'magicRoom', 'waterSport', 'mudSport', 'mist', 'safeguard', 'luckyChant']);
 
-/** What a combatant did and had done to it this turn, which a few moves ask about. */
-const freshTurn = () => ({
+/**
+ * What a combatant did and had done to it this turn, which a few moves ask
+ * about. `startHp` is the health it went in with, so an Assurance can tell
+ * it has been hurt by anything at all — its own recoil, a Life Orb, its
+ * confusion — where `damage` counts only the attacks that hit it.
+ *
+ * @param {number} [startHp]
+ */
+const freshTurn = (startHp = 0) => ({
+  startHp,
   hitBy: /** @type {any[]} */ ([]),
   damage: 0,
   lastHit: /** @type {any} */ (null),
@@ -929,6 +934,19 @@ export class Battle {
     if (this.abilityOf(user)?.noSecondary) return false;
     if (heldShield(target.pokemon, 'secondary') || this.abilityOf(target, user)?.noSecondaryTaken) return false;
     return !target.marks.hitSubstitute;
+  }
+
+  /**
+   * Whether a move goes straight through a substitute to the Pokémon behind
+   * it: a sound, one the games mark as passing one — a Taunt, an Encore, a
+   * Hyperspace Hole (`bypasssub`, read from Showdown's move data) — or
+   * anything from an Infiltrator.
+   *
+   * @param {Combatant} user
+   * @param {any} move
+   */
+  passesSubstitute(user, move) {
+    return hasFlag(move, 'sound') || hasFlag(move, 'bypasssub') || Boolean(this.abilityOf(user)?.infiltrates);
   }
 
   /** @param {Combatant} user */
@@ -1734,7 +1752,7 @@ export class Battle {
     this.activeLog = log;
 
     this.turn++;
-    for (const combatant of [this.player, this.foe]) if (combatant) combatant.turn = freshTurn();
+    for (const combatant of [this.player, this.foe]) if (combatant) combatant.turn = freshTurn(combatant.pokemon.hp);
     this.field.echoedThisTurn = false;
     this.syncSuppression();
     if (this.turn > TURN_LIMIT) {
@@ -2251,6 +2269,57 @@ export class Battle {
   }
 
   /**
+   * Whether one side moves before the other on Speed alone, a Trick Room
+   * turning it round. Priority and a Quick Claw are not counted: this is the
+   * guess made before either side has chosen. A tie is neither.
+   *
+   * @param {Combatant} combatant
+   * @param {Combatant} other
+   */
+  outpaces(combatant, other) {
+    const mine = this.speedOf(combatant);
+    const theirs = this.speedOf(other);
+    return this.field.trickRoom > 0 ? mine < theirs : mine > theirs;
+  }
+
+  /**
+   * How likely `target` is to be hurt this turn before `user` acts, guessed
+   * before either side has chosen — an Assurance's question. Only if it is the
+   * faster, and only by what it has shown: an attack it has used with a Life
+   * Orb in hand, a recoil move, a Mind Blown; or its own confusion.
+   *
+   * @param {Combatant} target
+   * @param {Combatant} user
+   */
+  hurtFirstChance(target, user) {
+    if (!this.outpaces(target, user)) return 0;
+    const confused = hasVolatile(target, VOLATILE.CONFUSION) ? CONFUSION_SELF_HIT : 0;
+    const orb = Boolean(heldPassive(target.pokemon, 'damage')?.cost) && !this.abilityOf(target)?.indirectImmune;
+    const recoils = !this.recoilFree(target);
+    const hurts = seenShare(target, (move, slug) =>
+      move.damageClass !== 'status' &&
+      (orb || (recoils && (move.meta?.drain ?? 0) < 0) || Boolean(move.rules?.mindBlownRecoil) || slug === 'chloroblast'));
+    return confused + (1 - confused) * hurts;
+  }
+
+  /**
+   * How likely `user` is to have a stat lowered this turn before it acts — a
+   * Lash Out's question, guessed the same way: from the moves `target` has
+   * been seen to use that lower the other side's stats, at the odds they do.
+   *
+   * @param {Combatant} user
+   * @param {Combatant} target
+   */
+  loweredFirstChance(user, target) {
+    if (!this.outpaces(target, user)) return 0;
+    return seenShare(target, (move) => {
+      const lowers = (move.statChanges ?? []).some((change) => !(change.self ?? change.change > 0) && change.change < 0);
+      if (!lowers) return 0;
+      return move.damageClass === 'status' ? 1 : (move.meta?.statChance ?? 0) / 100;
+    });
+  }
+
+  /**
    * How much the other side's mere presence takes off a stat.
    *
    * The four Ruin abilities each weigh on one stat of everything on the field
@@ -2758,8 +2827,10 @@ export class Battle {
     }
 
     // A Magic Bounce or a Magic Coat sends a status move back where it came
-    // from.
-    if (move.damageClass === 'status' && aimsAtTarget(move) && !move.bounced) {
+    // from — the ones the games mark as reflectable (`reflectable`, read from
+    // Showdown's move data): a Toxic, a Taunt, a Stealth Rock laid on its
+    // side, but not a Skill Swap, a Psych Up or a Transform.
+    if (move.damageClass === 'status' && hasFlag(move, 'reflectable') && !move.bounced) {
       const bouncer = this.abilityOf(defender, attacker)?.bouncesStatus;
       if (bouncer || defender.volatile.magicCoat === this.turn) {
         if (bouncer) log.push({ kind: 'ability', side: defender.side, data: { ability: this.abilitySlugOf(defender) } });
@@ -2771,14 +2842,12 @@ export class Battle {
     }
 
     // A substitute takes whatever status move was aimed at the Pokémon behind
-    // it — unless it is a sound, which goes through a doll.
+    // it — unless it is one that goes through a doll.
     if (
       move.damageClass === 'status' &&
       aimsAtTarget(move) &&
       defender.volatile.substitute > 0 &&
-      !hasFlag(move, 'sound') &&
-      !this.abilityOf(attacker)?.infiltrates &&
-      !SUBSTITUTE_BYPASS.has(moveName)
+      !this.passesSubstitute(attacker, move)
     ) {
       log.push({ kind: 'failed', side: attacker.side });
       this.afterMove(attacker, defender, moveName, moveLogStart, log);
@@ -2798,16 +2867,8 @@ export class Battle {
     // simply gone. Only the moves that go looking reach it.
     const hidden = defender.marks.hidden;
     const neverMisses = this.abilityOf(attacker)?.neverMisses || this.abilityOf(defender, attacker)?.neverMisses;
-    if (hidden && aimsAtTarget(move) && reachesHidden(hidden, moveName) === null && !neverMisses) {
-      log.push({ kind: 'miss', side: attacker.side });
-      this.crash(attacker, move, log);
-      this.breakLock(attacker);
-      this.afterMiss(attacker, log);
-      this.afterMove(attacker, defender, moveName, moveLogStart, log);
-      return;
-    }
-
-    if (!this.rollAccuracy(attacker, defender, move)) {
+    const unreachable = hidden && aimsAtTarget(move) && reachesHidden(hidden, moveName) === null && !neverMisses;
+    if (unreachable || !this.rollAccuracy(attacker, defender, move)) {
       log.push({ kind: 'miss', side: attacker.side });
       this.crash(attacker, move, log);
       this.breakLock(attacker);
@@ -3173,7 +3234,7 @@ export class Battle {
       attacker.marks.present = roll < 0.4 ? 40 : roll < 0.7 ? 80 : roll < 0.8 ? 120 : 0;
     }
     // Everything whose power is worked out on the spot.
-    const power = variablePower(this, attacker, defender, move);
+    const power = variablePower(this, attacker, defender, move, peek);
     if (power !== null) move = { ...move, power };
 
     const ability = this.abilityOf(attacker);
@@ -3285,7 +3346,7 @@ export class Battle {
     const status = AILMENT_TO_STATUS[ailment];
     if ((status || ailment === 'confusion') && categoryOf(move) === 'status') {
       const sealed = this.field.sides[defender.side].safeguard > 0 && !this.abilityOf(attacker)?.infiltrates;
-      const doll = defender.volatile.substitute > 0 && !hasFlag(move, 'sound') && !this.abilityOf(attacker)?.infiltrates;
+      const doll = defender.volatile.substitute > 0 && !this.passesSubstitute(attacker, move);
       if (sealed || doll) return true;
       if (ailment === 'confusion') return hasVolatile(defender, VOLATILE.CONFUSION) || (this.field.terrain === TERRAIN.MISTY && this.grounded(defender));
       if (defender.pokemon.status) return true;
@@ -3979,10 +4040,11 @@ export class Battle {
     let total = 0;
     let soaked = 0;
     let landed = 0;
+    /** The hits the Pokémon itself took, rather than its substitute or its Disguise. */
+    let struck = 0;
     let effectiveness = 1;
     let critical = false;
-    const behindDoll = () =>
-      defender.volatile.substitute > 0 && !hasFlag(move, 'sound') && !this.abilityOf(attacker)?.infiltrates;
+    const behindDoll = () => defender.volatile.substitute > 0 && !this.passesSubstitute(attacker, move);
 
     for (let hit = 0; hit < hits && defender.pokemon.hp > 0; hit++) {
       // Each strike of a Triple Axel or a Population Bomb aims again, and a
@@ -4031,6 +4093,7 @@ export class Battle {
       }
       defender.pokemon.hp = Math.max(survives ? 1 : 0, defender.pokemon.hp - result.damage);
       total += result.damage;
+      struck++;
       // Every strike drains the bar on its own, as the games play a Double
       // Kick or a Bullet Seed: one drop for all of them read as the bar
       // jumping straight to where it ended.
@@ -4148,7 +4211,7 @@ export class Battle {
 
     defender.marks.lastDamage = total;
     if (total > 0) this.answerHit(attacker, defender, move, total, effectiveness, log);
-    this.applySecondaryEffects(attacker, defender, move, log);
+    this.applySecondaryEffects(attacker, defender, move, log, struck);
 
     // Whatever the move does beyond its numbers: an item knocked away, a
     // hazard spun off, a Pokémon dragged out.
@@ -4228,8 +4291,8 @@ export class Battle {
     if (this.abilityOf(attacker)?.maxHits) return max;
     const dice = heldPassive(attacker.pokemon, 'multiHit');
     if (dice) return this.rng.int(Math.min(max, dice.min), max);
-    // Two to five is not even odds: two and three a third of the time each,
-    // four and five a sixth.
+    // Two to five is not even odds: two and three 35% of the time each, four
+    // and five 15%.
     if (min === 2 && max === 5) {
       const roll = this.rng.next();
       return roll < 0.35 ? 2 : roll < 0.7 ? 3 : roll < 0.85 ? 4 : 5;
@@ -4244,10 +4307,12 @@ export class Battle {
    * @param {Combatant} attacker
    * @param {any} move
    */
-  chargeMultiplier(attacker, move) {
+  chargeMultiplier(attacker, move, peek = false) {
     if ((!attacker.marks.charged && !attacker.volatile.charge) || move.type !== 'electric') return 1;
-    attacker.marks.charged = false;
-    attacker.volatile.charge = false;
+    if (!peek) {
+      attacker.marks.charged = false;
+      attacker.volatile.charge = false;
+    }
     return 2;
   }
 
@@ -4473,9 +4538,13 @@ export class Battle {
    * @param {Combatant} attacker
    * @param {Combatant} defender
    * @param {any} move
+   * @param {{peek?: boolean}} [options] `peek` works out the hit without
+   *   striking it, for weighing moves up: no critical, the middle of the
+   *   damage spread, no Gem marked spent, no Charge used, no berry eaten,
+   *   and none of the companion's armour, which the caller applies
    * @returns {{damage: number, effectiveness: number, critical: boolean}}
    */
-  computeDamage(attacker, defender, move) {
+  computeDamage(attacker, defender, move, { peek = false } = {}) {
     const level = levelOf(attacker.pokemon);
     const slug = this.slugOf(move);
     const physical = move.damageClass === 'physical';
@@ -4495,12 +4564,13 @@ export class Battle {
     // Counter for twice what it took, a one-hit KO for everything.
     if (move.rules?.ohko) return { damage: defender.pokemon.hp, effectiveness: 1, critical: false };
     const fixed = fixedDamage(this, attacker, defender, move);
+    const armour = (/** @type {number} */ against) => (peek ? 1 : companionArmour(defender, against));
     if (fixed !== null) {
-      const damage = Math.max(fixed > 0 ? 1 : 0, Math.floor(fixed * companionArmour(defender, 1)));
+      const damage = Math.max(fixed > 0 ? 1 : 0, Math.floor(fixed * armour(1)));
       return { damage, effectiveness, critical: false };
     }
 
-    const critical = this.rollCritical(attacker, defender, move);
+    const critical = !peek && this.rollCritical(attacker, defender, move);
     // An Unaware on either side reads the other's stages as zero: the
     // attacker's boosts do not help it, the defender's walls do not hold.
     // A Sacred Sword reads the defender's walls the same way.
@@ -4528,7 +4598,7 @@ export class Battle {
     // that thrives on a condition, or the move is a Facade.
     const burn =
       physical && attacker.pokemon.status === STATUS.BURN && !attackerAbility?.ignoresBurn && slug !== 'facade' ? 0.5 : 1;
-    const spread = this.rng.int(85, 100) / 100;
+    const spread = peek ? 0.925 : this.rng.int(85, 100) / 100;
     const criticalBonus = critical ? 1.5 * (attackerAbility?.critBonus ?? 1) : 1;
 
     const attackContext = this.abilityContext(attacker, defender, [], { retyped: Boolean(move.retyped) });
@@ -4537,9 +4607,9 @@ export class Battle {
     const abilityTaken = defenderAbility?.taken?.(defendContext, move, effectiveness) ?? 1;
     const aura = auraMultiplier([this.abilityOf(attacker), this.abilityOf(defender)], move);
 
-    const held = this.heldDamage(attacker, move, effectiveness);
-    const charged = this.chargeMultiplier(attacker, move);
-    const resisted = this.heldResist(defender, move, effectiveness);
+    const held = this.heldDamage(attacker, move, effectiveness, peek);
+    const charged = this.chargeMultiplier(attacker, move, peek);
+    const resisted = this.heldResist(defender, move, effectiveness, peek);
     // A Hydro Steam is the one water move the sun makes stronger.
     let weather = weatherDamage(this.weatherFor(attacker), move.type);
     if (slug === 'hydro-steam' && this.weatherFor(attacker) === WEATHER.SUN) weather = 1.5;
@@ -4582,7 +4652,7 @@ export class Battle {
     // other hit is rounded up to.
     if (abilityTaken === 0) return { damage: 0, effectiveness, critical };
     // The companion's armour comes off the finished hit, weakness and all.
-    const damage = Math.max(1, Math.floor(formula * companionArmour(defender, effectiveness)));
+    const damage = Math.max(1, Math.floor(formula * armour(effectiveness)));
     return { damage, effectiveness, critical };
   }
 
@@ -4678,11 +4748,11 @@ export class Battle {
    * @param {any} move
    * @param {number} effectiveness
    */
-  heldDamage(attacker, move, effectiveness) {
+  heldDamage(attacker, move, effectiveness, peek = false) {
     // A Gem goes off once, for the one move of its type it powers.
     const gem = heldPassive(attacker.pokemon, 'gem');
     if (gem && gem.moveType === move.type && !move.rules?.damage && !move.rules?.ohko) {
-      attacker.marks.gemUsed = attacker.pokemon.heldItem;
+      if (!peek) attacker.marks.gemUsed = attacker.pokemon.heldItem;
       return gem.multiplier;
     }
     if (attacker.marks.gemUsed) return itemOf(attacker.marks.gemUsed)?.held?.multiplier ?? 1;
@@ -4710,13 +4780,15 @@ export class Battle {
    * @param {any} move
    * @param {number} effectiveness
    */
-  heldResist(defender, move, effectiveness) {
+  heldResist(defender, move, effectiveness, peek = false) {
     const berry = heldPassive(defender.pokemon, 'resist');
     if (!berry || berry.moveType !== move.type) return 1;
     if (berry.superEffectiveOnly && effectiveness <= 1) return 1;
 
-    defender.marks.ateResist = defender.pokemon.heldItem;
-    this.consumeItem(defender);
+    if (!peek) {
+      defender.marks.ateResist = defender.pokemon.heldItem;
+      this.consumeItem(defender);
+    }
     // A Ripen makes the berry take off three quarters rather than half.
     return this.abilityOf(defender)?.berryDouble ? berry.multiplier / 2 : berry.multiplier;
   }
@@ -4726,8 +4798,10 @@ export class Battle {
    * @param {Combatant} defender
    * @param {any} move
    * @param {LogEntry[]} log
+   * @param {number} [strikes] how many hits reached the Pokémon itself: each
+   *   one rolls for the move's chances, as a Twineedle poisons on either needle
    */
-  applySecondaryEffects(attacker, defender, move, log) {
+  applySecondaryEffects(attacker, defender, move, log, strikes = 1) {
     const meta = move.meta;
     const slug = this.slugOf(move);
     const changes = chargeOwnsStats(slug) ? [] : move.statChanges ?? [];
@@ -4749,10 +4823,17 @@ export class Battle {
     // Serene Grace doubles the odds of whatever a move was already going to do.
     const odds = ability?.secondary ?? 1;
 
+    // Every hit rolls. A condition can only land once, so the first roll that
+    // comes up is the one that tries it — and a Safeguard says so once.
+    const anyStrike = (/** @type {number} */ chance) => {
+      for (let strike = 0; strike < strikes; strike++) if (this.rng.next() < chance) return true;
+      return false;
+    };
+
     const jealous = !RAISED_THIS_TURN_ONLY.has(slug) || defender.marks.raisedTurn === this.turn;
     const ailment = meta.ailment;
     if (reaches && ailment && ailment !== 'none' && meta.ailmentChance > 0 && jealous) {
-      if (this.rng.next() < (meta.ailmentChance / 100) * odds) {
+      if (anyStrike((meta.ailmentChance / 100) * odds)) {
         this.inflictAilment(attacker, defender, ailment, log, { toxic: Boolean(meta.toxic) });
       }
     }
@@ -4765,17 +4846,20 @@ export class Battle {
         ? Math.max(heldPassive(attacker.pokemon, 'flinch')?.chance ?? 0, ability?.flinch ?? 0)
         : 0,
     );
-    if (reaches && flinchChance > 0 && this.rng.next() < flinchChance * odds && !this.abilityOf(defender, attacker)?.flinchImmune) {
+    if (reaches && flinchChance > 0 && !this.abilityOf(defender, attacker)?.flinchImmune && anyStrike(flinchChance * odds)) {
       defender.flinched = true;
     }
 
     // A chance at stages: its user's own (a Flame Charge's Speed), which
     // nothing on the other side can refuse, and the target's, which can be.
+    // Stages do stack, so each hit that comes up moves them again.
     const ownSide = changes.filter((change) => isSelf(change) && change.secondary !== false);
     const theirs = reaches ? changes.filter((change) => !isSelf(change)) : [];
     if ((ownSide.length || theirs.length) && meta.statChance > 0) {
-      if (this.rng.next() < (meta.statChance / 100) * odds) {
-        this.applyStatChanges(attacker, defender, move, log, [...(attacker.pokemon.hp > 0 ? ownSide : []), ...theirs]);
+      for (let strike = 0; strike < strikes; strike++) {
+        if (this.rng.next() < (meta.statChance / 100) * odds) {
+          this.applyStatChanges(attacker, defender, move, log, [...(attacker.pokemon.hp > 0 ? ownSide : []), ...theirs]);
+        }
       }
     }
   }
@@ -5392,7 +5476,7 @@ function makeCombatant(pokemon, side) {
     lastMove: null,
     repeats: 0,
     movedLast: false,
-    turn: freshTurn(),
+    turn: freshTurn(pokemon.hp),
     // Read rather than stored: a level-up mid-battle raises it, and every
     // ability that asks about full or half health has to see that.
     get maxHp() {
@@ -5528,8 +5612,8 @@ export function bestDamageMove(battle, attacker, defender, usable) {
     const move = asItWouldLeave(battle, attacker, defender, entry);
     // A type the other side simply does not take is not a choice; the games'
     // own trainers will not throw one either.
-    if (cannotTouch(defender, move)) continue;
-    const score = expectedDamage(attacker, defender, move);
+    if (cannotLand(battle, attacker, defender, move)) continue;
+    const score = expectedDamage(battle, attacker, defender, move);
     if (score > bestScore) {
       bestScore = score;
       best = slot.move;
@@ -5571,7 +5655,22 @@ export function asItWouldLeave(battle, attacker, defender, move) {
 
 /**
  * {@link cannotTouch}, asked of the move as it would leave rather than its
- * bare entry.
+ * bare entry, and by the battle's own reckoning of the matchup rather than
+ * the bare chart: the attacker's own Scrappy, a Flying type brought down, a
+ * Tar Shot. What the target's ability would drink is still not counted.
+ *
+ * @param {Battle} battle
+ * @param {Combatant} attacker
+ * @param {Combatant} defender
+ * @param {any} move as it would leave
+ */
+function cannotLand(battle, attacker, defender, move) {
+  if (!move || move.damageClass === 'status') return false;
+  return battle.effectivenessOf(attacker, move, defender) === 0;
+}
+
+/**
+ * {@link cannotLand}, of a move's bare entry.
  *
  * @param {Battle} battle
  * @param {Combatant} attacker
@@ -5580,7 +5679,7 @@ export function asItWouldLeave(battle, attacker, defender, move) {
  */
 function cannotTouchAsUsed(battle, attacker, defender, move) {
   if (!move || move.damageClass === 'status') return false;
-  return cannotTouch(defender, asItWouldLeave(battle, attacker, defender, move));
+  return cannotLand(battle, attacker, defender, asItWouldLeave(battle, attacker, defender, move));
 }
 
 /**
@@ -5622,22 +5721,12 @@ function movesWorthUsing(battle, attacker, defender, usable) {
   const worth = usable.filter((slot) => {
     const move = moveOf(slot.move);
     if (!move) return false;
-    if (cannotTouchAsUsed(battle, attacker, defender, move)) return false;
     // A move that needs a partner, or that sends the other Pokémon away
     // before it is beaten, is not something to reach for unasked.
     if (neverAutomatic(slot.move)) return false;
     // Nor is fainting for a few stat drops, picked at random.
     if (move.damageClass === 'status' && SELF_KNOCKOUT.has(slot.move)) return false;
-    switch (categoryOf(move)) {
-      case 'stat':
-        return hasRoomToChange(move, attacker, defender);
-      case 'status':
-        return !defender.pokemon.status;
-      case 'heal':
-        return attacker.pokemon.hp < maxHp(attacker.pokemon);
-      default:
-        return true;
-    }
+    return worthReachingFor(battle, move, categoryOf(move), attacker, defender);
   });
   return worth.length ? worth : movesThatCanLand(battle, attacker, defender, usable);
 }
@@ -5663,43 +5752,66 @@ function slugOfEntry(move) {
 }
 
 /**
- * Average damage a move would do, ignoring the random spread — enough to rank
- * moves without rolling dice.
+ * The share of the moves a combatant has used this battle that `weigh`
+ * counts, each by what it returns — a yes or a chance. What it has not shown
+ * counts for nothing: the side guessing knows it no better than that.
  *
+ * @param {Combatant} combatant
+ * @param {(move: any, slug: string) => number|boolean} weigh
+ */
+function seenShare(combatant, weigh) {
+  const seen = Object.keys(combatant.usedOn ?? {}).filter((slug) => moveOf(slug));
+  if (!seen.length) return 0;
+  return seen.reduce((sum, slug) => sum + Number(weigh(moveOf(slug), slug)), 0) / seen.length;
+}
+
+/**
+ * Average damage a move would do — enough to rank moves without rolling dice.
+ *
+ * It is the battle's own damage formula, worked out without striking
+ * (`computeDamage` with `peek`): the weather, the terrain, both abilities,
+ * a held item or a resist berry, a burn, a screen, all as the hit itself
+ * would have them. Only the dice are left out — the spread at its middle and
+ * no critical — and the companion's armour, which the callers that want it
+ * put on themselves.
+ *
+ * @param {Battle} battle
  * @param {Combatant} attacker
  * @param {Combatant} defender
  * @param {any} move
  */
-export function expectedDamage(attacker, defender, move) {
+export function expectedDamage(battle, attacker, defender, move) {
   // The fixed-damage moves are worth what they take. A move already made
   // over by `asItWouldLeave` carries its slug; the bare entry is looked up.
   const slug = move.slug ?? slugOfEntry(move);
   const fixed = estimatedFixedDamage(attacker, defender, move, slug);
   if (fixed !== null) return fixed * ((move.accuracy ?? 100) / 100);
-  const weighed = weightPower(
-    move,
-    speciesOf(attacker.pokemon.speciesId)?.weight ?? 100,
-    speciesOf(defender.pokemon.speciesId)?.weight ?? 100,
-  );
+  const weighed = weightPower(move, battle.weightOf(attacker), battle.weightOf(defender));
   if (weighed !== null) move = { ...move, power: weighed };
   if (!move.power) return 0;
-  const level = levelOf(attacker.pokemon);
-  const physical = move.damageClass === 'physical';
-  const attack = effectiveStat(attacker, physical ? 'atk' : 'spa');
-  const defence = effectiveStat(defender, physical ? 'def' : 'spd');
+  return battle.computeDamage(attacker, defender, move, { peek: true }).damage * expectedHits(move, slug);
+}
 
-  const base = Math.floor(
-    Math.floor((Math.floor((2 * level) / 5 + 2) * move.power * attack) / defence) / 50,
-  ) + 2;
-
-  const types = attacker.marks?.types ?? speciesOf(attacker.pokemon.speciesId).types;
-  const stab = types.includes(move.type) ? 1.5 : 1;
-  const against = defender.marks?.types ?? speciesOf(defender.pokemon.speciesId).types;
-  const effectiveness = typeEffectiveness(move.type, against);
+/**
+ * How many hits a move can be expected to land, counting its accuracy: one
+ * roll for most, the average of the range for a Bullet Seed (2–5 is not
+ * even odds; see `hitCount`), and for a move that aims every hit again — a
+ * Population Bomb, a Triple Axel — each later hit only if all the ones
+ * before it landed. A Triple Axel's hits count double and triple, as their
+ * power climbs.
+ *
+ * @param {any} move
+ * @param {string} slug
+ */
+function expectedHits(move, slug) {
   const accuracy = (move.accuracy ?? 100) / 100;
-  const hits = move.meta?.minHits ? ((move.meta.minHits + (move.meta.maxHits ?? move.meta.minHits)) / 2) : 1;
-
-  return base * stab * effectiveness * accuracy * hits * 0.925;
+  const min = move.meta?.minHits;
+  if (!min) return accuracy;
+  const max = move.meta.maxHits ?? min;
+  if (!move.meta.multiAccuracy) return accuracy * (min === 2 && max === 5 ? 3.1 : (min + max) / 2);
+  let total = 0;
+  for (let hit = 1; hit <= max; hit++) total += accuracy ** hit * (ESCALATING.has(slug) ? hit : 1);
+  return total;
 }
 
 /**
@@ -5913,20 +6025,16 @@ function conditionHolds(condition, battle, attacker, defender, slug) {
     // Who moves first on Speed alone, a Trick Room turning it round; a
     // priority move is not counted.
     case 'faster':
-    case 'slower': {
-      const mine = battle.speedOf(attacker);
-      const theirs = battle.speedOf(defender);
-      const ahead = battle.field.trickRoom > 0 ? mine < theirs : mine > theirs;
-      const behind = battle.field.trickRoom > 0 ? mine > theirs : mine < theirs;
-      return condition === 'faster' ? ahead : behind;
-    }
+      return battle.outpaces(attacker, defender);
+    case 'slower':
+      return battle.outpaces(defender, attacker);
     // This move, as it would land now, looks enough to finish the foe.
     case 'canFinish': {
       const entry = moveOf(slug);
       if (!entry || entry.damageClass === 'status') return false;
       const move = asItWouldLeave(battle, attacker, defender, entry);
-      if (cannotTouch(defender, move)) return false;
-      return expectedDamage(attacker, defender, move) >= defender.pokemon.hp;
+      if (cannotLand(battle, attacker, defender, move)) return false;
+      return expectedDamage(battle, attacker, defender, move) >= defender.pokemon.hp;
     }
     case 'foePhysical':
       return battle.stat(defender, 'atk') >= battle.stat(defender, 'spa');

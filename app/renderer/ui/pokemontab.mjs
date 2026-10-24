@@ -267,10 +267,20 @@ function genderMark(pokemon) {
  * Goggles only stops powder — so a player choosing between two moves of the
  * same type and power is often choosing between these.
  *
+ * Two are read off the move rather than the list. The `heal` flag is
+ * "stopped by a Heal Block", which a Giga Drain is as much as a Recover; on
+ * an attack it says the move drains, which is what a Big Root and a Liquid
+ * Ooze answer, rather than that it heals. And a move that hurts its user in
+ * proportion — a Double-Edge — is a recoil move, which a Rock Head and a
+ * Reckless answer, though no flag says so.
+ *
  * @param {any} move
  */
 function moveClasses(move) {
-  const flags = (move.flags ?? []).filter((flag) => MOVE_FLAG_SET.has(flag));
+  const flags = (move.flags ?? [])
+    .filter((flag) => MOVE_FLAG_SET.has(flag))
+    .map((flag) => (flag === 'heal' && move.damageClass !== 'status' ? 'drain' : flag));
+  if ((move.meta?.drain ?? 0) < 0) flags.push('recoil');
   if (flags.length === 0) return null;
   return el('span.move-flags', {}, flags.map((flag) => el('span.move-flag', { text: t(`moveFlag.${flag}`) })));
 }

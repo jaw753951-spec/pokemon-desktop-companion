@@ -228,3 +228,10 @@ test('a Ruin ability says so as its holder comes out, and spares a holder of the
   assert.equal(both.ruinFactor(both.foe, 'atk'), 1, 'two Tablets of Ruin leave each other be');
   assert.equal(both.ruinFactor(both.player, 'atk'), 1);
 });
+
+test('a Reckless powers up a move that crashes as well as one that recoils', options, () => {
+  const power = (/** @type {string} */ slug) => ABILITIES.reckless.power?.(/** @type {any} */ ({}), moveOf(slug), 1);
+  assert.equal(power('double-edge'), 1.2);
+  assert.equal(power('high-jump-kick'), 1.2);
+  assert.equal(power('tackle'), 1);
+});

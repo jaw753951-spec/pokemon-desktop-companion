@@ -7,7 +7,7 @@
  */
 import { timeOfDay } from '../../shared/constants.mjs';
 import { weatherForArea } from '../../shared/area-tags.mjs';
-import { gameData, itemOf, moveOf, speciesOf, typeEffectiveness } from '../core/data.mjs';
+import { abilityOf, gameData, itemOf, moveOf, speciesOf, typeEffectiveness } from '../core/data.mjs';
 import { name as localized, t } from '../core/i18n.mjs';
 import {
   abilitySlot,
@@ -35,6 +35,7 @@ import { EFFORT_STAT_MAX, experienceForLevel, STATS } from './stats.mjs';
 import {
   collectedByType,
   FORME_MOVE_RULES,
+  formeAbility,
   nextForme,
   SET_FORMES,
   settleForme,
@@ -162,6 +163,12 @@ export function useItem(session, slug, choice = {}) {
       // level won in battle does.
       const levelled = levelledUp(session, pokemon, levelBefore);
       const lines = [t('items.used', { name: label }), ...levelled.lines];
+      // A Capsule or a Patch says what the ability turned into: "used it"
+      // alone left the change to be found on the Pokémon screen, or not at all.
+      if (item.use.ability) {
+        const ability = formeAbility(pokemon) ?? pokemon.ability;
+        lines.push(t('items.abilityChanged', { name: nameOf(pokemon), ability: localized(abilityOf(ability)?.name, ability) }));
+      }
       return {
         used: true,
         ok: true,

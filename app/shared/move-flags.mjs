@@ -33,3 +33,15 @@ export const MOVE_FLAGS = [
 
 /** @type {Set<string>} */
 export const MOVE_FLAG_SET = new Set(MOVE_FLAGS);
+
+/**
+ * The classes the engine acts on that are no use as a chip on the Pokémon
+ * screen, both of which the games list move by move: `bypasssub`, the moves
+ * that go straight through a substitute — a Taunt, an Encore, a Hyperspace
+ * Hole — and `reflectable`, the ones a Magic Coat or a Magic Bounce sends
+ * back — a Toxic, a Taunt, but not a Skill Swap or a Transform.
+ */
+export const ENGINE_FLAGS = ['bypasssub', 'reflectable'];
+
+/** Every class the pipeline ships: the ones shown, and the engine's own. @type {Set<string>} */
+export const SHIPPED_FLAG_SET = new Set([...MOVE_FLAGS, ...ENGINE_FLAGS]);
