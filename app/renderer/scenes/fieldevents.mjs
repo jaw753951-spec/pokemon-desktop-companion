@@ -243,9 +243,8 @@ export function createEventRunner({ session, onBattle }) {
     /**
      * @param {import('../engine/events.mjs').EventKind} kind
      * @param {number} offset the field's current world scroll
-     * @param {import('../core/app.mjs').App} app
      */
-    start(kind, offset, app) {
+    start(kind, offset) {
       if (active) return;
       const spawnAt = offset + (FIELD_WIDTH - COMPANION_X) + SPAWN_MARGIN;
 

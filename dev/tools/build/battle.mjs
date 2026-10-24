@@ -18,7 +18,7 @@ import { join } from 'node:path';
 
 import { fetchBuffer, writeOut } from '../lib/http.mjs';
 import { decodePng, encodePng } from '../lib/png.mjs';
-import { METATILE_SIZE, parseJascPal, sliceTiles, TILE_SIZE } from '../lib/gba-gfx.mjs';
+import { EMPTY_TILE, METATILE_SIZE, parseJascPal, sliceTiles, TILE_SIZE } from '../lib/gba-gfx.mjs';
 import { crop } from '../lib/image.mjs';
 import { openMaps } from '../lib/maps.mjs';
 import { BATTLE_HEIGHT, BATTLE_WIDTH, EMERALD, HOENN_BADGE_TYPES } from '../sources.mjs';
@@ -217,8 +217,6 @@ function compose(tiles, map, palette) {
 
   return { width, height, data };
 }
-
-const EMPTY_TILE = new Uint8Array(TILE_SIZE * TILE_SIZE);
 
 /**
  * Move the far platform down a backdrop, leaving the near one where it is.

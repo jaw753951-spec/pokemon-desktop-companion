@@ -80,7 +80,7 @@ export function autoBattleScene({ session, onClose }) {
               el('span.auto-move-head-rank', { text: t('auto.first') }),
               el('span.auto-move-head-rank', { text: t('auto.second') }),
             ]),
-            el('div.auto-moves', {}, session.active.moves.map((slot, index) => moveRow(app, session, state, index, rebuild))),
+            el('div.auto-moves', {}, session.active.moves.map((_, index) => moveRow(app, session, state, index, rebuild))),
           ]),
           el('p.auto-order', { text: t('auto.order') }),
         ]);
