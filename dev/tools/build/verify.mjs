@@ -10,7 +10,7 @@ import { readFile, stat } from 'node:fs/promises';
 
 import { defaultLanguage } from '../../../app/shared/languages.mjs';
 import { LANGUAGES } from '../languages.mjs';
-import { MAX_SPECIES, MOVE_FLAG_SET } from '../sources.mjs';
+import { MAX_SPECIES, SHIPPED_FLAG_SET } from '../sources.mjs';
 // The renderer's own berry-to-tree mapping, so the check and the game can
 // never disagree about which sheet a berry grows on.
 import { treeFor } from '../../../app/renderer/scenes/fieldevents.mjs';
@@ -95,7 +95,7 @@ export async function verifyAssets({ assetDir, dataDir, log }) {
   note(classified > 300, `moves classified: only ${classified}`);
   const strayFlags = new Set();
   for (const move of Object.values(moves)) {
-    for (const flag of move.flags ?? []) if (!MOVE_FLAG_SET.has(flag)) strayFlags.add(flag);
+    for (const flag of move.flags ?? []) if (!SHIPPED_FLAG_SET.has(flag)) strayFlags.add(flag);
   }
   note(strayFlags.size === 0, `moves carry classifications the game does not ship: ${summarize([...strayFlags])}`);
 

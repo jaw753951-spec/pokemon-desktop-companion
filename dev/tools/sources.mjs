@@ -5,9 +5,12 @@
  * plain HTTPS client with no API keys and no tarballs.
  */
 
+import { FIELD_HEIGHT, FIELD_WIDTH } from '../../app/shared/constants.mjs';
+
 export { TAG_TYPES } from '../../app/shared/area-tags.mjs';
 export { BALL_TIERS } from '../../app/shared/ball-tiers.mjs';
-export { MOVE_FLAGS, MOVE_FLAG_SET } from '../../app/shared/move-flags.mjs';
+export { MOVE_FLAGS, MOVE_FLAG_SET, SHIPPED_FLAG_SET } from '../../app/shared/move-flags.mjs';
+export { FIELD_WIDTH };
 
 export const POKEAPI = 'https://raw.githubusercontent.com/PokeAPI/api-data/master/data/api/v2';
 export const SPRITES = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites';
@@ -312,18 +315,6 @@ export const AREAS = [
   { id: 'kanto-victory-road', dir: 'VictoryRoad_1F', location: 'kanto-victory-road-2', tags: ['cave', 'rough'], game: 'firered', region: 'kanto', ko: '챔피언로드', loop: [9, 18] },
   { id: 'cerulean-cave', dir: 'CeruleanCave_1F', location: 'cerulean-cave', tags: ['cave', 'ruins'], game: 'firered', region: 'kanto', ko: '블루시티동굴' },
 ];
-
-/** The three Kanto starters the game opens with, in Pokédex order. */
-export const STARTERS = [1, 4, 7];
-
-/** Window geometry: roughly one sixteenth of the screen's area. */
-export const VIEW_WIDTH = 480;
-export const VIEW_HEIGHT = 270;
-
-/** The field is drawn at twice size; see `FIELD_ZOOM` in the shared constants. */
-export const FIELD_ZOOM = 2;
-export const FIELD_WIDTH = VIEW_WIDTH / FIELD_ZOOM;
-export const FIELD_HEIGHT = VIEW_HEIGHT / FIELD_ZOOM;
 
 /**
  * The scrolling background fills the field, as the map does in the real games.

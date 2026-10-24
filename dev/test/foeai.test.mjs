@@ -68,7 +68,11 @@ test('it heals when the health has run low, not at the top of it', options, () =
 });
 
 test('it sets up while there is time, and stops once it has', options, () => {
-  const battle = fight(make('chansey', 40, ['pound']), make('scyther', 40, ['swords-dance', 'quick-attack']));
+  // A Swarm Scyther: a Technician's Quick Attack hits half as hard again, and
+  // is then nearly as good as the dance.
+  const scyther = make('scyther', 40, ['swords-dance', 'quick-attack']);
+  scyther.ability = 'swarm';
+  const battle = fight(make('chansey', 40, ['pound']), scyther);
   assert.equal(foePicks(battle), 'swords-dance');
   battle.foe.stages.atk = 4;
   assert.equal(foePicks(battle), 'quick-attack');

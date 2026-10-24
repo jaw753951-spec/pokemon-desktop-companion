@@ -121,7 +121,8 @@ export function combineTilesets(primary, secondary, geometry = GEOMETRY.emerald)
   return { tiles, palettes };
 }
 
-const EMPTY_TILE = new Uint8Array(TILE_SIZE * TILE_SIZE);
+/** A tile index past the end of the set reads as nothing drawn. */
+export const EMPTY_TILE = new Uint8Array(TILE_SIZE * TILE_SIZE);
 const FALLBACK_PALETTE = /** @type {Array<[number, number, number]>} */ (
   Array.from({ length: 16 }, () => [0, 0, 0])
 );

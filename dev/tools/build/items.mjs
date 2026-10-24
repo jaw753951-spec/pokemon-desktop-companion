@@ -467,7 +467,7 @@ function quantileTiers(count) {
   /** @type {number[]} */
   const out = [];
   let start = 0;
-  QUANTILE_TIERS.forEach((tier, index) => {
+  QUANTILE_TIERS.forEach((_, index) => {
     const end = index === QUANTILE_TIERS.length - 1 ? count : Math.round(count * TIER_QUANTILES[index]);
     const stop = Math.max(end, Math.min(start + 1, count));
     while (out.length < stop) out.push(index);

@@ -485,3 +485,43 @@ test('a move whose power the fight works out carries none, as the games show a d
   battle.takeTurn();
   assert.equal(battle.foe.pokemon.hp, before - Math.floor(before / 2));
 });
+
+test('what goes through a substitute is what the games say does', options, () => {
+  const behindDoll = (/** @type {string} */ move) => {
+    const foe = punchbag(50);
+    const battle = fight(fixed(MACHAMP, 50, [move]), foe);
+    battle.foe.volatile.substitute = 60;
+    battle.takeTurn();
+    return battle;
+  };
+  // A Taunt reaches the Pokémon behind the doll, as it does in the games.
+  assert.ok((behindDoll('taunt').foe.volatile.taunt ?? 0) > 0);
+  // A Transform does not.
+  assert.equal(behindDoll('transform').player.transform, undefined);
+  // And a Hyperspace Hole hits the Pokémon and leaves the doll standing.
+  const hole = behindDoll('hyperspace-hole');
+  assert.equal(hole.foe.volatile.substitute, 60);
+  assert.ok(hole.foe.pokemon.hp < maxHp(hole.foe.pokemon));
+});
+
+test('a Magic Bounce sends back only what the games mark as reflectable', options, () => {
+  const ESPEON = 196;
+  const bounce = (/** @type {string} */ move) => {
+    const espeon = fixed(ESPEON, 50, ['defense-curl']);
+    espeon.ability = 'magic-bounce';
+    const battle = fight(fixed(MACHAMP, 50, [move]), espeon);
+    const log = battle.takeTurn();
+    return { battle, bounced: log.some((entry) => entry.kind === 'bounced') };
+  };
+  // A Toxic comes back at its user.
+  const toxic = bounce('toxic');
+  assert.ok(toxic.bounced);
+  assert.equal(toxic.battle.player.pokemon.status, STATUS.POISON);
+  // So does a Stealth Rock, onto its user's own side.
+  const rocks = bounce('stealth-rock');
+  assert.ok(rocks.bounced);
+  assert.ok((rocks.battle.field.hazards.player.stealthRock ?? 0) > 0);
+  assert.ok(!(rocks.battle.field.hazards.foe.stealthRock ?? 0));
+  // A Skill Swap is not something a Magic Bounce can send back.
+  assert.equal(bounce('skill-swap').bounced, false);
+});

@@ -22,7 +22,7 @@
 import { speciesOf } from '../core/data.mjs';
 // A cycle — `pokemon.mjs` reads the tables here — but only ever called into,
 // never read while the two modules are still loading.
-import { levelOf, statsOf } from './pokemon.mjs';
+import { abilityInSameSlot, levelOf, statsOf } from './pokemon.mjs';
 
 /** The ability each forme-changing species keys off. */
 export const FORM_ABILITY = new Map([
@@ -428,8 +428,7 @@ export function formeAbility(pokemon) {
   const form = (species?.forms ?? []).find((entry) => entry.slug === pokemon.forme);
   const abilities = form?.abilities;
   if (!abilities?.length) return null;
-  const slot = (species?.abilities ?? []).findIndex((entry) => entry.name === pokemon.ability);
-  return (abilities[slot] ?? abilities[0]).name;
+  return abilityInSameSlot(species?.abilities ?? [], abilities, pokemon.ability ?? '');
 }
 
 /**

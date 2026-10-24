@@ -19,7 +19,7 @@ import {
   newestVersionGroupFor,
   STAT_KEYS,
 } from '../lib/poke.mjs';
-import { MAX_SPECIES, MOVE_FLAG_SET, POKEAPI, SHOWDOWN, VERSION_GROUP_PRIORITY } from '../sources.mjs';
+import { MAX_SPECIES, POKEAPI, SHIPPED_FLAG_SET, SHOWDOWN, VERSION_GROUP_PRIORITY } from '../sources.mjs';
 
 /**
  * @param {{dataDir: string, sample: boolean, log: (message: string) => void, pool: <T>(task: () => Promise<T>) => Promise<T>}} context
@@ -600,7 +600,7 @@ async function attachShowdown(moves, log) {
   let filled = 0;
   for (const move of Object.values(moves)) {
     const sd = byNumber.get(move.id);
-    move.flags = Object.keys(sd?.flags ?? {}).filter((flag) => sd.flags[flag] && MOVE_FLAG_SET.has(flag));
+    move.flags = Object.keys(sd?.flags ?? {}).filter((flag) => sd.flags[flag] && SHIPPED_FLAG_SET.has(flag));
     if (move.flags.length) flagged++;
     if (!sd) continue;
 

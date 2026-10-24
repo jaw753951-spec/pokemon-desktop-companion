@@ -11,7 +11,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { NEEDS_ASSETS, useRealGameData } from './helpers/data.mjs';
-import { MOVE_FLAGS } from '../../app/shared/move-flags.mjs';
+import { SHIPPED_FLAG_SET } from '../../app/shared/move-flags.mjs';
 import { weatherForArea } from '../../app/shared/area-tags.mjs';
 import { Rng } from '../../app/renderer/core/rng.mjs';
 import { abilityOf, artOf, gameData, itemOf, moveHasFlag, moveOf, spriteKey } from '../../app/renderer/core/data.mjs';
@@ -31,7 +31,6 @@ import {
 } from '../../app/renderer/engine/field.mjs';
 import { useItem } from '../../app/renderer/engine/items.mjs';
 import {
-  abilitySlot,
   createPokemon,
   evolveInto,
   levelOf,
@@ -137,17 +136,6 @@ test('a wild Pokémon draws from its whole ability pool, hidden included', optio
   assert.deepEqual([...ordinary], ['limber']);
 });
 
-test('evolving keeps the ability slot rather than the ability', options, () => {
-  // Eevee's second slot is Adaptability; Vaporeon's is Hydration.
-  const eevee = fixed(133, 30);
-  eevee.ability = 'adaptability';
-  assert.equal(abilitySlot(eevee), 1);
-
-  evolveInto(eevee, 134);
-  assert.equal(eevee.ability, 'hydration');
-  assert.equal(abilitySlot(eevee), 1);
-});
-
 test('every ability the engine reads is one the dex ships', options, () => {
   const dex = gameData().abilities;
   for (const slug of Object.keys(ABILITIES)) {
@@ -245,7 +233,7 @@ test('Levitate and an Air Balloon both keep a Pokémon off the ground', options,
 
 test('every move carries its classification, and only the ones the game ships', options, () => {
   const moves = gameData().moves;
-  const shipped = new Set(MOVE_FLAGS);
+  const shipped = SHIPPED_FLAG_SET;
 
   let classified = 0;
   for (const move of Object.values(moves)) {
@@ -488,11 +476,30 @@ test('an Ability Capsule swaps, and a Patch reaches the hidden one', options, ()
   const session = bag({ 'ability-capsule': 1, 'ability-patch': 2 }, bulbasaur);
   assert.equal(useItem(session, 'ability-capsule').ok, false);
 
-  assert.equal(useItem(session, 'ability-patch').ok, true);
+  const patched = useItem(session, 'ability-patch');
+  assert.equal(patched.ok, true);
   assert.equal(bulbasaur.ability, 'chlorophyll');
+  // It says what the ability became, not only that the item was used.
+  assert.match(patched.message, /엽록소|Chlorophyll|items\.abilityChanged/);
   // And back again, as the games allow.
   assert.equal(useItem(session, 'ability-patch').ok, true);
   assert.equal(bulbasaur.ability, 'overgrow');
+});
+
+test('an ability evolves in its slot, not its place in the list', options, () => {
+  const evolve = (/** @type {number} */ from, /** @type {string} */ ability, /** @type {number} */ to) => {
+    const pokemon = createPokemon(new Rng(3), from, 30);
+    pokemon.ability = ability;
+    evolveInto(pokemon, to);
+    return pokemon.ability;
+  };
+  // An Eevee's second ordinary ability goes to a Vaporeon's only one, not to
+  // the hidden Hydration that sits second in its list.
+  assert.equal(evolve(133, 'adaptability', 134), 'water-absorb');
+  assert.equal(evolve(133, 'anticipation', 134), 'hydration');
+  // A hidden Friend Guard comes out of the cocoon hidden still.
+  assert.equal(evolve(665, 'friend-guard', 666), 'friend-guard');
+  assert.equal(evolve(665, 'shed-skin', 666), 'shield-dust');
 });
 
 test('a PP Up raises the ceiling rather than filling the bar', options, () => {

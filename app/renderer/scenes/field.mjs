@@ -640,7 +640,7 @@ export function fieldScene(session) {
           // Running short of health, PP, potions or balls calls a rest stop
           // once; it is no longer one of the rolls.
           callRestStop(session);
-          events?.start(session.events.roll(session.rng, eventModifiers(session)), offset, app);
+          events?.start(session.events.roll(session.rng, eventModifiers(session)), offset);
           // Ten things happen in a place, and then somewhere else.
           if (session.countEvent()) pendingCrossing = true;
         }
