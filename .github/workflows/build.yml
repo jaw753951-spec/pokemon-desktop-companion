@@ -48,38 +48,39 @@ jobs:
           draft: true
           generate_release_notes: true
           body: |
-            화면 위에 항상 떠 있는 작은 창 안에서 포켓몬이 혼자 여행하고, 싸우고,
-            파밍하며 자라는 데스크탑 다마고치입니다.
+            A desktop tamagotchi: in a small window that always floats on top of your screen, a Pokémon travels,
+            battles, farms items and grows up on its own.
 
-            ## 받기
+            ## Download
 
-            | OS | 파일 |
+            | OS | File |
             | --- | --- |
-            | Windows | `*-win-x64.zip` — 압축을 풀고 `Pokemon Desktop Companion.exe` 실행 |
-            | macOS | 애플 실리콘(M1 이후) `*-mac-arm64.dmg` · 인텔 `*-mac-x64.dmg` |
+            | Windows | `*-win-x64.zip` — unzip it and run `Pokemon Desktop Companion.exe` |
+            | macOS | Apple silicon (M1 and later) `*-mac-arm64.dmg` · Intel `*-mac-x64.dmg` |
             | Linux | `*-linux-x86_64.AppImage` |
 
-            ## 처음 실행할 때
+            ## The first launch
 
-            서명 인증서가 없는 개인 팬 프로젝트라 OS가 한 번 막습니다. 한 번만 넘기면 됩니다.
+            This is a personal fan project with no signing certificate, so your OS will block it once. You only have to
+            get past it the one time.
 
-            - **Windows** — 설치 과정 없이 압축만 풀면 됩니다. "Windows의 PC 보호" 창이
-              뜨면 **추가 정보 → 실행**
-            - **macOS** — 앱을 **우클릭 → 열기 → 열기**. 그래도 막히면 터미널에서
+            - **Windows** — there is no installer; just unzip it. If a "Windows protected your PC" window appears,
+              choose **More info → Run anyway**.
+            - **macOS** — **right-click the app → Open → Open**. If it is still blocked, run this in Terminal:
               `xattr -dr com.apple.quarantine "/Applications/Pokemon Desktop Companion.app"`
-            - **Linux** — `chmod +x *.AppImage` 후 실행
+            - **Linux** — `chmod +x *.AppImage`, then run it.
 
-            ## 알아두면 좋은 것
+            ## Good to know
 
-            - 창은 화면의 약 1/16 크기로 항상 위에 뜹니다. 창 위쪽에 마우스를 올리면
-              드래그 바가 나오고, 위치와 크기는 기억됩니다.
-            - 세이브 3슬롯과 설정은 앱 바깥(`userData`)에 저장되므로 버전을 올려도 남습니다.
-            - 5분마다 자동 저장되고, 설정에서 **저장 후 종료**로 끌 수 있습니다.
+            - The window is small and always stays on top. Hover over the top of the window and a drag bar appears; its
+              position and size are remembered.
+            - The three save slots and your settings are stored outside the app (`userData`), so they survive an update.
+            - Progress is saved automatically every 5 minutes, and **Save and quit** in the settings closes the game.
 
             ---
 
-            비상업 팬 프로젝트입니다. Pokémon 및 관련 명칭·이미지·음악의 모든 권리는
-            Nintendo / Creatures Inc. / GAME FREAK inc. 에 있습니다.
+            This is a non-commercial fan project. All rights to Pokémon and its related names, images and music belong
+            to Nintendo / Creatures Inc. / GAME FREAK inc.
 
 
       # A release outlives the build that made it: drop a target and its last
