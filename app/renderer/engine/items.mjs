@@ -1394,10 +1394,62 @@ export function learnsMachine(pokemon, slug) {
 export const LEARNABLE_MACHINE_SHARE = 0.5;
 
 /**
- * An item found out of a pool: any of it alike, except that on the save's
- * first run a TM is now and then traded for one the travelling Pokémon can
- * learn (see `LEARNABLE_MACHINE_SHARE`). How often a find is a TM at all is
- * the pool's, as it was.
+ * How many of a supply in the bag halve the chance of finding it rather than
+ * another: none counts in full, five half, fifteen a quarter.
+ */
+export const STOCK_HALVES_AT = 5;
+
+/**
+ * How much a find leans to a supply the bag has `count` of.
+ *
+ * @param {number} count
+ */
+export function stockWeight(count) {
+  return 1 / (1 + Math.max(0, count) / STOCK_HALVES_AT);
+}
+
+/**
+ * One of some supplies — berries, potions, anything the bag stocks by the
+ * dozen — leaning to whichever the bag is shortest of, so a find tops up what
+ * is running out rather than piling onto what is already plenty.
+ *
+ * @param {import('./session.mjs').Session} session
+ * @param {string[]} slugs
+ * @returns {string|null}
+ */
+export function shortestSupply(session, slugs) {
+  return session.rng.weighted(slugs.map((slug) => ({ value: slug, weight: stockWeight(session.countOf(slug)) })));
+}
+
+/** The kinds of medicine a battle gets through: what restores HP, cures or restores PP. */
+const EVERYDAY_MEDICINE = new Set(['healing', 'status-cures', 'pp-recovery']);
+
+/**
+ * Whether an item is medicine a battle gets through — a potion, a cure, an
+ * Ether — rather than a vitamin, a mint or a Rare Candy.
+ *
+ * @param {string} slug
+ */
+export function isEverydayMedicine(slug) {
+  const item = itemOf(slug);
+  return item?.pocket === 'medicine' && EVERYDAY_MEDICINE.has(item.category);
+}
+
+/**
+ * An item found out of a pool: any of it alike, except that a potion, a cure
+ * or an Ether gives way to whichever of those the bag is shortest of (see
+ * `shortestSupply`), and on the save's first run a TM is now and then traded
+ * for one the travelling Pokémon can learn (see `LEARNABLE_MACHINE_SHARE`).
+ * How often a find is a TM, a ball or a potion at all is the pool's, as it
+ * was.
+ *
+ * Only those lean. The Pokémon Center hands out potions by the dozen, so a
+ * find leaning across the whole medicine pocket gave up its potions to the
+ * vitamins and mints, held one or none apiece as the cures are; kept to the
+ * medicine a battle uses, what the potions give up goes to the cures and the
+ * Ethers. A ball is found as it falls: the balls the bag is short of are the
+ * ones the companion never throws, and leaning to them traded Ultra Balls for
+ * Heal Balls — more throws a catch, and more catches missed for want of one.
  *
  * @param {import('./session.mjs').Session} session
  * @param {string[]} pool
@@ -1405,7 +1457,8 @@ export const LEARNABLE_MACHINE_SHARE = 0.5;
  */
 export function pickFind(session, pool) {
   if (!pool.length) return null;
-  const found = session.rng.pick(pool);
+  let found = session.rng.pick(pool);
+  if (isEverydayMedicine(found)) found = shortestSupply(session, pool.filter(isEverydayMedicine)) ?? found;
   if (!session.firstRun || itemOf(found)?.pocket !== 'machines') return found;
   const learnable = pool.filter((slug) => itemOf(slug)?.pocket === 'machines' && learnsMachine(session.active, slug));
   return learnable.length && session.rng.chance(LEARNABLE_MACHINE_SHARE) ? session.rng.pick(learnable) : found;

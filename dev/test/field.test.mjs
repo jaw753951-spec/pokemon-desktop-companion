@@ -20,6 +20,7 @@ import {
   ballSupply,
   BERRY_HARVEST,
   FIRST_RUN_SUPPLY_BONUS,
+  FOUND_REMEDIES,
   foundCount,
   isSupply,
   CENTER_STEPS,
@@ -410,7 +411,11 @@ test('a ball found on the road is a handful, a dear one a couple, a Master Ball 
   assert.deepEqual(range('ultra-ball'), [3, 5]);
   assert.deepEqual(range('luxury-ball'), [2, 3]);
   assert.deepEqual(range('master-ball'), [1, 1]);
-  assert.deepEqual(range('potion'), [1, 1], 'anything but a ball is found one at a time');
+  assert.deepEqual(range('potion'), [1, 1], 'a potion is found one at a time');
+  for (const slug of ['antidote', 'full-heal', 'ether', 'max-elixir']) {
+    assert.deepEqual(range(slug), [FOUND_REMEDIES.min, FOUND_REMEDIES.max], `${slug} comes by the handful`);
+  }
+  assert.deepEqual(range('protein'), [1, 1], 'a vitamin one at a time');
 });
 
 test('the first run finds more of the supplies, and the rest as usual', async (t) => {
@@ -425,7 +430,8 @@ test('the first run finds more of the supplies, and the rest as usual', async (t
   assert.deepEqual(range('poke-ball'), [5, 8]);
   assert.deepEqual(range('luxury-ball'), [3, 5]);
   assert.deepEqual(range('master-ball'), [1, 1], 'a Master Ball is still found alone');
-  for (const slug of ['potion', 'full-heal', 'ether']) assert.deepEqual(range(slug), [2, 2], slug);
+  assert.deepEqual(range('potion'), [2, 2]);
+  for (const slug of ['full-heal', 'ether']) assert.deepEqual(range(slug), [3, 5], slug);
   for (const slug of ['rare-candy', 'adamant-mint', 'leftovers']) {
     assert.ok(!isSupply(slug), `${slug} is a supply`);
     assert.deepEqual(range(slug), [1, 1], slug);

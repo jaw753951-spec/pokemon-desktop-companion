@@ -161,6 +161,17 @@ test('a TR is found on the road only when it teaches what no TM does', () => {
   assert.ok(!all.includes('tr01'), 'a Tackle record does');
 });
 
+test("a species' own tool the shop sells is found on the road, whoever is travelling", () => {
+  const tiers = assignRarityTiers({
+    'light-ball': item({ pocket: 'misc', category: 'species-specific' }),
+    unsold: item({ pocket: 'misc', category: 'species-specific' }),
+    fine: item({ pocket: 'misc' }),
+  }, {}, new Map([['light-ball', 5000]]));
+  const all = Object.values(tiers).flat();
+  assert.ok(all.includes('light-ball'), 'the shop sells it to anyone');
+  assert.ok(!all.includes('unsold'), 'one the shop does not sell stays out');
+});
+
 // --------------------------------------------------------- stated effects
 
 test('an item the engine reads states what it does', withData, () => {
