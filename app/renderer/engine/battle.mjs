@@ -64,7 +64,7 @@ import {
   tickVolatile,
   VOLATILE,
 } from './volatile.mjs';
-import { gainFromDefeat, levelOf, maxHp, statsOf } from './pokemon.mjs';
+import { clearStatus, gainFromDefeat, levelOf, maxHp, statsOf } from './pokemon.mjs';
 import { stageMultiplier } from './stats.mjs';
 
 /**
@@ -110,8 +110,14 @@ import { stageMultiplier } from './stats.mjs';
  *   this line was written, so a bar can follow the turn rather than its end
  * @property {{player: string|null, foe: string|null}} [statuses] the status
  *   condition each side was under when this line was written
- * @property {{player: boolean, foe: boolean}} [confused] whether each side was
- *   confused when this line was written
+ * @property {FieldState} [field] the weather and terrain when this line was
+ *   written
+ */
+
+/**
+ * The weather and the terrain as the screen shows them.
+ *
+ * @typedef {{weather: string|null, primal: boolean, terrain: string|null}} FieldState
  */
 
 /** The stats a Starf Berry can land on. */
@@ -317,9 +323,11 @@ export class Battle {
    *   weather?: string|null,
    *   environment?: string|null,
    *   firstRun?: boolean,
-   * }} options
+   *   experienceBonus?: number,
+   * }} options `experienceBonus` multiplies the experience every knock-out
+   *   pays, as a run of losses has it do for a while (see `COMEBACK`)
    */
-  constructor({ rng, player, foes, policy, items = null, trainerBattle = false, weather = null, environment = null, firstRun = false }) {
+  constructor({ rng, player, foes, policy, items = null, trainerBattle = false, weather = null, environment = null, firstRun = false, experienceBonus = 1 }) {
     this.rng = rng;
     this.policy = policy;
     /**
@@ -341,6 +349,7 @@ export class Battle {
     this.trainerBattle = trainerBattle;
     /** Whether the save is on its first run, which pays more experience early on. */
     this.firstRun = firstRun;
+    this.experienceBonus = experienceBonus;
     /** A gym leader or a League round, which the auto-battle can save a move for. */
     /**
      * The companion's moves the other side has watched it use. A trainer
@@ -393,9 +402,19 @@ export class Battle {
     /** @type {string|null} */
     this.lastMoveUsed = null;
 
-    /** Log entries produced before the first turn, by whatever walked in. */
-    /** @type {LogEntry[]} */
-    this.opening = [];
+    /**
+     * The sky and the ground the battle opens on, before anything walks in:
+     * the area's own weather, and nothing a Drizzle has called up yet — that
+     * comes with its line, as the games show it.
+     */
+    this.startingField = this.fieldState();
+
+    /**
+     * Log entries produced before the first turn, by whatever walked in —
+     * stamped as they are written, as a turn's are.
+     * @type {LogEntry[]}
+     */
+    this.opening = this.makeLog();
     /** The log the helpers write into: the opening now, each turn's later. */
     /** @type {LogEntry[]} */
     this.activeLog = this.opening;
@@ -655,9 +674,7 @@ export class Battle {
    */
   cureStatus(combatant, log) {
     if (!combatant.pokemon.status) return false;
-    combatant.pokemon.status = null;
-    combatant.pokemon.statusTurns = 0;
-    combatant.pokemon.toxic = false;
+    clearStatus(combatant.pokemon);
     combatant.marks.toxicTurns = 0;
     log.push({ kind: 'status', side: combatant.side, data: { status: null } });
     return true;
@@ -1070,6 +1087,7 @@ export class Battle {
     this.leaveField(leaving);
     this.foeQueue.push(leaving);
     this.foe = next;
+    this.settlePrimal(log);
     log.push({ kind: 'sendOut', side: 'foe', data: { speciesId: next.pokemon.speciesId, pokemon: next.pokemon } });
     if (options.dragged) this.say(next, 'move.draggedOut');
     this.walkOntoHazards(next, log);
@@ -1361,8 +1379,7 @@ export class Battle {
       /** @param {Combatant} target */
       cure(target) {
         if (!target.pokemon.status) return;
-        target.pokemon.status = null;
-        target.pokemon.statusTurns = 0;
+        clearStatus(target.pokemon);
         log.push({
           kind: 'status',
           side: target.side,
@@ -1370,8 +1387,11 @@ export class Battle {
         });
       },
 
-      /** @param {string} weather */
-      setWeather: (weather) => this.startWeather(weather, self, log),
+      /**
+       * @param {string} weather
+       * @param {{primal?: boolean}} [options]
+       */
+      setWeather: (weather, options) => this.startWeather(weather, self, log, options),
       /** @param {string} terrain */
       setTerrain: (terrain) => this.startTerrain(terrain, self, log),
 
@@ -1579,14 +1599,49 @@ export class Battle {
    * @param {Combatant} source
    * @param {LogEntry[]} log
    */
-  startWeather(weather, source, log) {
+  startWeather(weather, source, log, { primal = false } = {}) {
     const extend = heldPassive(source.pokemon, 'extend');
     const turns = extend?.what === 'weather' ? extend.turns : FIELD_TURNS;
-    if (!this.field.setWeather(weather, turns)) return false;
-    log.push({ kind: 'weather', side: source.side, data: { weather, turns } });
+    if (!this.field.setWeather(weather, turns, primal)) return false;
+    log.push({ kind: 'weather', side: source.side, data: { weather, turns, ...(primal ? { primal: true } : {}) } });
     this.checkSeeds(log);
     this.evaluateFormes(log);
     return true;
+  }
+
+  /**
+   * Lift a primal weather once nobody on the field is calling it any more:
+   * the Pokémon whose ability it is has gone down or gone back, or lost the
+   * ability. Asked before whoever comes out next walks in, so a Drizzle
+   * behind a fainted Primal Groudon brings its own rain.
+   *
+   * @param {LogEntry[]} log
+   */
+  settlePrimal(log) {
+    if (!this.field.primal) return;
+    const weather = this.field.weather;
+    const held = [this.player, this.foe].some(
+      (combatant) => combatant && combatant.pokemon.hp > 0 && this.abilityOf(combatant)?.primal === weather,
+    );
+    if (held) return;
+    this.field.endPrimal();
+    log.push({ kind: 'weatherEnded', side: 'player', data: { value: weather, primal: true } });
+    this.evaluateFormes(log);
+  }
+
+  /**
+   * The line a heavy rain or an extremely harsh sun puts out an attack with:
+   * every Fire attack in the one, every Water attack in the other — or null.
+   *
+   * @param {any} move as it would leave, its type settled
+   * @returns {string|null}
+   */
+  washedOut(move) {
+    if (!this.field.primal || !move || move.damageClass === 'status') return null;
+    const weather = this.weatherFor();
+    if (weather === WEATHER.RAIN && move.type === 'fire') return 'weather.rain.fizzled';
+    if (weather === WEATHER.SUN && move.type === 'water') return 'weather.sun.evaporated';
+    return null;
   }
 
   /**
@@ -1668,7 +1723,7 @@ export class Battle {
         for (const entry of entries) {
           if (entry && !entry.hp) entry.hp = this.hitPoints();
           if (entry && !entry.statuses) entry.statuses = this.statuses();
-          if (entry && !entry.confused) entry.confused = this.confusion();
+          if (entry && !entry.field) entry.field = this.fieldState();
         }
         return push(...entries);
       },
@@ -1678,7 +1733,7 @@ export class Battle {
     // the turn, not as they stand once the heal is done. Stamped now, it
     // moved the bar to the end of the heal on the berry's line, and the heal's
     // own line then had nothing left to show.
-    const opening = { hp: this.hitPoints(), statuses: this.statuses(), confused: this.confusion() };
+    const opening = { hp: this.hitPoints(), statuses: this.statuses(), field: this.fieldState() };
     const splice = Array.prototype.splice.bind(log);
     Object.defineProperty(log, 'splice', {
       configurable: true,
@@ -1688,7 +1743,7 @@ export class Battle {
         for (const entry of entries) {
           if (entry && !entry.hp) entry.hp = before.hp;
           if (entry && !entry.statuses) entry.statuses = before.statuses;
-          if (entry && !entry.confused) entry.confused = before.confused;
+          if (entry && !entry.field) entry.field = before.field;
         }
         return splice(start, count, ...entries);
       },
@@ -1724,14 +1779,15 @@ export class Battle {
   }
 
   /**
-   * Whether each side is confused right now, stamped beside the conditions.
-   * @returns {{player: boolean, foe: boolean}}
+   * The weather and the terrain right now, stamped on every line so the sky
+   * and the chips above the message box change on the line that changes
+   * them — a heavy rain that starts and lifts in one turn is shown starting
+   * and then lifting, as the games show it, not skipped to how the turn ended.
+   *
+   * @returns {FieldState}
    */
-  confusion() {
-    return {
-      player: hasVolatile(this.player, VOLATILE.CONFUSION),
-      foe: this.foe ? hasVolatile(this.foe, VOLATILE.CONFUSION) : false,
-    };
+  fieldState() {
+    return { weather: this.field.weather, primal: this.field.primal, terrain: this.field.terrain };
   }
 
   /** What both sides are on right now. */
@@ -1795,6 +1851,7 @@ export class Battle {
       this.resolveMove(attacker, defender, log);
       this.collectSelfKnockout(attacker, log);
       this.checkFaint(log);
+      this.settlePrimal(log);
       // Checked between the two sides' moves as well as at the end of the
       // turn: a berry that waits until the turn is over is a berry that lets
       // its holder faint first.
@@ -2438,7 +2495,10 @@ export class Battle {
 
     // And what has been taken away: the move a Disable named, every status
     // move under a Taunt, and the one it used last under a Torment.
-    usable = this.stillAllowed(attacker, usable);
+    // A wild Pokémon does not weigh its moves: it uses any one it is allowed
+    // to, at random, as wild Pokémon do in the games.
+    const wild = attacker.side === 'foe' && !this.trainerBattle;
+    usable = this.stillAllowed(attacker, usable, { judging: !wild });
     if (usable.length === 0) return 'struggle';
 
     // An Assault Vest buys Special Defence with the holder's status moves.
@@ -2449,8 +2509,9 @@ export class Battle {
 
     // The player's side follows the policy the user configured; the other
     // side reads the board for itself (see `foeai.mjs`).
-    const chosen =
-      attacker.side === 'player' && this.policy
+    const chosen = wild
+      ? this.rng.pick(usable).move
+      : attacker.side === 'player' && this.policy
         ? choosePolicyMove(this, attacker, defender, usable)
         : (attacker.side === 'foe' ? chooseFoeMove(this, attacker, defender, usable) : null)
           ?? bestDamageMove(this, attacker, defender, usable)
@@ -2467,10 +2528,16 @@ export class Battle {
    * with nothing struggles, which is what the games do when a Taunt lands on
    * something that only knows status moves.
    *
+   * A wild Pokémon is held only to what the rules take away — a Disable, a
+   * Taunt, a Gravity — and not to what a thinking opponent would see is no
+   * use: it picks among its moves at random, as wild Pokémon do in the
+   * games, a Rain Dance in the rain included.
+   *
    * @param {Combatant} attacker
    * @param {Array<{move: string, pp: number}>} usable
+   * @param {{judging?: boolean}} [options] `judging: false` for the rules alone
    */
-  stillAllowed(attacker, usable) {
+  stillAllowed(attacker, usable, { judging = true } = {}) {
     let left = usable;
     const target = this.other(attacker);
     // A Fake Out after the first turn out is a move that fails, so it is not
@@ -2491,7 +2558,7 @@ export class Battle {
       !(FIRST_TURN_ONLY.has(slot.move) && !firstTurn) && !boundToFail(this, attacker, target, slot.move) &&
       !wasted?.has(slot.move) && !this.visiblyUseless(attacker, target, slot.move) &&
       !this.alreadyInPlace(attacker, target, slot.move));
-    if (working.length > 0) left = working;
+    if (judging && working.length > 0) left = working;
     if (hasVolatile(attacker, VOLATILE.DISABLE)) {
       left = left.filter((slot) => slot.move !== attacker.volatile.disabledMove);
     }
@@ -2516,7 +2583,7 @@ export class Battle {
     if (narrowed.length > 0) left = narrowed;
     // A Future Sight is not chosen again while one is on its way to the same
     // target, nor straight after the one just used: the second fails.
-    if ((target && this.field.futureSight[target.side]) || DELAYED_ATTACKS.has(attacker.lastMove)) {
+    if (judging && ((target && this.field.futureSight[target.side]) || DELAYED_ATTACKS.has(attacker.lastMove))) {
       const fresh = left.filter((slot) => !DELAYED_ATTACKS.has(slot.move));
       if (fresh.length > 0) left = fresh;
     }
@@ -2748,6 +2815,17 @@ export class Battle {
       return;
     }
 
+    // A Fire attack goes out in a heavy rain, a Water one in an extremely
+    // harsh sun: the PP is spent and nothing happens.
+    const washed = this.washedOut(move);
+    if (washed) {
+      log.push({ kind: 'message', side: attacker.side, data: { key: washed } });
+      attacker.marks.lastFailed = true;
+      this.breakLock(attacker);
+      this.afterMove(attacker, defender, moveName, moveLogStart, log);
+      return;
+    }
+
     // A Cramorant comes up from a Surf or a Dive with something in its
     // mouth: an Arrokuda while it is above half, a Pikachu below.
     if (this.abilityOf(attacker)?.gulpMissile && (moveName === 'surf' || moveName === 'dive') && !attacker.marks.gulp) {
@@ -2879,7 +2957,7 @@ export class Battle {
 
     // A move that thaws its user does so whether or not it was meant to.
     if (attacker.pokemon.status === STATUS.FREEZE && hasFlag(move, 'defrost')) {
-      attacker.pokemon.status = null;
+      clearStatus(attacker.pokemon);
       log.push({ kind: 'status', side: attacker.side, data: { status: null, thawed: true } });
     }
 
@@ -3044,7 +3122,7 @@ export class Battle {
       this.say(attacker, 'move.uproar.start');
       for (const combatant of [this.player, this.foe]) {
         if (combatant?.pokemon.status === STATUS.SLEEP) {
-          combatant.pokemon.status = null;
+          clearStatus(combatant.pokemon);
           this.say(combatant, 'move.uproar.woke');
         }
       }
@@ -3330,6 +3408,8 @@ export class Battle {
     if (!move || !defender || defender === attacker || !aimsAtTarget(move)) return false;
     const types = this.typesOf(defender);
     if (this.preventedBy(attacker, defender, move) === 'seen') return true;
+    // A Fire attack into a heavy rain, a Water one into a harsh sun.
+    if (this.field.primal && this.washedOut(this.effectiveMove(attacker, defender, move, slug, { peek: true }))) return true;
 
     // An attack its type cannot touch, as the attacker's own ability types
     // it — a Pixilate Hyper Voice is Fairy — unless the attacker's own Scrappy
@@ -3390,7 +3470,9 @@ export class Battle {
 
     const set = FIELD_MOVES[slug];
     if (set) {
-      if (set.weather) return field.weather === set.weather;
+      // A primal weather lets no ordinary one in, so calling one is as good
+      // as calling what is already there.
+      if (set.weather) return field.weather === set.weather || field.primal;
       if (set.terrain) return field.terrain === set.terrain;
       if (set.screen) {
         const kinds = set.screen === 'both' ? ['physical', 'special'] : [set.screen];
@@ -3830,7 +3912,6 @@ export class Battle {
       data: { item: slug },
       hp: this.hitPoints(),
       statuses: this.statuses(),
-      confused: this.confusion(),
     });
 
     // A Figy and its kin taste of one stat; a nature that lowers that stat
@@ -3878,7 +3959,7 @@ export class Battle {
     if (pokemon.status === STATUS.SLEEP) {
       pokemon.statusTurns -= this.abilityOf(combatant)?.wakesTwiceAsFast ? 2 : 1;
       if (pokemon.statusTurns <= 0) {
-        pokemon.status = null;
+        clearStatus(pokemon);
         log.push({ kind: 'status', side: combatant.side, data: { status: null, woke: true } });
         return true;
       }
@@ -3891,7 +3972,7 @@ export class Battle {
       // 20% thaw chance per turn, as in the games — and a move that burns
       // hot enough thaws its user on the way out.
       if (this.rng.chance(0.2) || hasFlag(planned, 'defrost')) {
-        pokemon.status = null;
+        clearStatus(pokemon);
         log.push({ kind: 'status', side: combatant.side, data: { status: null, thawed: true } });
         return true;
       }
@@ -3915,9 +3996,14 @@ export class Battle {
       }
     }
 
-    if (hasVolatile(combatant, VOLATILE.INFATUATION) && this.rng.chance(INFATUATION_BLOCK)) {
-      log.push({ kind: 'volatileBlocked', side: combatant.side, data: { state: VOLATILE.INFATUATION } });
-      return false;
+    // Infatuation says so every turn, as the games do — "in love with" the
+    // one in front of it — and only then decides whether it gets to move.
+    if (hasVolatile(combatant, VOLATILE.INFATUATION)) {
+      log.push({ kind: 'volatileActive', side: combatant.side, data: { state: VOLATILE.INFATUATION } });
+      if (this.rng.chance(INFATUATION_BLOCK)) {
+        log.push({ kind: 'volatileBlocked', side: combatant.side, data: { state: VOLATILE.INFATUATION } });
+        return false;
+      }
     }
 
     return true;
@@ -3953,9 +4039,12 @@ export class Battle {
   rollAccuracy(attacker, defender, move) {
     const slug = this.slugOf(move);
     // A one-hit KO is its own roll: thirty in a hundred, and the level gap
-    // on top of it, and nothing else counts.
+    // on top of it, and nothing else counts. Against anything above its
+    // user there is no roll at all — the move fails rather than misses (see
+    // `applyDamagingMove`), as the games have it.
     if (move.rules?.ohko) {
       const gap = levelOf(attacker.pokemon) - levelOf(defender.pokemon);
+      if (gap < 0) return true;
       const base = move.rules.ohko === 'Ice' && !this.typesOf(attacker).includes('ice') ? 20 : 30;
       if (this.abilityOf(attacker)?.neverMisses || this.abilityOf(defender, attacker)?.neverMisses) return true;
       return this.rng.next() < (base + gap) / 100;
@@ -4205,7 +4294,7 @@ export class Battle {
 
     // Fire thaws what it hits.
     if (total > 0 && defender.pokemon.status === STATUS.FREEZE && (move.type === 'fire' || move.rules?.thawsTarget)) {
-      defender.pokemon.status = null;
+      clearStatus(defender.pokemon);
       log.push({ kind: 'status', side: defender.side, data: { status: null, thawed: true } });
     }
 
@@ -5326,6 +5415,8 @@ export class Battle {
       this.onFaint(this.foe, log);
       this.onKnockOut(this.player, this.foe, log);
       this.awardExperience(this.foe, log);
+      // A primal weather goes down with its caller, before the next walks in.
+      this.settlePrimal(log);
 
       const next = this.foeQueue.shift();
       if (next) {
@@ -5437,7 +5528,7 @@ export class Battle {
       { baseStats: species.stats, baseExp: species.baseExp, level: levelOf(defeated.pokemon), effort: species.effort },
       {
         trainerBattle: this.trainerBattle,
-        experienceMultiplier: (heldPassive(this.player.pokemon, 'experience')?.multiplier ?? 1) * early,
+        experienceMultiplier: (heldPassive(this.player.pokemon, 'experience')?.multiplier ?? 1) * early * this.experienceBonus,
         effortMultiplier: effortHeld?.multiplier ?? 1,
         effortBonus: effortHeld?.bonus ?? null,
       },

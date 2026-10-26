@@ -25,7 +25,7 @@ import { resolveParticles } from './korean.mjs';
  * @property {Array<any>} trainerClasses
  * @property {Array<any>} leaders
  * @property {Array<any>} leagues
- * @property {{sprites?: {source: string, url: string, license: string, artists: string[]}, custom?: {source: string, url: string, license: string, artists: string[]}, trainers?: Array<{key: string, source: string, artist?: string, url: string, license: string}>}} credits who
+ * @property {{sprites?: {source: string, url: string, license: string, artists: string[]}, custom?: {source: string, url: string, license: string, artists: string[]}, trainers?: Array<{key: string, source: string, artist?: string, url: string, license: string, licenseUrl?: string}>}} credits who
  *   drew what the game borrows, for the credits the licence asks for
  */
 

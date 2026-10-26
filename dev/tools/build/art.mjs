@@ -168,9 +168,16 @@ export async function buildArt({ assetDir, dataDir, sample, log, pool }) {
         artists: COMMUNITY_ARTISTS,
       },
       // The people the 3D games never drew in pixels (see NAMED_PORTRAITS).
+      // A Creative Commons licence asks for itself to be linked as well as
+      // named.
       trainers: [
-        { key: 'smogon', source: 'Smogon / Pokémon Showdown', url: 'https://github.com/smogon/sprites', license: 'fan art, with credit' },
-        { key: 'pokerogue', source: 'PokéRogue', url: 'https://github.com/pagefaultgames/pokerogue-assets', license: 'CC BY-NC-SA 4.0' },
+        {
+          key: 'pokerogue',
+          source: 'PokéRogue',
+          url: 'https://github.com/pagefaultgames/pokerogue-assets',
+          license: 'CC BY-NC-SA 4.0',
+          licenseUrl: 'https://creativecommons.org/licenses/by-nc-sa/4.0/',
+        },
         { key: 'showdown', source: 'Pokémon Showdown', artist: 'Brumirage', url: 'https://play.pokemonshowdown.com/sprites/trainers/', license: 'fan art, with credit, unedited' },
       ],
     }),

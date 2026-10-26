@@ -263,6 +263,19 @@ export const FIRST_RUN_WILD_LEVEL_DROP = 2;
 export const FIRST_RUN_WILD_UNTIL = 30;
 
 /**
+ * A hand up for a companion that keeps losing.
+ *
+ * Losing battles outside the League {@link COMEBACK.losses} times running
+ * starts it: for the next {@link COMEBACK.events} events the wild Pokémon and
+ * the road's trainers stand {@link COMEBACK.levelDrop} levels lower, and every
+ * battle pays {@link COMEBACK.experience} times the experience. A loss while
+ * it lasts starts the count again, and a win ends the run of losses but not
+ * the help already given. A gym leader is not lowered: a badge stands at its
+ * level, and the extra experience is how the companion reaches it.
+ */
+export const COMEBACK = { losses: 2, events: 20, levelDrop: 3, experience: 1.5 };
+
+/**
  * How far above a badge's level the leader's ace stands, and how far below
  * each Pokémon the one sent out before it.
  */

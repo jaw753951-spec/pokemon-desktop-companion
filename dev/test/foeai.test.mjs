@@ -29,8 +29,13 @@ function make(slug, level, moves) {
   return pokemon;
 }
 
-/** @param {any} player @param {any} foe @param {boolean} [trainerBattle] */
-const fight = (player, foe, trainerBattle = false) =>
+/**
+ * A trainer's Pokémon against the companion: a wild one picks at random and
+ * never reaches the scoring.
+ *
+ * @param {any} player @param {any} foe @param {boolean} [trainerBattle]
+ */
+const fight = (player, foe, trainerBattle = true) =>
   new Battle({ rng: new Rng(3), player, foes: [foe], policy: defaultAutoBattle(), trainerBattle });
 
 /** @param {Battle} battle */
@@ -92,11 +97,9 @@ test('the companion\'s moves are not known until shown, and only a trainer remem
   const gyarados = () => make('gyarados', 40, ['waterfall']);
 
   // What anyone can see is a Water type, and Water does little to Gyarados.
-  const wild = fight(vaporeon(), gyarados());
+  const wild = fight(vaporeon(), gyarados(), false);
   const guessed = expectedThreat(wild, /** @type {any} */ (wild.foe), wild.player).threat;
-  wild.takeTurn();
-  assert.ok(wild.seenMoves.size > 0);
-  wild.foe.pokemon.hp = maxHp(wild.foe.pokemon);
+  wild.seenMoves.add('thunderbolt');
   assert.equal(expectedThreat(wild, /** @type {any} */ (wild.foe), wild.player).threat, guessed, 'a wild Pokémon pays it no mind');
 
   // A trainer that has watched the Thunderbolt land knows better.

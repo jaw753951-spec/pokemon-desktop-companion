@@ -411,9 +411,10 @@ export function evolveToLevel(speciesId, level) {
  * @param {any} area
  * @param {import('./pokemon.mjs').Pokemon} companion
  * @param {Array<any>} classes from `data/authored/trainer-classes.json`
- * @param {{onWater?: boolean}} [spot] whether the trainer would stand where
- *   there is water to swim in; a class marked `water` — a Swimmer, drawn
- *   swimming — is only met there, and never on dry road
+ * @param {{onWater?: boolean, levelDrop?: number}} [spot] whether the trainer
+ *   would stand where there is water to swim in — a class marked `water`, a
+ *   Swimmer drawn swimming, is only met there and never on dry road — and how
+ *   many levels lower than usual its Pokémon stand (see `COMEBACK`)
  * @returns {{trainerClass: any, party: import('./pokemon.mjs').Pokemon[]}}
  */
 export function rollTrainer(rng, area, companion, classes, spot = {}) {
@@ -451,7 +452,7 @@ export function rollTrainer(rng, area, companion, classes, spot = {}) {
     // Early on, a trainer's Pokémon is never above the companion: it has a
     // party to fall back on and the companion has nothing, and every level
     // over it is a fight the companion takes on at a loss.
-    const rolled = rollLevel(rng, companion);
+    const rolled = Math.max(1, rollLevel(rng, companion) - (spot.levelDrop ?? 0));
     const level = companionLevel <= LEVEL_CAPPED_UNTIL ? Math.min(rolled, companionLevel) : rolled;
     const speciesId = pickSpecies(rng, area, level, trainerClass.types ?? []);
     // No floor on the genes: an ordinary trainer's Pokémon is somebody's

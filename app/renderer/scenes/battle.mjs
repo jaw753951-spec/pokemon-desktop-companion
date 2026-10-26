@@ -169,6 +169,7 @@ export function battleScene({ session, foes, trainer = null, leader = false, bac
     },
     trainerBattle: Boolean(trainer),
     firstRun: session.firstRun,
+    experienceBonus: session.comebackExperience,
     // A gym leader or a League round.
     // The sky the place is under, unless the caller names one of its own.
     weather: weather === undefined ? weatherForArea(session.area) : weather,
@@ -726,6 +727,7 @@ export function battleScene({ session, foes, trainer = null, leader = false, bac
    */
   function play(entry, app) {
     playing = entry;
+    if (entry.field) updateField();
     const player = session.active;
     const foe = shownFoe ?? battle.foe?.pokemon;
 
@@ -891,8 +893,9 @@ export function battleScene({ session, foes, trainer = null, leader = false, bac
           name: nameOf(entry.side === 'player' ? player : foe),
           move: localized(moveOf(entry.data?.move)?.name, entry.data?.move ?? ''),
         }));
-        // Confusion plays its own effect as it takes hold, like a condition.
-        if (entry.data?.state === 'confusion') {
+        // Confusion and infatuation play their own effect as they take hold,
+        // like a condition.
+        if (entry.data?.state === 'confusion' || entry.data?.state === 'infatuation') {
           battlerFor(entry.side)?.showStatus('confusion');
           updateBars();
           return BEAT_MS.status;
@@ -903,10 +906,12 @@ export function battleScene({ session, foes, trainer = null, leader = false, bac
       case 'volatileActive':
         say(t(`volatile.${entry.data?.state}.active`, {
           name: nameOf(entry.side === 'player' ? player : foe),
+          // Infatuation names the one it is for.
+          target: nameOf(entry.side === 'player' ? foe : player),
         }));
         // And again each turn it is checked, as the games play it.
-        if (entry.data?.state === 'confusion') {
-          battlerFor(entry.side)?.showStatus('confusion');
+        if (entry.data?.state === 'confusion' || entry.data?.state === 'infatuation') {
+          battlerFor(entry.side)?.showStatus(entry.data.state);
           return BEAT_MS.status;
         }
         break;
@@ -1088,13 +1093,11 @@ export function battleScene({ session, foes, trainer = null, leader = false, bac
         return BEAT_MS.damage;
 
       case 'weather':
-        say(t(`weather.${entry.data?.weather}.start`));
-        updateField();
+        say(t(`weather.${entry.data?.weather}.${entry.data?.primal ? 'primalStart' : 'start'}`));
         break;
 
       case 'weatherEnded':
-        say(t(`weather.${entry.data?.value}.end`));
-        updateField();
+        say(t(`weather.${entry.data?.value}.${entry.data?.primal ? 'primalEnd' : 'end'}`));
         break;
 
       case 'weatherDamage':
@@ -1105,12 +1108,10 @@ export function battleScene({ session, foes, trainer = null, leader = false, bac
 
       case 'terrain':
         say(t(`terrain.${entry.data?.terrain}.start`));
-        updateField();
         break;
 
       case 'terrainEnded':
         say(t(`terrain.${entry.data?.value}.end`));
-        updateField();
         break;
 
       case 'screen':
@@ -1334,6 +1335,8 @@ export function battleScene({ session, foes, trainer = null, leader = false, bac
     // stopped it at this level already.
     const evolution = battle.outcome === 'won'
       ? offeredEvolution(session.active, {
+          // A levelling evolution waits for a level, as in the games.
+          levelled: levels > 0,
           timeOfDay: timeOfDay(),
           crits: battle.player.marks.crits ?? 0,
           box: session.box,
@@ -1387,21 +1390,25 @@ export function battleScene({ session, foes, trainer = null, leader = false, bac
   function updateBars() {
     playerBar.set(session.active, playing?.hp?.player);
     foeBar.set(shownFoe, playing?.hp?.foe);
-    playerPlate.set(session.active, playing?.statuses ? playing.statuses.player : undefined, playing?.confused?.player ?? false);
-    foePlate.set(shownFoe, playing?.statuses ? playing.statuses.foe : undefined, playing?.confused?.foe ?? false);
+    playerPlate.set(session.active, playing?.statuses ? playing.statuses.player : undefined);
+    foePlate.set(shownFoe, playing?.statuses ? playing.statuses.foe : undefined);
   }
 
   /**
    * What is over and under the field, as a line of chips above the message
    * box: a battle where the rain decides the damage should say that it is
    * raining for as long as it is, not only on the turn it started.
+   *
+   * Read off the line being played, as the bars are, so the sky changes on
+   * the line that changes it — not where the turn ended up. Before the first
+   * line, it is the sky the battle opened under.
    */
   function updateField() {
-    const field = battle.field;
+    const field = playing?.field ?? battle.startingField;
     shownWeather = field.weather ?? null;
     setChildren(conditions, [
       field.weather
-        ? el('span.field-chip', { text: t(`weather.${field.weather}.name`) })
+        ? el('span.field-chip', { text: t(`weather.${field.weather}.${field.primal ? 'primalName' : 'name'}`) })
         : null,
       field.terrain
         ? el('span.field-chip', { text: t(`terrain.${field.terrain}.name`) })
@@ -1425,10 +1432,8 @@ function nameplate(pokemon) {
    * @param {string|null} [status] the condition to show, where the caller
    *   knows it better than the Pokémon does — during the playback of a turn
    *   the engine has already finished
-   * @param {boolean} [confused] whether it is confused, which only a battle
-   *   knows and which sits beside the condition
    */
-  const set = (next, status, confused = false) => {
+  const set = (next, status) => {
     if (!next) {
       node.textContent = '';
       return;
@@ -1442,7 +1447,6 @@ function nameplate(pokemon) {
       next.gender ? el(`span.gender-mark.${next.gender}`, { text: t(`pokemon.gender.${next.gender}`) }) : null,
       shinyMark(next),
       statusMark(condition, t(`status.${condition}.short`)),
-      confused ? statusMark('confusion', t('status.confusion.short')) : null,
       `  ${t('slot.level', { level: levelOf(next) })}`,
     ]);
   };
@@ -1542,7 +1546,7 @@ export function healthBar() {
  * @param {import('../engine/pokemon.mjs').Pokemon} pokemon
  * @returns {string|null}
  */
-function autoHeal(session, pokemon) {
+export function autoHeal(session, pokemon) {
   const policy = session.itemPolicy?.healing;
   if (!policy || policy.condition === 'never') return null;
 

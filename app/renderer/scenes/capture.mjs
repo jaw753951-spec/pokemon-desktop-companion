@@ -398,6 +398,9 @@ export function captureScene({ session, target, onFinish }) {
       });
       target.nickname = nickname;
       target.ball = ball;
+      // Caught now, which is what the box's order by catch goes by — not when
+      // it was met, which a Pokémon left waiting in the tray is long past.
+      target.caughtAt = Date.now();
       // A Friend Ball makes a friend of it straight away.
       if (ball === 'friend-ball') target.friendship = Math.max(target.friendship ?? 0, 150);
       // It was knocked down before the ball was thrown — that is how this
