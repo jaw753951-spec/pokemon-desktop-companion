@@ -15,7 +15,7 @@ import { TAG_TYPES } from '../../shared/area-tags.mjs';
 import { alreadyOwned, priceOf } from '../engine/shop.mjs';
 import { capRoster, evolveToLevel, giveTrainerItems, LEADER_PARTY_CAP, rollTrainer, rollWildPokemon, wildLevelDrop } from '../engine/encounter.mjs';
 import { createPokemon, levelOf } from '../engine/pokemon.mjs';
-import { pickFind, signatureFind } from '../engine/items.mjs';
+import { isEverydayMedicine, pickFind, shortestSupply, signatureFind } from '../engine/items.mjs';
 import { callingFind, rollRare } from '../engine/rare.mjs';
 import {
   TRAINER_SCALE,
@@ -373,7 +373,8 @@ export function berryHarvest(session) {
   const berries = Object.entries(gameData().items)
     .filter(([, item]) => item.pocket === 'berries' && item.sprite)
     .map(([slug]) => slug);
-  const berry = session.rng.pick(berries.length ? berries : ['oran-berry']);
+  // Likelier one the bag is short of than one it has plenty of.
+  const berry = shortestSupply(session, berries) ?? 'oran-berry';
   return { berry, count: firstRunSupply(session, session.rng.int(BERRY_HARVEST.min, BERRY_HARVEST.max)) };
 }
 
@@ -571,6 +572,16 @@ export const FOUND_BALLS = [
 ];
 
 /**
+ * How many of a status cure or a PP restorer one find on the road is. The
+ * Pokémon Center stocks the potions; these come from the road alone, and one
+ * at a time the bag was out of them most of the first journey.
+ */
+export const FOUND_REMEDIES = { min: 2, max: 3 };
+
+/** The medicine found by the handful (see `FOUND_REMEDIES`). */
+const REMEDY_CATEGORIES = new Set(['status-cures', 'pp-recovery']);
+
+/**
  * How many of an item one find on the road is: on the save's first run, more
  * of the everyday supplies (see `FIRST_RUN_SUPPLY_BONUS`) — but a Master Ball
  * is still found alone.
@@ -581,7 +592,9 @@ export const FOUND_BALLS = [
  */
 export function foundCount(rng, slug, firstRun = false) {
   const more = (/** @type {number} */ count) => (firstRun && isSupply(slug) ? withSupplyBonus(count) : count);
-  if (itemOf(slug)?.pocket !== 'pokeballs') return more(1);
+  const item = itemOf(slug);
+  if (item?.pocket === 'medicine' && REMEDY_CATEGORIES.has(item.category)) return more(rng.int(FOUND_REMEDIES.min, FOUND_REMEDIES.max));
+  if (item?.pocket !== 'pokeballs') return more(1);
   const price = priceOf(slug) ?? Infinity;
   const band = FOUND_BALLS.find((entry) => price <= entry.upTo) ?? FOUND_BALLS[FOUND_BALLS.length - 1];
   const count = rng.int(band.min, band.max);
@@ -597,9 +610,6 @@ export function foundCount(rng, slug, firstRun = false) {
  */
 export const FIRST_RUN_SUPPLY_BONUS = 1.5;
 
-/** The medicine that counts as a supply: what restores HP, cures or restores PP. */
-const SUPPLY_MEDICINE = new Set(['healing', 'status-cures', 'pp-recovery']);
-
 /**
  * Whether an item is one of the everyday supplies the first run finds more
  * of. A mint, a Rare Candy or an Ability Capsule is medicine but not one.
@@ -610,7 +620,7 @@ export function isSupply(slug) {
   const item = itemOf(slug);
   if (!item) return false;
   if (item.pocket === 'pokeballs' || item.pocket === 'berries') return true;
-  return item.pocket === 'medicine' && SUPPLY_MEDICINE.has(item.category);
+  return isEverydayMedicine(slug);
 }
 
 /** @param {number} count */

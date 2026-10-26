@@ -23,6 +23,7 @@ import {
   LEARNABLE_MACHINE_SHARE,
   learnsMachine,
   pickFind,
+  stockWeight,
   useItem,
 } from '../../app/renderer/engine/items.mjs';
 import { createPokemon, gainFromDefeat, maxHp, maxPp, setMove } from '../../app/renderer/engine/pokemon.mjs';
@@ -327,4 +328,31 @@ test('on the first run a TM found leans to one the companion can learn, and noth
   assert.ok(Math.abs(first.tmShare - later.tmShare) < 0.03);
 
   assert.equal(pickFind({ ...bag({}, pikachu), rng: new Rng(1), firstRun: true }, []), null);
+});
+
+test("a potion, a cure or an Ether found leans to the one the bag is shortest of, and nothing else does", options, () => {
+  const pikachu = make('pikachu', 20);
+  const pool = ['potion', 'super-potion', 'antidote', 'ether', 'protein', 'timid-mint', 'poke-ball', 'great-ball', 'leftovers'];
+  /** @param {Record<string, number>} contents */
+  const finds = (contents) => {
+    const session = { ...bag(contents, pikachu), rng: new Rng(9), firstRun: false };
+    return Array.from({ length: 6000 }, () => /** @type {string} */ (pickFind(session, pool)));
+  };
+  const share = (/** @type {string[]} */ found, /** @type {string} */ slug) => found.filter((entry) => entry === slug).length / found.length;
+  const medicine = (/** @type {string[]} */ found) => found.filter((slug) => gameData().items[slug].pocket === 'medicine').length / found.length;
+
+  const even = finds({});
+  const stocked = finds({ potion: 30, 'super-potion': 30, 'poke-ball': 20 });
+  assert.ok(share(stocked, 'antidote') > 2 * share(stocked, 'potion'), 'the one the bag has none of comes far oftener');
+  assert.ok(share(stocked, 'ether') > 2 * share(stocked, 'super-potion'), 'an Ether is in the lean as well');
+  // What the potions give up goes to the cures and Ethers, not to the vitamins and mints.
+  assert.ok(Math.abs(share(even, 'protein') - share(stocked, 'protein')) < 0.02, 'a vitamin is found as it falls');
+  assert.ok(Math.abs(share(even, 'timid-mint') - share(stocked, 'timid-mint')) < 0.02, 'and a mint');
+  assert.ok(Math.abs(share(even, 'poke-ball') - share(stocked, 'poke-ball')) < 0.03, 'a ball is found as it falls, however many the bag has');
+  assert.ok(Math.abs(share(even, 'potion') - share(even, 'antidote')) < 0.03, 'with nothing in the bag, all alike');
+  assert.ok(Math.abs(medicine(even) - medicine(stocked)) < 0.03, 'how often a find is medicine at all is unchanged');
+  assert.ok(Math.abs(share(even, 'leftovers') - share(stocked, 'leftovers')) < 0.03, 'a kept item is found as often as before');
+
+  assert.equal(stockWeight(0), 1);
+  assert.ok(stockWeight(5) === 0.5 && stockWeight(15) === 0.25);
 });

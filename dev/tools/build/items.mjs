@@ -416,6 +416,9 @@ export function assignRarityTiers(items, moves = {}, prices = new Map()) {
     // which the find decides at the time (`fieldevents.mjs`).
     if (SIGNATURE.has(name)) continue;
     if (EXCLUDED_CATEGORIES.has(item.category)) continue;
+    // One species' own tool the shop sells — a Light Ball, a Thick Club — is
+    // found on the road whoever is travelling, as the shop sells it to anyone.
+    if (item.category === 'species-specific' && !prices.has(name)) continue;
     if (unnamed(item)) continue;
     if (MASTER_TIER_ONLY.has(name)) {
       tiers[MASTER_TIER.ball].push(name);
@@ -518,7 +521,6 @@ const EXCLUDED_CATEGORIES = new Set([
   // A charm is earned or bought, never found.
   'charms',
   'plates',
-  'species-specific',
   'all-mail',
   'unused',
   'event-items',

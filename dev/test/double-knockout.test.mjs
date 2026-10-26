@@ -102,3 +102,33 @@ test("a foe's Destiny Bond takes the companion down after it, which wins", optio
   assert.equal(battle.player.pokemon.hp, 0, 'the bond took the companion with it');
   assert.equal(battle.outcome, 'won');
 });
+
+test('recoil is a share of the health the hit took, not of everything it rolled', options, () => {
+  // A level 100 Double-Edge into a foe on 10 hit points rolls far past them;
+  // a third of the roll once knocked out the user that had just won.
+  const battle = new Battle({
+    rng: new Rng(3),
+    player: fixed(CHARIZARD, 100, ['double-edge']),
+    foes: [fixed(BLASTOISE, 50, ['splash'], 10)],
+    policy: defaultAutoBattle(),
+  });
+  const log = fight(battle);
+  const recoil = log.find((entry) => entry.kind === 'damage' && entry.side === 'player' && entry.data?.recoil);
+  assert.equal(recoil?.data.amount, 3, 'a third of the 10 it took');
+  assert.equal(battle.player.pokemon.hp, maxHp(battle.player.pokemon) - 3);
+  assert.equal(battle.outcome, 'won');
+});
+
+test('with nothing its plan allows this turn, it does not fall back on an Explosion', options, () => {
+  // At full health a Rest is not wanted and the Explosion is kept for a
+  // quarter; the fallback once took the hardest hit left, which was the
+  // Explosion, and lost the battle with the foe's team still to come.
+  const battle = new Battle({
+    rng: new Rng(3),
+    player: fixed(CHARIZARD, 100, ['rest', 'explosion']),
+    foes: [fixed(BLASTOISE, 70, ['splash']), fixed(BLASTOISE, 70, ['splash'])],
+    policy: { ...defaultAutoBattle(), moves: { rest: 'hpThird', explosion: 'hpQuarter' }, second: {} },
+    trainerBattle: true,
+  });
+  assert.equal(battle.chooseMove(battle.player, battle.foe), 'rest');
+});
