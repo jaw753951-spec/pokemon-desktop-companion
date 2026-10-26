@@ -51,7 +51,7 @@ test('attacks are left to the hardest hit; the costly ones are kept to finish', 
   assert.equal(pairs('charizard', ['overheat'])['overheat'], 'always/never');
   assert.equal(pairs('charizard', ['hyper-beam', 'scratch'])['hyper-beam'], 'always/never');
   // Half its own health a use: two and it was down.
-  assert.equal(pairs('metagross', ['steel-beam', 'zen-headbutt'])['steel-beam'], 'canFinish/never');
+  assert.equal(pairs('metagross', ['steel-beam', 'zen-headbutt'])['steel-beam'], 'never/never');
 });
 
 test('a weak priority attack finishes or swings last; a strong one is just an attack', options, () => {

@@ -118,3 +118,17 @@ test('recoil is a share of the health the hit took, not of everything it rolled'
   assert.equal(battle.player.pokemon.hp, maxHp(battle.player.pokemon) - 3);
   assert.equal(battle.outcome, 'won');
 });
+
+test('with nothing its plan allows this turn, it does not fall back on an Explosion', options, () => {
+  // At full health a Rest is not wanted and the Explosion is kept for a
+  // quarter; the fallback once took the hardest hit left, which was the
+  // Explosion, and lost the battle with the foe's team still to come.
+  const battle = new Battle({
+    rng: new Rng(3),
+    player: fixed(CHARIZARD, 100, ['rest', 'explosion']),
+    foes: [fixed(BLASTOISE, 70, ['splash']), fixed(BLASTOISE, 70, ['splash'])],
+    policy: { ...defaultAutoBattle(), moves: { rest: 'hpThird', explosion: 'hpQuarter' }, second: {} },
+    trainerBattle: true,
+  });
+  assert.equal(battle.chooseMove(battle.player, battle.foe), 'rest');
+});

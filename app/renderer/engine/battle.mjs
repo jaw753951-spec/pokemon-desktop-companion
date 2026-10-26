@@ -6019,8 +6019,27 @@ export function choosePolicyMove(battle, attacker, defender, usable) {
   // Nothing the policy allows applies this turn. Rather than stand there
   // repeating an attack the other side cannot take — which never ends and
   // never even reads as a mistake — the fallback is anything that can land.
+  // But not what knocks its own user out or takes half its health, while
+  // anything else is left, even a move that will fail: an Azelf with a Future
+  // Sight on its way and its Rest not needed Exploded the next turn, every
+  // battle, and lost every one with foes still to come.
   const worth = movesWorthUsing(battle, attacker, defender, usable);
-  return bestDamageMove(battle, attacker, defender, worth) ?? battle.rng.pick(worth).move;
+  const spared = (/** @type {typeof usable} */ list) => list.filter((slot) => !costsItsUser(slot.move));
+  // Last of all, before the Explosion, a move already passed over as bound to
+  // fail: a Rest at full health loses a turn, not the battle.
+  const all = battle.movesOf(attacker).filter((slot) => slot.pp > 0 && moveOf(slot.move));
+  const fallback = [spared(worth), spared(usable), spared(all)].find((list) => list.length) ?? worth;
+  return bestDamageMove(battle, attacker, defender, fallback) ?? battle.rng.pick(fallback).move;
+}
+
+/**
+ * Whether a move knocks its user out or costs it half its health, used or not.
+ *
+ * @param {string} slug
+ */
+function costsItsUser(slug) {
+  const move = moveOf(slug);
+  return SELF_KNOCKOUT.has(slug) || Boolean(move?.rules?.selfdestruct || move?.rules?.mindBlownRecoil) || slug === 'chloroblast';
 }
 
 /**

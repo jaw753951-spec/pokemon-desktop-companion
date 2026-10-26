@@ -10,7 +10,7 @@
  *
  * - Attacks are left to the hardest-hit rule ("Default"). The ones that cost
  *   something to use — a turn recharging, two turns charging, a sharp fall
- *   in its own stat, half its own health — are kept to finish a foe when there is another attack
+ *   in its own stat — are kept to finish a foe when there is another attack
  *   to do the ordinary work. A weak priority attack is kept for a finish, or
  *   for a last swing at low health. An attack that is stronger under some
  *   condition — a Hex on a foe with a status, a Facade with its own, a Brine
@@ -32,7 +32,8 @@
  *   send into it.
  * - What wastes a turn one against one — a Growl, a Double Team, a Taunt, a
  *   Protect with nothing ticking on the foe — is switched off, and so is a
- *   Memento, which loses the battle outright.
+ *   Memento, which loses the battle outright, and a Steel Beam, which costs
+ *   half its health, while there is another attack.
  *
  * The order puts what has to be answered first at the top: a heal, a cure,
  * the conditions to put on the foe, the boosts, the field, then the attacks
@@ -288,9 +289,10 @@ function planAttack(slug, move, profile) {
   if (move.flags?.includes('recharge')) return others ? use(RANK.finisher, 'canFinish') : use(RANK.attack, 'always');
   const fall = (move.statChanges ?? []).some((change) => change.self && change.change <= -2 && !change.secondary);
   if (fall && others) return use(RANK.finisher, 'canFinish');
-  // A Steel Beam costs half its user's health, hit or miss: used as an
-  // ordinary attack, two of them knocked a level 100 Metagross out.
-  if ((move.rules?.mindBlownRecoil || slug === 'chloroblast') && others) return use(RANK.finisher, 'canFinish');
+  // A Steel Beam costs half its user's health, hit or miss: two of them
+  // knocked a level 100 Metagross out. Not even kept to finish with — a
+  // level 100 can finish a level 70 with it every turn, and did, twice.
+  if ((move.rules?.mindBlownRecoil || slug === 'chloroblast') && others) return OFF;
 
   // A weak priority attack is a finisher, or a last swing before going down;
   // a strong one is just a strong attack that goes first.
