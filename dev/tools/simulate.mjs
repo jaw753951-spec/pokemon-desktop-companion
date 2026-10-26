@@ -7,6 +7,7 @@
  *   npm run simulate -- --seed 100 --json out.json  another set, and the raw numbers
  *   npm run simulate -- --no-comeback              without the help a run of losses brings
  *   npm run simulate -- --comeback 2,20,3,1.5      the help tuned: losses, events, levels, experience
+ *   npm run simulate -- --keep-moves               new moves never swapped in, as before 1.0.1
  *
  * Each save starts on a starter (the three in turn) and walks the road until
  * its companion is Champion; the next journey is the strongest Pokémon in the
@@ -17,8 +18,12 @@
  *
  * - every species not yet caught is thrown at with the ball likeliest to work,
  *   a Master Ball only at a legendary;
- * - a TM the companion can learn is used, an evolution item it waits on too,
- *   and Optimize is pressed when it has a new move;
+ * - a TM the companion can learn is used, an evolution item it waits on too;
+ * - when it has a new move, the four slots are refilled from everything it
+ *   knows (see `refit`) and Optimize is pressed — without the refill, a
+ *   companion fought the whole journey with the moves it set out with, and a
+ *   Latias still on Charm and Stored Power at level 100 could lose the League
+ *   hundreds of times;
  * - the League is walked into as soon as it opens, at full health;
  * - nothing is bought, and the pointer is never held to hurry the road.
  *
@@ -35,11 +40,11 @@ import { join } from 'node:path';
 import { argv } from 'node:process';
 import { fileURLToPath } from 'node:url';
 
-import { gameData, itemOf, mendItems, mendSpecies, nameItemUsers, setGameData, speciesOf } from '../../app/renderer/core/data.mjs';
+import { gameData, itemOf, mendItems, mendSpecies, moveOf, nameItemUsers, setGameData, speciesOf } from '../../app/renderer/core/data.mjs';
 import { Rng } from '../../app/renderer/core/rng.mjs';
 import { afterBattle } from '../../app/renderer/engine/abilities.mjs';
-import { optimizeMoves } from '../../app/renderer/engine/autoplan.mjs';
-import { Battle } from '../../app/renderer/engine/battle.mjs';
+import { optimizeMoves, planMove, profileOf } from '../../app/renderer/engine/autoplan.mjs';
+import { Battle, categoryOf } from '../../app/renderer/engine/battle.mjs';
 import { attemptCapture, captureChance } from '../../app/renderer/engine/capture.mjs';
 import { isRare, rollTrainer } from '../../app/renderer/engine/encounter.mjs';
 import { settleForme, signatureItems } from '../../app/renderer/engine/forms.mjs';
@@ -75,6 +80,9 @@ const ENTRY_MS = 780;
 const THROW_MS = 1800;
 const CATCH_SCREEN_MS = 3000;
 const EVOLUTION_MS = 8000;
+
+/** The events a journey is given before it is let go unfinished. */
+const GUARD = 30000;
 
 /** The progress a journey is cut into: each badge, then the League. */
 const SEGMENTS = [...Array.from({ length: 8 }, (_, badges) => `badge ${badges + 1}`), 'league'];
@@ -259,7 +267,7 @@ function catchTray(session, journey, hour) {
   }
 }
 
-/** What a player does with the bag between events: TMs learned, evolution items used, Optimize. */
+/** What a player does with the bag between events: TMs learned, evolution items used, new moves swapped in, Optimize. */
 function tidy(session) {
   for (const slug of Object.keys(session.bag)) {
     const item = itemOf(slug);
@@ -271,7 +279,69 @@ function tidy(session) {
     if (evolution?.trigger === 'use-item') items.completeEvolution(session, session.active, evolution.to);
   }
   pokemon.noteLearnedMoves(session.active, session.machines);
-  if (session.active.newMoves?.length) optimizeMoves(session.active, session.autoBattle);
+  if (!session.active.newMoves?.length) return;
+  if (!KEEP_MOVES) {
+    refit(session.active, session.machines);
+    // Opening the move list is looking at what is new.
+    session.active.newMoves = [];
+  }
+  optimizeMoves(session.active, session.autoBattle);
+}
+
+/**
+ * How hard a move hits for this Pokémon, roughly: its power, its own type's
+ * bonus, the stat it hits with against its better one, how often it lands, and
+ * half for the ones the plan keeps to finish with — a recharge, a charge, a
+ * faint, half its health. Nothing for a Focus Punch, which fails whenever it is hit first.
+ */
+function strike(one, slug) {
+  const move = moveOf(slug);
+  if (!move || move.damageClass === 'status' || !move.power || slug === 'focus-punch') return 0;
+  const stats = pokemon.statsOf(one);
+  const hits = move.meta?.maxHits ? (move.meta.minHits + move.meta.maxHits) / 2 : 1;
+  const own = speciesOf(one.speciesId).types.includes(move.type) ? 1.5 : 1;
+  const stat = (move.damageClass === 'physical' ? stats.atk : stats.spa) / Math.max(stats.atk, stats.spa);
+  const costly = move.rules?.selfdestruct || move.rules?.mindBlownRecoil || slug === 'chloroblast' ||
+    move.flags?.includes('recharge') || move.flags?.includes('charge') ? 0.5 : 1;
+  return move.power * hits * own * stat * ((move.accuracy ?? 100) / 100) * costly;
+}
+
+/**
+ * The four moves a player puts in the slots when the move list has something
+ * new: the hardest-hitting attacks, a second of a type already there counting
+ * for less, and one heal or boost that the plan would use, if it has one.
+ * Moves kept keep their PP.
+ */
+function refit(one, machines) {
+  const known = pokemon.availableMoves(one, machines);
+  const statusPlan = (slug) => {
+    const trial = { ...one, moves: [...one.moves.filter((slot) => moveOf(slot.move)?.damageClass !== 'status'), { move: slug, pp: 1 }] };
+    return planMove(slug, moveOf(slug), profileOf(trial));
+  };
+  const support = known
+    .filter((slug) => moveOf(slug)?.damageClass === 'status' && statusPlan(slug).first !== 'never')
+    .map((slug) => ({ slug, heal: categoryOf(moveOf(slug)) === 'heal', boost: statusPlan(slug).first === 'oncePerBattle' }))
+    .filter((entry) => entry.heal || entry.boost)
+    .sort((a, b) => Number(b.heal) - Number(a.heal))[0];
+
+  const attacks = known.filter((slug) => strike(one, slug) > 0);
+  /** @type {string[]} */
+  const chosen = support ? [support.slug] : [];
+  while (chosen.length < 4 && attacks.some((slug) => !chosen.includes(slug))) {
+    const types = new Set(chosen.map((slug) => moveOf(slug).type));
+    const [best] = attacks
+      .filter((slug) => !chosen.includes(slug))
+      .map((slug) => ({ slug, worth: strike(one, slug) * (types.has(moveOf(slug).type) ? 0.7 : 1) }))
+      .sort((a, b) => b.worth - a.worth);
+    chosen.push(best.slug);
+  }
+  // Too few attacks to fill the slots: what it already had stays.
+  for (const slot of one.moves) if (chosen.length < 4 && !chosen.includes(slot.move)) chosen.push(slot.move);
+
+  const kept = one.moves.filter((slot) => chosen.includes(slot.move));
+  const added = chosen.filter((slug) => !kept.some((slot) => slot.move === slug));
+  one.moves = kept;
+  for (const slug of added) pokemon.setMove(one, one.moves.length, slug);
 }
 
 /**
@@ -284,7 +354,7 @@ function tidy(session) {
  *   leagueTries: number, caught: string[], missed: Array<{slug: string, rare: boolean, noBall: boolean}>,
  *   rareMet: string[], thrown: Record<string, number>, segments: Record<string, Segment>, window: number,
  *   road: Record<'helped'|'plain', {battles: number, losses: number}>,
- *   level?: number, money?: number, bag?: Record<string, number>, owned?: Record<string, [number, number]>,
+ *   unfinished?: boolean, level?: number, money?: number, bag?: Record<string, number>, owned?: Record<string, [number, number]>,
  *   box?: {count: number, over600: string[], over500: number}, dex?: number,
  * }} Journey
  */
@@ -306,7 +376,7 @@ function journeyOf(session, run, hour) {
     return journey.segments[key];
   };
 
-  for (let guard = 0; !session.champion && guard < 30000; guard++) {
+  for (let guard = 0; !session.champion && guard < GUARD; guard++) {
     const here = segment();
     const before = journey.time;
     journey.events++;
@@ -434,6 +504,7 @@ function simulateSave(seed, starter, runs, hour) {
       session.switchActive(next.index);
     }
     const journey = journeyOf(session, run, hour);
+    journey.unfinished = !session.champion;
     const box = session.box.filter(Boolean);
     journey.level = pokemon.levelOf(session.active);
     journey.money = session.money;
@@ -465,6 +536,7 @@ function report(label, journeys) {
   const times = journeys.map((journey) => journey.time).sort((a, b) => a - b);
   const at = (share) => times[Math.min(times.length - 1, Math.floor(times.length * share))];
   lines.push(`clear time  ${hours(median(times))} h (10%: ${hours(at(0.1))}, 90%: ${hours(at(0.9))})  events ${median(journeys.map((j) => j.events))}  battles ${median(journeys.map((j) => j.battles))}  level ${median(journeys.map((j) => j.level ?? 0))}  League tries ${median(journeys.map((j) => j.leagueTries))}  money ${median(journeys.map((j) => j.money ?? 0))}`);
+  lines.push(`stuck       ${journeys.filter((j) => j.unfinished).length} never Champion in ${GUARD} events, ${journeys.filter((j) => j.leagueTries > 50).length} over 50 League tries (most ${Math.max(0, ...journeys.map((j) => j.leagueTries))})`);
 
   const stock = (pick) => {
     /** @type {Record<string, number[]>} */
@@ -531,6 +603,8 @@ if (tuned) [COMEBACK.losses, COMEBACK.events, COMEBACK.levelDrop, COMEBACK.exper
 /** The stretch after a run of losses, watched whether or not the help is on, so the two can be compared. */
 const WATCH = { losses: COMEBACK.losses, events: COMEBACK.events };
 if (argv.includes('--no-comeback')) COMEBACK.losses = Infinity;
+/** For setting the old player beside the new: one who never puts a new move in a slot. */
+const KEEP_MOVES = argv.includes('--keep-moves');
 
 loadData();
 /** @type {Journey[]} */

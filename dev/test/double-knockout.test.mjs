@@ -102,3 +102,19 @@ test("a foe's Destiny Bond takes the companion down after it, which wins", optio
   assert.equal(battle.player.pokemon.hp, 0, 'the bond took the companion with it');
   assert.equal(battle.outcome, 'won');
 });
+
+test('recoil is a share of the health the hit took, not of everything it rolled', options, () => {
+  // A level 100 Double-Edge into a foe on 10 hit points rolls far past them;
+  // a third of the roll once knocked out the user that had just won.
+  const battle = new Battle({
+    rng: new Rng(3),
+    player: fixed(CHARIZARD, 100, ['double-edge']),
+    foes: [fixed(BLASTOISE, 50, ['splash'], 10)],
+    policy: defaultAutoBattle(),
+  });
+  const log = fight(battle);
+  const recoil = log.find((entry) => entry.kind === 'damage' && entry.side === 'player' && entry.data?.recoil);
+  assert.equal(recoil?.data.amount, 3, 'a third of the 10 it took');
+  assert.equal(battle.player.pokemon.hp, maxHp(battle.player.pokemon) - 3);
+  assert.equal(battle.outcome, 'won');
+});

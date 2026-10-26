@@ -50,6 +50,8 @@ test('attacks are left to the hardest hit; the costly ones are kept to finish', 
   // With nothing else to do the work, each is just an attack.
   assert.equal(pairs('charizard', ['overheat'])['overheat'], 'always/never');
   assert.equal(pairs('charizard', ['hyper-beam', 'scratch'])['hyper-beam'], 'always/never');
+  // Half its own health a use: two and it was down.
+  assert.equal(pairs('metagross', ['steel-beam', 'zen-headbutt'])['steel-beam'], 'canFinish/never');
 });
 
 test('a weak priority attack finishes or swings last; a strong one is just an attack', options, () => {
@@ -105,6 +107,13 @@ test('a boost is used when it feeds its own attacks, and again after it is lower
   // A Leer is off; two stages off what it hits into, once per foe.
   assert.equal(pairs('scyther', ['leer', 'x-scissor'])['leer'], 'never/never');
   assert.equal(pairs('scyther', ['screech', 'x-scissor'])['screech'], 'oncePerFoe/never');
+  // A Memento is two stages off the foe's attack, but its user faints: a bulky
+  // Pecharunt that opened every fight with one lost every fight.
+  assert.equal(pairs('pecharunt', ['memento', 'poison-gas', 'astonish', 'smog'])['memento'], 'never/never');
+  // A boost that lowers a stat of its own is not called again for that: a
+  // Blastoise would Shell Smash every turn until it had no PP left.
+  assert.equal(pairs('blastoise', ['shell-smash', 'hydro-pump'])['shell-smash'], 'oncePerBattle/never');
+  assert.equal(pairs('steelix', ['curse', 'iron-tail'])['curse'], 'oncePerBattle/never');
 });
 
 test('the field is set where it helps: weather for its attacks, screens for the attacker they stop', options, () => {
