@@ -31,7 +31,9 @@
  *   attacker it stops, a trap only against a trainer, who has Pokémon left to
  *   send into it.
  * - What wastes a turn one against one — a Growl, a Double Team, a Taunt, a
- *   Protect with nothing ticking on the foe — is switched off.
+ *   Protect with nothing ticking on the foe — is switched off, and so is a
+ *   Memento, which loses the battle outright, and a Steel Beam, which costs
+ *   half its health, while there is another attack.
  *
  * The order puts what has to be answered first at the top: a heal, a cure,
  * the conditions to put on the foe, the boosts, the field, then the attacks
@@ -225,6 +227,9 @@ const OFF = use(RANK.off, 'never');
 export function planMove(slug, move, profile) {
   if (neverAutomatic(slug)) return OFF;
   if (move.damageClass !== 'status') return planAttack(slug, move, profile);
+  // A Memento knocks its user out, which one against one is the battle lost,
+  // whatever it does to the foe.
+  if (move.rules?.selfdestruct) return OFF;
   if (PROTECT_MOVES[slug]) return planProtect(profile);
   if (CURES.has(slug)) return use(RANK.cure, 'selfStatus');
 
@@ -284,6 +289,10 @@ function planAttack(slug, move, profile) {
   if (move.flags?.includes('recharge')) return others ? use(RANK.finisher, 'canFinish') : use(RANK.attack, 'always');
   const fall = (move.statChanges ?? []).some((change) => change.self && change.change <= -2 && !change.secondary);
   if (fall && others) return use(RANK.finisher, 'canFinish');
+  // A Steel Beam costs half its user's health, hit or miss: two of them
+  // knocked a level 100 Metagross out. Not even kept to finish with — a
+  // level 100 can finish a level 70 with it every turn, and did, twice.
+  if ((move.rules?.mindBlownRecoil || slug === 'chloroblast') && others) return OFF;
 
   // A weak priority attack is a finisher, or a last swing before going down;
   // a strong one is just a strong attack that goes first.
@@ -375,10 +384,13 @@ function planStats(slug, move, profile) {
       sum + (change.change > 0 && ((change.stat === 'atk' && profile.fed.has('physical')) || (change.stat === 'spa' && profile.fed.has('special'))) ? change.change : 0), 0);
     const speed = own.find((change) => change.stat === 'spe' && change.change > 0)?.change ?? 0;
     const guards = own.filter((change) => (change.stat === 'def' || change.stat === 'spd') && change.change > 0);
+    // A Shell Smash lowers its own guards as it goes: "again once lowered"
+    // would call it every turn after the first, until its PP ran out.
+    const again = own.some((change) => change.change < 0) ? 'never' : 'rankDown';
 
     // A boost into its attacks, and with it Speed or a guard, or two stages
     // at once: once a battle, and again once something has taken it away.
-    if (feeding >= 2 || (feeding >= 1 && (speed > 0 || guards.length > 0))) return use(RANK.boost, 'oncePerBattle', 'rankDown');
+    if (feeding >= 2 || (feeding >= 1 && (speed > 0 || guards.length > 0))) return use(RANK.boost, 'oncePerBattle', again);
     // One stage of attack and nothing else is a turn a short fight rarely
     // repays, unless it is sturdy enough to make the time.
     if (feeding === 1) return profile.bulky ? use(RANK.boost, 'oncePerBattle') : OFF;
@@ -458,8 +470,9 @@ function planOther(slug, profile) {
     case 'belly-drum':
       return profile.fed.has('physical') ? use(RANK.boost, 'hpFull') : OFF;
     case 'curse':
-      // The non-Ghost Curse: Attack and Defense for Speed.
-      return profile.fed.has('physical') && profile.bulky ? use(RANK.boost, 'oncePerBattle', 'rankDown') : OFF;
+      // The non-Ghost Curse: Attack and Defense for Speed. Once: the Speed it
+      // gives up would have it called again every turn after.
+      return profile.fed.has('physical') && profile.bulky ? use(RANK.boost, 'oncePerBattle') : OFF;
     case 'focus-energy':
       return profile.attacks.some(({ move }) => (move.meta?.critRate ?? 0) >= 1) ? use(RANK.boost, 'oncePerBattle') : OFF;
     case 'pain-split':

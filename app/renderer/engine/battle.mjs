@@ -4127,6 +4127,8 @@ export class Battle {
     const hits = this.hitCount(attacker, move);
     const startHp = defender.pokemon.hp;
     let total = 0;
+    /** What the hits took off its health, which a hit rolled past what was left of it does not add to. */
+    let lost = 0;
     let soaked = 0;
     let landed = 0;
     /** The hits the Pokémon itself took, rather than its substitute or its Disguise. */
@@ -4180,8 +4182,10 @@ export class Battle {
         log.push({ kind: 'berry', side: defender.side, data: { item: defender.marks.ateResist } });
         defender.marks.ateResist = null;
       }
+      const hpBefore = defender.pokemon.hp;
       defender.pokemon.hp = Math.max(survives ? 1 : 0, defender.pokemon.hp - result.damage);
       total += result.damage;
+      lost += hpBefore - defender.pokemon.hp;
       struck++;
       // Every strike drains the bar on its own, as the games play a Double
       // Kick or a Bullet Seed: one drop for all of them read as the bar
@@ -4221,7 +4225,11 @@ export class Battle {
     // report as damage, and none of what hangs off damage — drain, recoil,
     // secondary effects — applies to a hit nobody took.
     if (total === 0 && soaked === 0) return;
-    const dealt = total + soaked;
+    // Drain, recoil and a Shell Bell go by the health the hit actually took,
+    // as in the games: a level 100 Wave Crash rolled at three times what a
+    // level 70 foe had left once cost its user a third of all that, and
+    // knocked it out on its own recoil.
+    const dealt = lost + soaked;
 
     // A berry eaten for a hit a substitute took is still announced.
     if (defender.marks.ateResist) {
@@ -6011,8 +6019,27 @@ export function choosePolicyMove(battle, attacker, defender, usable) {
   // Nothing the policy allows applies this turn. Rather than stand there
   // repeating an attack the other side cannot take — which never ends and
   // never even reads as a mistake — the fallback is anything that can land.
+  // But not what knocks its own user out or takes half its health, while
+  // anything else is left, even a move that will fail: an Azelf with a Future
+  // Sight on its way and its Rest not needed Exploded the next turn, every
+  // battle, and lost every one with foes still to come.
   const worth = movesWorthUsing(battle, attacker, defender, usable);
-  return bestDamageMove(battle, attacker, defender, worth) ?? battle.rng.pick(worth).move;
+  const spared = (/** @type {typeof usable} */ list) => list.filter((slot) => !costsItsUser(slot.move));
+  // Last of all, before the Explosion, a move already passed over as bound to
+  // fail: a Rest at full health loses a turn, not the battle.
+  const all = battle.movesOf(attacker).filter((slot) => slot.pp > 0 && moveOf(slot.move));
+  const fallback = [spared(worth), spared(usable), spared(all)].find((list) => list.length) ?? worth;
+  return bestDamageMove(battle, attacker, defender, fallback) ?? battle.rng.pick(fallback).move;
+}
+
+/**
+ * Whether a move knocks its user out or costs it half its health, used or not.
+ *
+ * @param {string} slug
+ */
+function costsItsUser(slug) {
+  const move = moveOf(slug);
+  return SELF_KNOCKOUT.has(slug) || Boolean(move?.rules?.selfdestruct || move?.rules?.mindBlownRecoil) || slug === 'chloroblast';
 }
 
 /**
