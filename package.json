@@ -12,6 +12,7 @@
     "assets:verify": "node dev/tools/assets.mjs --only verify",
     "typecheck": "tsc -p dev/tsconfig.json",
     "test": "node --test \"dev/test/**/*.test.mjs\"",
+    "simulate": "node dev/tools/simulate.mjs",
     "shot": "xvfb-run -a electron --no-sandbox dev/tools/screenshot.mjs",
     "icon": "node dev/tools/make-icon.mjs",
     "dist": "electron-builder --publish never",

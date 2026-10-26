@@ -5,7 +5,7 @@
  * Everything the player accumulates lives here, and `toSave` is the single
  * point where it turns back into the JSON written to a slot.
  */
-import { AUTOSAVE_INTERVAL_MS, BADGES_FOR_LEAGUE, EVENT_INTERVAL_MS, EVENTS_PER_AREA, TRAY_LIMIT } from '../../shared/constants.mjs';
+import { AUTOSAVE_INTERVAL_MS, BADGES_FOR_LEAGUE, COMEBACK, EVENT_INTERVAL_MS, EVENTS_PER_AREA, TRAY_LIMIT } from '../../shared/constants.mjs';
 import { saves } from '../core/bridge.mjs';
 import { ALCREMIE_LOOKS, randomLook } from '../../shared/alcremie.mjs';
 import { gameData, itemOf, speciesOf } from '../core/data.mjs';
@@ -25,6 +25,9 @@ const LEGACY_ITEMS = Object.fromEntries(
 
 /** How often moving on to a new area crosses to the other region. */
 export const REGION_CROSSING_CHANCE = 0.2;
+
+/** The orders the box can be put in (see `Session.sortBox`). */
+export const BOX_SORTS = /** @type {const} */ (['dex', 'caught', 'clear', 'shiny']);
 
 export class Session {
   /**
@@ -87,6 +90,10 @@ export class Session {
     this.trainerWins = save.progress?.trainerWins ?? 0;
     /** Trainer encounters still to pass before a leader lost to can return. */
     this.leaderRest = Number.isInteger(save.progress?.leaderRest) ? Math.max(0, save.progress.leaderRest) : 0;
+    /** Battles lost running outside the League (see `COMEBACK`). */
+    this.lossStreak = Number.isInteger(save.progress?.lossStreak) ? Math.max(0, save.progress.lossStreak) : 0;
+    /** Events left of the help a run of losses brought, 0 when there is none. */
+    this.comeback = Number.isInteger(save.progress?.comeback) ? Math.max(0, save.progress.comeback) : 0;
     /** The purse: what trainers pay out and the shop takes. */
     this.money = Number.isFinite(save.progress?.money) ? save.progress.money : STARTING_MONEY;
     this.playtime = save.progress?.playtime ?? 0;
@@ -105,10 +112,10 @@ export class Session {
 
     /**
      * How the box was last sorted, for its tab to show and turn round.
-     * @type {{key: 'dex'|'clear'|'shiny', reverse: boolean}}
+     * @type {{key: typeof BOX_SORTS[number], reverse: boolean}}
      */
     this.boxSort = {
-      key: ['dex', 'clear', 'shiny'].includes(save.boxSort?.key) ? save.boxSort.key : 'dex',
+      key: BOX_SORTS.includes(save.boxSort?.key) ? save.boxSort.key : 'dex',
       reverse: Boolean(save.boxSort?.reverse),
     };
 
@@ -217,8 +224,39 @@ export class Session {
    * @returns {boolean} whether it is time to move on
    */
   countEvent() {
+    if (this.comeback > 0) this.comeback--;
     this.eventsHere = Math.max(0, (this.eventsHere ?? EVENTS_PER_AREA) - 1);
     return this.eventsHere <= 0;
+  }
+
+  /**
+   * Note how a battle outside the League went, for the help a run of losses
+   * brings (see `COMEBACK`): a loss counts toward it, and starts it — or
+   * starts it over — once there have been enough in a row; a win ends the
+   * run. A battle run from or left before it was won counts neither way.
+   *
+   * @param {'won'|'lost'} outcome
+   * @returns {boolean} whether this loss set the help going
+   */
+  noteBattle(outcome) {
+    if (outcome === 'won') {
+      this.lossStreak = 0;
+      return false;
+    }
+    this.lossStreak++;
+    if (this.lossStreak < COMEBACK.losses) return false;
+    this.comeback = COMEBACK.events;
+    return true;
+  }
+
+  /** How many levels lower the road's Pokémon stand right now. */
+  get comebackLevelDrop() {
+    return this.comeback > 0 ? COMEBACK.levelDrop : 0;
+  }
+
+  /** What every battle's experience is multiplied by right now. */
+  get comebackExperience() {
+    return this.comeback > 0 ? COMEBACK.experience : 1;
   }
 
   /**
@@ -344,10 +382,12 @@ export class Session {
    *   turned round, the rest first. Each group in Pokédex order either way.
    * - `shiny`: the shiny ones first, then the rest; turned round, the rest
    *   first. Each group in Pokédex order either way.
+   * - `caught`: in the order they were caught, the oldest first; turned
+   *   round, the newest first.
    *
    * Two of the same species keep the order they were caught in.
    *
-   * @param {'dex'|'clear'|'shiny'} key
+   * @param {typeof BOX_SORTS[number]} key
    * @param {boolean} [reverse]
    */
   sortBox(key, reverse = false) {
@@ -358,10 +398,12 @@ export class Session {
     };
     const descending = key === 'dex' && reverse ? -1 : 1;
     const first = (pokemon) => (key === 'clear' ? Boolean(pokemon.champion) : key === 'shiny' ? Boolean(pokemon.shiny) : false);
-    const group = (pokemon) => (key === 'dex' ? 0 : first(pokemon) !== reverse ? 0 : 1);
+    const group = (pokemon) => (key === 'dex' || key === 'caught' ? 0 : first(pokemon) !== reverse ? 0 : 1);
+    const caught = key === 'caught' ? (reverse ? -1 : 1) : 0;
     const compare = (a, b) =>
       Number(Boolean(b.favorite)) - Number(Boolean(a.favorite)) ||
       group(a) - group(b) ||
+      caught * ((a.caughtAt ?? 0) - (b.caughtAt ?? 0)) ||
       descending * (dexOf(a) - dexOf(b)) ||
       descending * (a.speciesId - b.speciesId) ||
       (a.caughtAt ?? 0) - (b.caughtAt ?? 0);
@@ -444,6 +486,8 @@ export class Session {
         champion: this.champion,
         trainerWins: this.trainerWins,
         leaderRest: this.leaderRest,
+        lossStreak: this.lossStreak,
+        comeback: this.comeback,
         money: this.money,
         playtime: Math.round(this.playtime),
         rareSince: Math.round(this.rareSince),

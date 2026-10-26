@@ -11,6 +11,7 @@ import { artPath, speciesOf } from '../core/data.mjs';
 import { button, el, scrollable, setChildren, shinyMark } from '../core/dom.mjs';
 import { name as localized, t } from '../core/i18n.mjs';
 import { levelOf, nameOf } from '../engine/pokemon.mjs';
+import { BOX_SORTS } from '../engine/session.mjs';
 import { championIcon } from './badges.mjs';
 import { pictureLoader } from './pictureloader.mjs';
 import { chooseAction, confirm } from './dialog.mjs';
@@ -110,7 +111,7 @@ function header(app, session, state, update) {
 }
 
 /** What each order is called, on its button and in its menu. */
-const SORT_LABELS = /** @type {const} */ ({ dex: 'box.sortDex', clear: 'box.sortClear', shiny: 'box.sortShiny' });
+const SORT_LABELS = /** @type {const} */ ({ dex: 'box.sortDex', caught: 'box.sortCaught', clear: 'box.sortClear', shiny: 'box.sortShiny' });
 
 /**
  * Ask which order to put the box in, and put it in that order the way round
@@ -124,7 +125,7 @@ async function sortMenu(app, session, update) {
   const key = await chooseAction(
     app,
     t('box.sort'),
-    /** @type {Array<'dex'|'clear'|'shiny'>} */ (['dex', 'clear', 'shiny']).map((value) => ({ value, label: t(SORT_LABELS[value]) })),
+    BOX_SORTS.map((value) => ({ value, label: t(SORT_LABELS[value]) })),
   );
   if (!key) return;
   session.sortBox(key, session.boxSort.reverse);

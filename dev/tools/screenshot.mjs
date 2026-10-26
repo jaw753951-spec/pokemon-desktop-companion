@@ -86,6 +86,9 @@ const STEPS = [
   // pocket tab.
   { name: '11-bag-options', script: 'clickText("button.chip", ["사용 설정", "Use"]) && await wait(300)' },
   { name: '12-bag-box', script: 'seedBox() && clickText("button.tab", ["박스", "Box"])' },
+  // The orders the box can be put in, and the box in the order it was caught.
+  { name: '12b-box-sort', script: 'clickText("button", ["도감번호순", "Pokédex number"]) && await wait(250)' },
+  { name: '12c-box-caught', script: 'clickText(".modal button", ["포획순", "Order caught"]) && await wait(250)' },
   // The badges are in the key pocket under the charms, the travelling
   // Pokémon's own, with the first open on the panel.
   { name: '13-bag-badges', script: 'seedBadges(8) && seedKeyPocket() && clickText("button.tab", ["아이템", "Items"]) && await wait(250) && clickText("button.chip", ["소중한 것", "Key Items"]) && await wait(250) && clickFirst(".badge-row")' },

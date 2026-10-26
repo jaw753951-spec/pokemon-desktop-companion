@@ -41,6 +41,7 @@ export async function buildDex({ dataDir, sample, log, pool }) {
   // Which items the game ships is decided here rather than in the screens.
   const items = shippedItems(everyItem, { machines, moves, species, log });
   pruneHeldItems(species, items, log);
+  foldTutorsIntoMachines(species, items, machines, log);
 
   await writeOut(join(dataDir, 'machines.json'), JSON.stringify(machines));
   await writeOut(join(dataDir, 'natures.json'), JSON.stringify(natures));
@@ -1343,6 +1344,9 @@ function unwritten(item, slug, natures) {
  *   since Gen 7; the Metal Powder and Quick Powder only work on a Ditto that
  *   has not transformed, and the Metal Powder doubles Defense alone.
  * - The Quick Claw uses its Gen 4+ numbers.
+ * - The Super Potion and the Hyper Potion restore 60 and 120 since Gen 7,
+ *   as their own descriptions say; the effect sentence upstream still has
+ *   the 50 and 200 of the games before.
  * - The rest are the items whose effect is written nowhere upstream.
  *
  * @type {Record<string, {held?: any, use?: any, attributes?: string[], capture?: any}>}
@@ -1359,6 +1363,8 @@ const CORRECTED = {
   'metal-powder': { held: { on: 'stat', species: ['ditto'], stats: ['def'], multiplier: 2, untransformed: true } },
   'quick-powder': { held: { on: 'stat', species: ['ditto'], stats: ['spe'], multiplier: 2, untransformed: true } },
   'quick-claw': { held: { on: 'first', chance: 0.2 } },
+  'super-potion': { use: { hp: 60 } },
+  'hyper-potion': { use: { hp: 120 } },
   // Farfetch'd, its Galarian variety (by the species it belongs to) and the
   // Sirfetch'd that variety becomes.
   stick: { held: { on: 'crit', stages: 2, species: ['farfetchd', 'sirfetchd'] } },
@@ -2189,6 +2195,44 @@ function pruneHeldItems(species, items, log) {
     (entry) => entry.heldItems?.common || entry.heldItems?.rare,
   ).length;
   log(`held items ${carrying} species carry one${dropped.size ? `, ${dropped.size} slots dropped with their item` : ''}`);
+}
+
+/**
+ * Move every tutor move a shipped TM teaches over to the machine list.
+ *
+ * There is no tutor in this game, so a tutor move is one a Pokémon simply
+ * has — free, from the level it is met at. That is fine for a Snore, and far
+ * too much for a Meteor Beam or a Steel Beam handed to a level-5 catch. Most
+ * of those strong ones were tutor moves in one game and TMs in the next, so
+ * where a TM in the bag can teach the move, the TM is how it is learned; the
+ * tutor list keeps only the moves no TM teaches at all.
+ *
+ * @param {Record<string, any>} species
+ * @param {Record<string, any>} items the items the game ships
+ * @param {Record<string, string>} machines TM slug to the move it teaches
+ * @param {(message: string) => void} log
+ */
+function foldTutorsIntoMachines(species, items, machines, log) {
+  const taught = new Set(
+    Object.entries(items)
+      .filter(([slug, item]) => item.pocket === 'machines' && machines[slug])
+      .map(([slug]) => machines[slug]),
+  );
+  let folded = 0;
+  /** @param {any} learnset */
+  const fold = (learnset) => {
+    if (!learnset?.tutor?.length) return;
+    const moved = learnset.tutor.filter((move) => taught.has(move));
+    if (!moved.length) return;
+    learnset.machine = [...new Set([...(learnset.machine ?? []), ...moved])].sort();
+    learnset.tutor = learnset.tutor.filter((move) => !taught.has(move));
+    folded += moved.length;
+  };
+  for (const entry of Object.values(species)) {
+    fold(entry.learnset);
+    for (const form of entry.forms ?? []) fold(form.learnset);
+  }
+  log(`tutor moves ${folded} moved to the TM that teaches them`);
 }
 
 /**

@@ -12,9 +12,11 @@ import { name as localized, t } from '../core/i18n.mjs';
 import {
   abilitySlot,
   changeEffort,
+  clearStatus,
   createPokemon,
   effortOf,
   evolveInto,
+  followMaxHp,
   friendshipForLevels,
   friendshipOf,
   gainFriendship,
@@ -157,11 +159,12 @@ export function useItem(session, slug, choice = {}) {
   // Rare Candy — does it here, whichever pocket it sits in.
   if (item.use) {
     const levelBefore = levelOf(pokemon);
+    const maxBefore = maxHp(pokemon);
     if (applyUse(pokemon, item, choice)) {
       session.removeItem(slug);
       // A Rare Candy or an Exp. Candy that lifts the level does everything a
       // level won in battle does.
-      const levelled = levelledUp(session, pokemon, levelBefore);
+      const levelled = levelledUp(session, pokemon, levelBefore, maxBefore);
       const lines = [t('items.used', { name: label }), ...levelled.lines];
       // A Capsule or a Patch says what the ability turned into: "used it"
       // alone left the change to be found on the Pokémon screen, or not at all.
@@ -222,16 +225,18 @@ export function useItem(session, slug, choice = {}) {
  * @param {import('./session.mjs').Session} session
  * @param {import('./pokemon.mjs').Pokemon} pokemon
  * @param {number} before the level it was at
+ * @param {number} [maxBefore] its maximum hit points at that level; left out,
+ *   the level brings no hit points with it
  * @returns {{lines: string[], evolution: Evolving|null}} what to say about it,
  *   nothing when the level did not move, and the evolution it sets off
  */
-export function levelledUp(session, pokemon, before) {
+export function levelledUp(session, pokemon, before, maxBefore = maxHp(pokemon)) {
   const after = levelOf(pokemon);
   if (after <= before) return { lines: [], evolution: null };
   const learned = (move) => t('battle.learned', { name: nameOf(pokemon), move: localized(moveOf(move)?.name, move) });
   const waiting = (move) => t('battle.cannotLearnMore', { name: nameOf(pokemon), move: localized(moveOf(move)?.name, move) });
 
-  pokemon.hp = Math.min(maxHp(pokemon), pokemon.hp + (after - before) * 2);
+  followMaxHp(pokemon, maxBefore);
   friendshipForLevels(pokemon, after - before);
   const lines = [t('battle.levelUp', { name: nameOf(pokemon), level: after })];
   for (const move of movesLearnedBetween(pokemon, before, after)) {
@@ -470,9 +475,7 @@ function applyUse(pokemon, item, choice = {}) {
   }
 
   if (use.status && pokemon.status && (use.status === 'any' || use.status === pokemon.status)) {
-    pokemon.status = null;
-    pokemon.statusTurns = 0;
-    pokemon.toxic = false;
+    clearStatus(pokemon);
     changed = true;
   }
 
@@ -1287,8 +1290,7 @@ export function applyHeldEffect(pokemon, held) {
 
   if (held.on === 'status') {
     if (!pokemon.status) return false;
-    pokemon.status = null;
-    pokemon.statusTurns = 0;
+    clearStatus(pokemon);
     return true;
   }
 

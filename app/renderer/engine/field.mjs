@@ -114,6 +114,13 @@ export class Field {
     /** @type {string|null} */
     this.weather = null;
     this.weatherTurns = 0;
+    /**
+     * Whether the weather is a primal one — a Primordial Sea's heavy rain, a
+     * Desolate Land's extremely harsh sun. It lasts for as long as the
+     * Pokémon that called it stays out, and no ordinary weather can take its
+     * place.
+     */
+    this.primal = false;
     /** @type {string|null} */
     this.terrain = null;
     this.terrainTurns = 0;
@@ -233,13 +240,24 @@ export class Field {
   /**
    * @param {string} weather
    * @param {number} [turns]
+   * @param {boolean} [primal] a primal weather, which only another primal one
+   *   can replace
    * @returns {boolean} whether it changed anything
    */
-  setWeather(weather, turns = FIELD_TURNS) {
-    if (this.weather === weather) return false;
+  setWeather(weather, turns = FIELD_TURNS, primal = false) {
+    if (this.primal && !primal) return false;
+    if (this.weather === weather && this.primal === primal) return false;
     this.weather = weather;
-    this.weatherTurns = turns;
+    this.weatherTurns = primal ? Infinity : turns;
+    this.primal = primal;
     return true;
+  }
+
+  /** Lift a primal weather, gone with the Pokémon that called it. */
+  endPrimal() {
+    this.weather = null;
+    this.weatherTurns = 0;
+    this.primal = false;
   }
 
   /**

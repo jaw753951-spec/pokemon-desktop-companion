@@ -249,6 +249,31 @@ test('infatuation needs one of each', options, () => {
   assert.equal(neither.infatuate(neither.player, /** @type {any} */ (neither.foe), []), false);
 });
 
+test('infatuation says so every turn, and only some of those turns stop the move', options, () => {
+  let said = 0;
+  let stopped = 0;
+  for (let seed = 1; seed <= 20; seed++) {
+    const male = fixed(PIKACHU, 50);
+    male.gender = 'male';
+    const female = punchbag();
+    female.gender = 'female';
+    const battle = fight(male, female, { rng: new Rng(seed) });
+    battle.infatuate(/** @type {any} */ (battle.foe), battle.player, []);
+    /** @type {any[]} */
+    const log = [];
+    const moved = battle.canAct(battle.player, log);
+    assert.equal(log[0]?.kind, 'volatileActive', 'the line comes first, whether or not it moves');
+    assert.equal(log[0]?.data?.state, VOLATILE.INFATUATION);
+    said++;
+    if (!moved) {
+      stopped++;
+      assert.equal(log[1]?.kind, 'volatileBlocked');
+    }
+  }
+  assert.equal(said, 20);
+  assert.ok(stopped > 0 && stopped < 20, `${stopped} of 20 turns stopped`);
+});
+
 test('Misty Terrain keeps both of them off whatever stands on it', options, () => {
   const battle = fight(fixed(PIKACHU, 50), punchbag());
   battle.field.setTerrain(TERRAIN.MISTY, 5);
@@ -669,7 +694,7 @@ test('the box has no limit, and favourites keep its top rows in the order they w
   assert.deepEqual(order(), [133, 25, 39, 4, 7]);
 });
 
-test('the box sorts by Pokédex number, by who has beaten the League or by shininess, either way round, favourites always first', options, () => {
+test('the box sorts by Pokédex number, by when each was caught, by who has beaten the League or by shininess, either way round, favourites always first', options, () => {
   const make = (id, champion = false, favorite = false) => {
     const pokemon = fixed(id, 5);
     if (champion) pokemon.champion = true;
@@ -696,10 +721,19 @@ test('the box sorts by Pokédex number, by who has beaten the League or by shini
   assert.deepEqual(order(), [4, 150, 25, 133, 1, 7], 'favourites, then the shiny ones, then the rest, each in number order');
   session.sortBox('shiny', true);
   assert.deepEqual(order(), [4, 150, 1, 7, 25, 133], 'turned round, the rest first, still in number order');
+  // By when each was caught: a Bulbasaur first, a Pikachu last.
+  for (const [at, id] of [1, 25, 7, 133, 150, 4].entries()) {
+    const pokemon = session.box.find((entry) => entry?.speciesId === id);
+    if (pokemon) pokemon.caughtAt = [3, 6, 2, 5, 4, 1][at] * 1000;
+  }
+  session.sortBox('caught');
+  assert.deepEqual(order(), [4, 150, 7, 1, 133, 25], 'favourites, then the oldest catch first');
+  session.sortBox('caught', true);
+  assert.deepEqual(order(), [150, 4, 25, 133, 1, 7], 'turned round, the newest first');
   // And the order is remembered with the run.
-  assert.deepEqual(session.toSave().boxSort, { key: 'shiny', reverse: true });
+  assert.deepEqual(session.toSave().boxSort, { key: 'caught', reverse: true });
   const reloaded = new Session({ slot: 0, save: session.toSave() });
-  assert.deepEqual(reloaded.boxSort, { key: 'shiny', reverse: true });
+  assert.deepEqual(reloaded.boxSort, { key: 'caught', reverse: true });
 });
 
 test('the shop sells all but the unique, prices a trainer\'s prize, and a kept item is had once', options, async () => {

@@ -264,14 +264,15 @@ test('a stamp is never rewritten by a later line', () => {
 
 test('a line put in front of what it announces is stamped as things stood there', () => {
   // A stand-in battle: the log reads the two sides' hit points, conditions
-  // and confusion off it, and nothing else.
+  // and the field off it, and nothing else.
   const sides = { player: { pokemon: { hp: 50, status: null } }, foe: { pokemon: { hp: 40, status: null } } };
   const fake = {
     ...sides,
+    field: { weather: null, primal: false, terrain: null },
     noteFaints() {},
     hitPoints: Battle.prototype.hitPoints,
     statuses: Battle.prototype.statuses,
-    confusion: () => ({ player: false, foe: false }),
+    fieldState: Battle.prototype.fieldState,
   };
   const log = Battle.prototype.makeLog.call(fake);
 

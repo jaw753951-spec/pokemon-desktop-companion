@@ -37,7 +37,8 @@ import {
  * @property {string} ability
  * @property {'male'|'female'|null} gender null for the species that have none
  * @property {boolean} shiny
- * @property {number} caughtAt epoch milliseconds
+ * @property {number} caughtAt epoch milliseconds: when it was caught, or —
+ *   for one that never was, a starter or a wild one still out there — made
  * @property {string|null} ball the ball it was caught in
  * @property {boolean} [fromWater] met surfing or fishing rather than on foot,
  *   which a Dive Ball counts; only ever set on a wild Pokémon
@@ -533,11 +534,12 @@ export function gainFromDefeat(pokemon, defeated, options = {}) {
   // than piling up behind a level that can no longer move.
   const ceiling = experienceForLevel(speciesOf(pokemon.speciesId)?.growthRate, 100);
   const gained = Math.max(0, Math.min(Math.round(amount * (options.experienceMultiplier ?? 1)), ceiling - pokemon.experience));
+  const maxBefore = maxHp(pokemon);
   pokemon.experience += gained;
 
   const after = levelOf(pokemon);
-  // A level-up tops up the extra hit points immediately, as the games do.
-  if (after > before) pokemon.hp = Math.min(maxHp(pokemon), pokemon.hp + (after - before) * 2);
+  // A level-up adds as many hit points as the maximum rose by, as the games do.
+  if (after > before) followMaxHp(pokemon, maxBefore);
 
   const multiplier = options.effortMultiplier ?? 1;
   /** @type {Record<string, number>} */
@@ -558,6 +560,21 @@ export function gainFromDefeat(pokemon, defeated, options = {}) {
 }
 
 /**
+ * Keep the hit points in step with a maximum that has just moved — a level,
+ * effort: whatever it rose by is added to what the Pokémon has now, so one at
+ * 30 of 40 that grows to 44 is at 34, and one whose maximum fell keeps no
+ * more than the new one. A fainted Pokémon stays fainted.
+ *
+ * @param {Pokemon} pokemon with its new maximum
+ * @param {number} maxBefore its maximum before
+ */
+export function followMaxHp(pokemon, maxBefore) {
+  if (pokemon.hp <= 0) return;
+  const max = maxHp(pokemon);
+  pokemon.hp = Math.min(max, pokemon.hp + Math.max(0, max - maxBefore));
+}
+
+/**
  * Add effort, or take it away, and keep the hit points in step: a Pokémon
  * whose maximum rises gains the same hit points it rose by, as when it levels,
  * and one whose maximum falls keeps no more than the new maximum.
@@ -571,8 +588,7 @@ export function changeEffort(pokemon, change) {
   const maxBefore = maxHp(pokemon);
   const raised = addEffort(before, Object.fromEntries(STATS.map((stat) => [stat, Math.max(0, change[stat] ?? 0)])));
   pokemon.evs = Object.fromEntries(STATS.map((stat) => [stat, Math.max(0, raised[stat] + Math.min(0, change[stat] ?? 0))]));
-  const maxAfter = maxHp(pokemon);
-  if (pokemon.hp > 0) pokemon.hp = Math.max(1, Math.min(maxAfter, pokemon.hp + Math.max(0, maxAfter - maxBefore)));
+  followMaxHp(pokemon, maxBefore);
   return Object.fromEntries(STATS.map((stat) => [stat, pokemon.evs[stat] - before[stat]]));
 }
 
@@ -614,7 +630,9 @@ export function availableMoves(pokemon, unlockedMachines = []) {
   const sets = [species.learnset, ...(forme ? [forme] : [])];
   const fromLevels = sets.flatMap((set) => (set.level ?? []).filter(([at]) => at <= level).map(([, move]) => move));
   const fromMachines = unlockedMachines.filter((move) => sets.some((set) => set.machine?.includes(move)));
-  // A tutor teaches whenever asked; there is no level to wait for.
+  // A tutor teaches whenever asked; there is no level to wait for. Only the
+  // tutor moves no TM teaches are left on the list — the rest are learned
+  // from their TM (see `foldTutorsIntoMachines` in the dex build).
   const fromTutors = sets.flatMap((set) => set.tutor ?? []);
   // And a shape a key item gave brings its own move, which a Necrozma in its
   // Dusk Mane has in no learnset at all.
@@ -720,9 +738,21 @@ export function setMove(pokemon, slot, move) {
  */
 export function fullyHeal(pokemon) {
   pokemon.hp = maxHp(pokemon);
+  clearStatus(pokemon);
+  for (const slot of pokemon.moves) slot.pp = maxPp(slot);
+}
+
+/**
+ * Lift a Pokémon's condition, and everything that goes with one: a sleep's
+ * counter and a bad poison's mark. Every cure goes through here, so no cure
+ * leaves a Toxic's mark behind on a Pokémon that is no longer poisoned.
+ *
+ * @param {Pokemon} pokemon
+ */
+export function clearStatus(pokemon) {
   pokemon.status = null;
   pokemon.statusTurns = 0;
-  for (const slot of pokemon.moves) slot.pp = maxPp(slot);
+  pokemon.toxic = false;
 }
 
 /**
@@ -761,8 +791,12 @@ export const TRADE_ITEM = 'linking-cord';
  *   box?: Array<Pokemon|null>,
  *   raining?: boolean,
  *   areaTags?: string[],
+ *   levelled?: boolean,
  * }} [context] `crits` is how many critical hits it landed in the battle it
- *   has just finished; `box` the Pokémon that count as its party
+ *   has just finished; `box` the Pokémon that count as its party;
+ *   `levelled: false` for a battle won without a level gained, after which
+ *   only the evolution that asks for no level-up — three critical hits — can
+ *   happen, as in the games
  * @returns {{to: number, trigger: string}|null}
  */
 export function pendingEvolution(pokemon, context = {}) {
@@ -787,7 +821,7 @@ export function pendingEvolution(pokemon, context = {}) {
     if (evolution.region) continue;
 
     if (evolution.trigger === 'level-up') {
-      if (everstone || context.item) continue;
+      if (everstone || context.item || context.levelled === false) continue;
       if (evolution.location) continue;
       const reachable =
         evolution.minLevel ||
@@ -834,9 +868,10 @@ export function pendingEvolution(pokemon, context = {}) {
       continue;
     }
 
-    // Counted rather than levelled: Rage Fist used twenty times, three
-    // critical hits landed in the battle just won.
-    if (evolution.trigger === 'use-move' && !context.item && !everstone) {
+    // Counted: Rage Fist used twenty times, which still waits for the next
+    // level, and three critical hits landed in the battle just won, which
+    // does not.
+    if (evolution.trigger === 'use-move' && !context.item && !everstone && context.levelled !== false) {
       if ((pokemon.moveUses?.[evolution.usedMove] ?? 0) >= (evolution.moveCount ?? 1)) levelled.push({ to: evolution.to, weight: 9 });
       continue;
     }

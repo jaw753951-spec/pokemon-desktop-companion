@@ -12,8 +12,10 @@ import { NEEDS_ASSETS, useRealGameData } from './helpers/data.mjs';
 import { Rng } from '../../app/renderer/core/rng.mjs';
 import { speciesOf } from '../../app/renderer/core/data.mjs';
 import { createPokemon } from '../../app/renderer/engine/pokemon.mjs';
-import { Session } from '../../app/renderer/engine/session.mjs';
-import { BADGE_LEVELS, BADGES_FOR_LEAGUE, FIRST_RUN_LEADER_STATS, LEADER_REST_AFTER_LOSS, leaderLevels, leaderOdds } from '../../app/shared/constants.mjs';
+import { defaultAutoBattle, Session } from '../../app/renderer/engine/session.mjs';
+import { Battle } from '../../app/renderer/engine/battle.mjs';
+import { rollTrainer } from '../../app/renderer/engine/encounter.mjs';
+import { BADGE_LEVELS, BADGES_FOR_LEAGUE, COMEBACK, FIRST_RUN_LEADER_STATS, LEADER_REST_AFTER_LOSS, leaderLevels, leaderOdds } from '../../app/shared/constants.mjs';
 import { levelOf } from '../../app/renderer/engine/pokemon.mjs';
 import { leaderParty, shouldSummonLeader } from '../../app/renderer/scenes/fieldevents.mjs';
 import { LEAGUE_LEVELS, leagueLevel } from '../../app/renderer/scenes/league.mjs';
@@ -152,4 +154,43 @@ test('the rest after a lost leader battle survives a save and reload', options, 
   const again = new Session({ slot: 0, save: session.toSave() });
   assert.equal(again.leaderRest, 2);
   assert.equal(new Session({ slot: 0, save: { seed: 1, party: { active: session.active, box: [] } } }).leaderRest, 0, 'an older save has none');
+});
+
+test('two losses running ease the road for a while; a win ends the run but not the help', options, () => {
+  const session = new Session({ slot: 0, save: { seed: 3, party: { active: createPokemon(new Rng(1), 4, 30), box: [] } } });
+  assert.equal(session.noteBattle('lost'), false, 'one loss is only one');
+  assert.equal(session.comebackLevelDrop, 0);
+  assert.equal(session.noteBattle('won'), false);
+  assert.equal(session.lossStreak, 0, 'a win in between starts the count over');
+
+  session.noteBattle('lost');
+  assert.equal(session.noteBattle('lost'), true, 'the second in a row sets it going');
+  assert.equal(session.comeback, COMEBACK.events);
+  assert.equal(session.comebackLevelDrop, COMEBACK.levelDrop);
+  assert.equal(session.comebackExperience, COMEBACK.experience);
+
+  session.noteBattle('won');
+  assert.equal(session.comeback, COMEBACK.events, 'a win keeps what was given');
+  const again = new Session({ slot: 0, save: session.toSave() });
+  assert.equal(again.comeback, COMEBACK.events, 'and it outlasts a save and reload');
+
+  for (let event = 0; event < COMEBACK.events; event++) session.countEvent();
+  assert.equal(session.comebackLevelDrop, 0, 'it runs out with the events');
+  assert.equal(session.comebackExperience, 1);
+});
+
+test('while the road eases off, its trainers stand lower and a battle pays more', options, () => {
+  const companion = createPokemon(new Rng(1), 4, 40);
+  const area = { tags: [] };
+  const classes = [{ id: 'youngster', areas: [], party: [2, 2] }];
+  const usual = rollTrainer(new Rng(9), area, companion, classes).party.map(levelOf);
+  const eased = rollTrainer(new Rng(9), area, companion, classes, { levelDrop: COMEBACK.levelDrop }).party.map(levelOf);
+  assert.deepEqual(eased, usual.map((level) => Math.max(1, level - COMEBACK.levelDrop)));
+
+  const paid = (bonus) => {
+    const battle = new Battle({ rng: new Rng(2), player: createPokemon(new Rng(1), 4, 20), foes: [createPokemon(new Rng(3), 16, 20)], policy: defaultAutoBattle(), experienceBonus: bonus });
+    battle.awardExperience(/** @type {any} */ (battle.foe), []);
+    return battle.rewards[0].experience;
+  };
+  assert.ok(Math.abs(paid(COMEBACK.experience) - paid(1) * COMEBACK.experience) <= 1);
 });

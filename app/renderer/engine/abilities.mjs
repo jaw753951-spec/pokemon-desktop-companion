@@ -26,6 +26,7 @@
  */
 import { moveHasFlag as hasFlag, speciesOf } from '../core/data.mjs';
 import { formeAbility } from './forms.mjs';
+import { clearStatus } from './pokemon.mjs';
 import { WEATHER, TERRAIN } from './field.mjs';
 
 /** A quarter of maximum HP, which is what most absorbing abilities pay. */
@@ -266,10 +267,12 @@ export const ABILITIES = {
   'sand-stream': { start: (ctx) => ctx.setWeather(WEATHER.SANDSTORM), weatherImmune: true },
   'snow-warning': { start: (ctx) => ctx.setWeather(WEATHER.SNOW) },
   forecast: {},
-  // The primal weathers, as the ordinary ones: this game's weather set a
-  // Pokémon calls up already lasts the battle.
-  'primordial-sea': { start: (ctx) => ctx.setWeather(WEATHER.RAIN) },
-  'desolate-land': { start: (ctx) => ctx.setWeather(WEATHER.SUN) },
+  // The primal weathers: a heavy rain that puts out every Fire attack and an
+  // extremely harsh sun that dries up every Water one, for as long as their
+  // caller stays out, and no ordinary weather can take their place (see
+  // `Battle.settlePrimal` and `Battle.washedOut`).
+  'primordial-sea': { start: (ctx) => ctx.setWeather(WEATHER.RAIN, { primal: true }), primal: WEATHER.RAIN },
+  'desolate-land': { start: (ctx) => ctx.setWeather(WEATHER.SUN, { primal: true }), primal: WEATHER.SUN },
   // These are the forme change itself, which `forms.mjs` and the battle
   // make; the ability has nothing else to do. Tera Shift's forme is the
   // Terastal one, which this game does not have, so it does nothing at all.
@@ -741,8 +744,7 @@ export function afterBattle(pokemon, maxHp) {
   if (pokemon.hp <= 0) return null;
   const ability = abilityName(pokemon);
   if (ability === 'natural-cure' && pokemon.status) {
-    pokemon.status = null;
-    pokemon.statusTurns = 0;
+    clearStatus(pokemon);
     return 'cured';
   }
   if (ability === 'regenerator' && pokemon.hp < maxHp) {

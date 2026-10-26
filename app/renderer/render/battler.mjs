@@ -109,6 +109,7 @@ const STATUS_EFFECTS = {
   slp: { tint: '#8890a8', strength: 0.25, main: '#ffffff', light: '#ffffff', shadow: '#485078' },
   frz: { tint: '#80d0f0', strength: 0.5, main: '#a8e8ff', light: '#ffffff', shadow: '#3888b8' },
   confusion: { tint: '#f0a0c8', strength: 0.2, main: '#f8d840', light: '#fff8c0', shadow: '#b07800' },
+  infatuation: { tint: '#f878b0', strength: 0.25, main: '#f04880', light: '#ffc8e0', shadow: '#a01848' },
 };
 
 /**
@@ -192,6 +193,8 @@ const Z_SMALL = ['####', '..#.', '.#..', '####'];
 const GLINT = ['..o..', '..#..', 'o#o#o', '..#..', '..o..'];
 const GLINT_SMALL = ['.#.', '#o#', '.#.'];
 const STAR = ['..x..', '.x#x.', 'x#o#x', '.x#x.', '..x..'];
+const HEART = ['.##.##.', '#o#####', '#######', '.#####.', '..###..', '...#...'];
+const HEART_SMALL = ['.#.#.', '#o###', '.###.', '..#..'];
 
 /** @type {HTMLCanvasElement|OffscreenCanvas|null} */
 let sharedTint = null;
@@ -651,6 +654,19 @@ export class Battler {
           const x = this.x + Math.cos(angle) * radius;
           const y = top - 2 + Math.sin(angle) * radius * 0.3;
           stamp(Math.sin(angle) < 0 ? GLINT_SMALL : STAR, x, y);
+        }
+        break;
+      }
+      case 'infatuation': {
+        // Hearts floating up from round the head one after another, swaying
+        // as they rise and growing on the way.
+        for (let index = 0; index < 3; index++) {
+          const step = (progress - index * 0.18) / 0.6;
+          if (step <= 0 || step >= 1) continue;
+          const side = index === 1 ? 1 : -1;
+          const x = this.x + side * width * 0.22 + Math.sin(step * Math.PI * 2) * 2;
+          const y = top + 4 - step * 18;
+          stamp(step < 0.35 ? HEART_SMALL : HEART, x, y, true);
         }
         break;
       }

@@ -93,7 +93,7 @@ test('a move bound to fail is passed over, and taken up again once it would work
   assert.equal(ordered.chooseMove(ordered.player, /** @type {any} */ (ordered.foe)), 'shadow-claw');
 
   // And the other side's trainers do not throw it either.
-  const foeSide = fight(target(), fixed(GOLURK, 60, ['poltergeist', 'shadow-claw']));
+  const foeSide = fight(target(), fixed(GOLURK, 60, ['poltergeist', 'shadow-claw']), { trainerBattle: true });
   assert.equal(foeSide.chooseMove(/** @type {any} */ (foeSide.foe), foeSide.player), 'shadow-claw');
 
   // A Dream Eater waits for the target to be asleep; with nothing else, it is

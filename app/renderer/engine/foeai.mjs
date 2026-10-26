@@ -1,8 +1,10 @@
 /**
  * How the other side picks its move.
  *
- * The companion's own moves follow the policy the player set; everything it
- * meets decides for itself, and this is how. Every move still open is given a
+ * The companion's own moves follow the policy the player set; a trainer's
+ * Pokémon decides for itself, and this is how. A wild Pokémon does not come
+ * here at all: it picks any move it is allowed at random, as wild Pokémon do
+ * in the games (see `Battle.chooseMove`). Every move still open is given a
  * score for this turn and the best is used — or, when an attack and something
  * else come out close, either, so the same Pokémon does not play the same line
  * every time.
@@ -12,10 +14,9 @@
  * down first, put a sleep or a paralysis on something healthy before trading
  * blows with it, set up while there is time and health to, and heal when the
  * health has run low rather than at the last sliver. It knows the companion's
- * moves only as far as they have been shown: a wild Pokémon goes by what
- * the companion plainly is — its types, its build — and a trainer adds to
- * that every move it has watched the companion use this battle (see
- * `expectedThreat`). It does not see dice.
+ * moves only as far as they have been shown: what the companion plainly is —
+ * its types, its build — and every move it has been watched using this
+ * battle (see `expectedThreat`). It does not see dice.
  *
  * What the move filter already rules out — a status at something already
  * suffering one, a Rain Dance in the rain, an attack the type chart says

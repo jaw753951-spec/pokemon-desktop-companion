@@ -44,18 +44,18 @@ export const SHOWDOWN = 'https://raw.githubusercontent.com/smogon/pokemon-showdo
  * decompilation, whose front sprites are a strip of animation frames 80 pixels
  * wide; the last frame is the pose the trainer stands in.
  *
- * Everyone past Sinnoh, Johto's leaders, Will and Karen come from the Smogon / Pokémon
+ * Johto's leaders, Will, Karen and Unova come from the Smogon / Pokémon
  * Showdown sprite repository (`smogon`, kept under `data/vendor/smogon-sprites`):
  * HeartGold and SoulSilver's own sprites for Johto, Black and White's and
- * Black 2 and White 2's for Unova, and — since the 3D games drew nobody in
- * pixels — the community's sprites in the Black and White style for Kalos and
- * Alola, credited in the game.
+ * Black 2 and White 2's for Unova — the games' own pictures, and nothing else
+ * from there.
  *
- * Nobody drew Diantha, Grant, Galar, Paldea or Blueberry in pixels for a
- * game either. Their pictures are the fan game PokéRogue's (`pokerogue`, CC
- * BY-NC-SA 4.0, kept under `data/vendor/pokerogue`), whose trainer sprites
- * are an animation sheet and a TexturePacker atlas side by side — `path`
- * names both without the extension, and the first frame is the picture.
+ * Nobody drew Kalos, Alola, Galar, Paldea or Blueberry in pixels for a game:
+ * the 3D games drew nobody that way. Their pictures are the fan game
+ * PokéRogue's (`pokerogue`, CC BY-NC-SA 4.0, kept under
+ * `data/vendor/pokerogue`), whose trainer sprites are an animation sheet and a
+ * TexturePacker atlas side by side — `path` names both without the
+ * extension, and the first frame is the picture.
  * Avery and Klara, who are not there and were drawn nowhere else, come from
  * Pokémon Showdown's trainer sprites (`showdown`, through a mirror of its
  * sprite folder) — Brumirage's, shared on condition of credit and no edits,
@@ -124,29 +124,26 @@ export const NAMED_PORTRAITS = {
   roxie: { source: 'smogon', path: 'src/_uncategorized/canonical/trainers/gen5/black2-white2/Roxie.png' },
   marlon: { source: 'smogon', path: 'src/_uncategorized/canonical/trainers/gen5/black2-white2/Marlon.png' },
   iris_champion: { source: 'smogon', path: 'src/_uncategorized/canonical/trainers/gen5/black2-white2/Iris.png' },
-  // Kalos and Alola were drawn in 3D; these are the community's sprites in
-  // Black and White's style.
-  viola: { source: 'smogon', path: 'src/_uncategorized/noncanonical/trainers/gen6/x-y/Viola.png' },
-  korrina: { source: 'smogon', path: 'src/_uncategorized/noncanonical/trainers/gen6/x-y/Korrina.png' },
-  ramos: { source: 'smogon', path: 'src/_uncategorized/noncanonical/trainers/gen6/x-y/Ramos.png' },
-  clemont: { source: 'smogon', path: 'src/_uncategorized/noncanonical/trainers/gen6/x-y/Clemont.png' },
-  valerie: { source: 'smogon', path: 'src/_uncategorized/noncanonical/trainers/gen6/x-y/Valerie.png' },
-  olympia: { source: 'smogon', path: 'src/_uncategorized/noncanonical/trainers/gen6/x-y/Olympia.png' },
-  wulfric: { source: 'smogon', path: 'src/_uncategorized/noncanonical/trainers/gen6/x-y/Wulfric.png' },
-  drasna: { source: 'smogon', path: 'src/_uncategorized/noncanonical/trainers/gen6/x-y/Drasna.png' },
-  wikstrom: { source: 'smogon', path: 'src/_uncategorized/noncanonical/trainers/gen6/x-y/Wikstrom.png' },
-  malva: { source: 'smogon', path: 'src/_uncategorized/noncanonical/trainers/gen6/x-y/Malva.png' },
-  siebold: { source: 'smogon', path: 'src/_uncategorized/noncanonical/trainers/gen6/x-y/Siebold.png' },
-  olivia: { source: 'smogon', path: 'src/_uncategorized/noncanonical/trainers/gen7/sun-moon/Olivia.png' },
-  acerola: { source: 'smogon', path: 'src/_uncategorized/noncanonical/trainers/gen7/sun-moon/Acerola.png' },
-  kahili: { source: 'smogon', path: 'src/_uncategorized/noncanonical/trainers/gen7/sun-moon/Kahili.png' },
-  hala: { source: 'smogon', path: 'src/_uncategorized/noncanonical/trainers/gen7/sun-moon/Hala.png' },
-  molayne: { source: 'smogon', path: 'src/_uncategorized/noncanonical/trainers/gen7/sun-moon/Molayne.png' },
-  // Kalos's champion and its rock leader, Alola's champion, Galar's leaders,
-  // and Paldea's and Blueberry Academy's leaders, Elite Four and champions,
-  // from PokéRogue. Hau is here rather than with the rest of Alola: Smogon's
-  // drawing of him has his skin grey-olive and his hair olive, where the games
-  // have him tanned with dark green hair.
+  // Kalos and Alola, Galar's leaders, and Paldea's and Blueberry Academy's
+  // leaders, Elite Four and champions, from PokéRogue. Smogon's community has
+  // sprites of Kalos and Alola too, but leaves their use to be asked for
+  // first; PokéRogue's are offered under a licence that says what it allows.
+  viola: { source: 'pokerogue', path: 'images/trainer/viola' },
+  korrina: { source: 'pokerogue', path: 'images/trainer/korrina' },
+  ramos: { source: 'pokerogue', path: 'images/trainer/ramos' },
+  clemont: { source: 'pokerogue', path: 'images/trainer/clemont' },
+  valerie: { source: 'pokerogue', path: 'images/trainer/valerie' },
+  olympia: { source: 'pokerogue', path: 'images/trainer/olympia' },
+  wulfric: { source: 'pokerogue', path: 'images/trainer/wulfric' },
+  drasna: { source: 'pokerogue', path: 'images/trainer/drasna' },
+  wikstrom: { source: 'pokerogue', path: 'images/trainer/wikstrom' },
+  malva: { source: 'pokerogue', path: 'images/trainer/malva' },
+  siebold: { source: 'pokerogue', path: 'images/trainer/siebold' },
+  olivia: { source: 'pokerogue', path: 'images/trainer/olivia' },
+  acerola: { source: 'pokerogue', path: 'images/trainer/acerola' },
+  kahili: { source: 'pokerogue', path: 'images/trainer/kahili' },
+  hala: { source: 'pokerogue', path: 'images/trainer/hala' },
+  molayne: { source: 'pokerogue', path: 'images/trainer/molayne' },
   hau: { source: 'pokerogue', path: 'images/trainer/hau' },
   diantha: { source: 'pokerogue', path: 'images/trainer/diantha' },
   grant: { source: 'pokerogue', path: 'images/trainer/grant' },

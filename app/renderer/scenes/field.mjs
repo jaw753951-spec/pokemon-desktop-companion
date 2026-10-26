@@ -316,6 +316,8 @@ export function fieldScene(session) {
       // A leader lost to does not stand in the road again at the next trainer.
       if (setup.leader) session.leaderRest = LEADER_REST_AFTER_LOSS;
       session.blackOut();
+      // Enough of these in a row and the road eases off for a while, quietly.
+      session.noteBattle('lost');
       // The wild one is named, or the line read "the wild {name} ran away".
       const wild = setup.foes[0];
       const lost = setup.trainer
@@ -326,6 +328,9 @@ export function fieldScene(session) {
       refreshArt(app);
       return;
     }
+
+    // A win ends a run of losses.
+    session.noteBattle('won');
 
     // A trainer beaten pays a prize: so much a level of their last Pokémon.
     if (setup.trainer) {

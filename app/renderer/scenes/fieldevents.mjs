@@ -364,15 +364,25 @@ export function createEventRunner({ session, onBattle }) {
 export const BERRY_HARVEST = { min: 2, max: 4 };
 
 /**
- * A berry tree grows at the roadside; the companion picks from it for ten
- * seconds, and the tree is left bare.
+ * Which berry a roadside tree bears, and how many the companion picks.
+ *
+ * @param {import('../engine/session.mjs').Session} session
+ * @returns {{berry: string, count: number}}
  */
-function startBerry(session, spawnAt) {
+export function berryHarvest(session) {
   const berries = Object.entries(gameData().items)
     .filter(([, item]) => item.pocket === 'berries' && item.sprite)
     .map(([slug]) => slug);
   const berry = session.rng.pick(berries.length ? berries : ['oran-berry']);
-  const count = firstRunSupply(session, session.rng.int(BERRY_HARVEST.min, BERRY_HARVEST.max));
+  return { berry, count: firstRunSupply(session, session.rng.int(BERRY_HARVEST.min, BERRY_HARVEST.max)) };
+}
+
+/**
+ * A berry tree grows at the roadside; the companion picks from it for ten
+ * seconds, and the tree is left bare.
+ */
+function startBerry(session, spawnAt) {
+  const { berry, count } = berryHarvest(session);
 
   const trees = gameData().actors?.props?.berryTrees ?? {};
   const tree = treeFor(berry, trees);
@@ -490,7 +500,14 @@ export const FAINT_FRUIT = new Set(['kelpsy', 'leppa', 'durin', 'spelon']);
  * A ball sits on the path. Which ball it is decides how good the item inside
  * is; the companion spends five seconds retrieving it.
  */
-function startBall(session, spawnAt) {
+/**
+ * What an item ball on the road turns out to be: which ball it lies in, and
+ * the find inside.
+ *
+ * @param {import('../engine/session.mjs').Session} session
+ * @returns {{tier: {ball: string, chance: number}, item: string, count: number}}
+ */
+export function roadFind(session) {
   const tier = session.rng.weighted(BALL_TIERS.map((entry) => ({ value: entry, weight: entry.chance })))
     ?? BALL_TIERS[0];
   // A kept item — a Leftovers, a TM — is only ever found once: a second
@@ -501,7 +518,11 @@ function startBall(session, spawnAt) {
   // Now and then, the item the travelling legendary is waiting on, or a key
   // item that leads to a rare Pokémon.
   const item = signatureFind(session) ?? callingFind(session) ?? pickFind(session, pool) ?? 'poke-ball';
-  const count = foundCount(session.rng, item, session.firstRun);
+  return { tier, item, count: foundCount(session.rng, item, session.firstRun) };
+}
+
+function startBall(session, spawnAt) {
+  const { tier, item, count } = roadFind(session);
 
   const state = {
     kind: 'ball',
@@ -863,26 +884,38 @@ function startHeal(session, spawnAt) {
   return state;
 }
 
-/** What the visit is for: everything restored, and the bag stocked. */
-function restAndResupply(session, app) {
+/**
+ * What a Pokémon Center does for the companion: everything restored, and the
+ * bag stocked with the potions and balls its level has use for.
+ *
+ * @param {import('../engine/session.mjs').Session} session
+ * @returns {{potions: {item: string, count: number}, balls: {item: string, count: number}}} what was handed over
+ */
+export function restAtCenter(session) {
   session.heal();
 
   const level = levelOf(session.active);
   const supply = SUPPLIES.find((entry) => level < entry.level) ?? SUPPLIES[SUPPLIES.length - 1];
-  const potions = firstRunSupply(session, SUPPLY_COUNT);
-  session.addItem(supply.item, potions);
+  const potions = { item: supply.item, count: firstRunSupply(session, SUPPLY_COUNT) };
+  session.addItem(potions.item, potions.count);
 
   const balls = ballSupply(session.rng, level);
   balls.count = firstRunSupply(session, balls.count);
   session.addItem(balls.item, balls.count);
+  return { potions, balls };
+}
+
+/** What the visit is for: everything restored, and the bag stocked. */
+function restAndResupply(session, app) {
+  const { potions, balls } = restAtCenter(session);
 
   app.audio.playJingle(gameData().bgm.cues.heal ?? null);
   app.toast(
     [
       t('event.healed'),
       t('event.supplied', {
-        name: localized(itemOf(supply.item)?.name, supply.item),
-        count: potions,
+        name: localized(itemOf(potions.item)?.name, potions.item),
+        count: potions.count,
       }),
       t('event.supplied', {
         name: localized(itemOf(balls.item)?.name, balls.item),
@@ -897,8 +930,13 @@ function restAndResupply(session, app) {
 const boxed = (/** @type {import('../engine/session.mjs').Session} */ session) =>
   new Set(session.box.filter(Boolean).map((pokemon) => pokemon?.speciesId));
 
-/** A wild Pokémon steps out ahead. */
-function startWild(session, spawnAt) {
+/**
+ * The wild Pokémon the road puts in front of the companion, written in the
+ * Pokédex as seen.
+ *
+ * @param {import('../engine/session.mjs').Session} session
+ */
+export function meetWild(session) {
   const wild = rollWildPokemon(
     session.rng,
     session.area,
@@ -907,10 +945,16 @@ function startWild(session, spawnAt) {
     boxed(session),
     session.shinyOdds,
     rollRare(session),
-    wildLevelDrop(session.firstRun, session.active),
+    wildLevelDrop(session.firstRun, session.active) + session.comebackLevelDrop,
   );
   session.lastWildSpecies = wild.speciesId;
   session.markSeen(wild.speciesId);
+  return wild;
+}
+
+/** A wild Pokémon steps out ahead. */
+function startWild(session, spawnAt) {
+  const wild = meetWild(session);
 
   const state = {
     kind: 'wild',
@@ -953,7 +997,10 @@ function startTrainer(session, spawnAt) {
   // A Swimmer is only met where there is water beside the lane, and swims
   // in it rather than standing on the road.
   const drop = waterDrop(session.area, COMPANION_X + spawnAt, SWIMMER_HALF_WIDTH);
-  const { trainerClass, party } = rollTrainer(session.rng, session.area, session.active, classes, { onWater: drop !== null });
+  const { trainerClass, party } = rollTrainer(session.rng, session.area, session.active, classes, {
+    onWater: drop !== null,
+    levelDrop: session.comebackLevelDrop,
+  });
   const swimming = Boolean(trainerClass?.water) && drop !== null;
 
   for (const member of party) session.markSeen(member.speciesId);
@@ -1070,7 +1117,7 @@ export function shouldSummonLeader(session) {
  *
  * @param {import('../engine/session.mjs').Session} session
  */
-function pickLeader(session) {
+export function pickLeader(session) {
   const held = new Set(session.badges);
   const available = (gameData().leaders ?? []).filter((leader) => !held.has(leader.type));
   if (available.length === 0) return null;
