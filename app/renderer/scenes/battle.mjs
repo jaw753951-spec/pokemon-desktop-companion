@@ -134,10 +134,11 @@ const MESSAGE_TOP = FIELD_HEIGHT - 21;
 const FOE_SPOT = { x: Math.round(FIELD_WIDTH * 0.73), y: Math.round(FIELD_HEIGHT * 0.55) + FOE_PLATFORM_DROP };
 
 /**
- * A gym leader stands on their side of the field while their challenge is
- * read out, as the cartridges show the trainer before the first Pokémon: this
- * much longer than the line would otherwise stay up, and then they step off
- * to the right, the way they came, as their first ball is thrown.
+ * A gym leader — and each of the League's people — stands on their side of
+ * the field while their challenge is read out, as the cartridges show the
+ * trainer before the first Pokémon: this much longer than the line would
+ * otherwise stay up, and then they step off to the right, the way they came,
+ * as their first ball is thrown.
  */
 const LEADER_HOLD_MS = 700;
 const LEADER_EXIT_MS = 360;
@@ -149,14 +150,17 @@ const PLAYER_SPOT = { x: Math.round(FIELD_WIDTH * 0.26), y: MESSAGE_TOP - 3 };
  *   foes: import('../engine/pokemon.mjs').Pokemon[],
  *   trainer?: {name: {ko: string, en: string}, portrait?: string|null, kind?: string}|null,
  *   leader?: boolean,
+ *   presented?: boolean,
  *   backdrop?: string|null,
  *   music?: string|null,
  *   weather?: string|null,
  *   onFinish: (result: {outcome: 'won'|'lost'|'fled', defeated: import('../engine/pokemon.mjs').Pokemon[]}) => void,
- * }} options
+ * }} options `presented` stands the trainer on the field before their first
+ *   ball, as a gym leader is — a gym leader always, and the League's rounds,
+ *   whose people are met the same way
  * @returns {import('../core/app.mjs').Scene}
  */
-export function battleScene({ session, foes, trainer = null, leader = false, backdrop = null, music = null, weather = undefined, onFinish }) {
+export function battleScene({ session, foes, trainer = null, leader = false, presented = leader, backdrop = null, music = null, weather = undefined, onFinish }) {
   const battle = new Battle({
     rng: session.rng,
     player: session.active,
@@ -226,7 +230,7 @@ export function battleScene({ session, foes, trainer = null, leader = false, bac
    * are still there, and whether the line has yet to send them off.
    */
   const leaderFigure = { image: /** @type {HTMLImageElement|null} */ (null), leaving: -1, pending: false };
-  const leaderArt = leader && trainer?.portrait && gameData().actors?.portraits?.[trainer.portrait] ? trainer.portrait : null;
+  const leaderArt = presented && trainer?.portrait && gameData().actors?.portraits?.[trainer.portrait] ? trainer.portrait : null;
   if (leaderArt) loadImage(`trainers/portraits/${leaderArt}.png`).then((image) => { leaderFigure.image = image; }).catch(() => {});
   /**
    * Balls in the air, and the light each opens in once it lands.

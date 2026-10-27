@@ -45,6 +45,8 @@ export const windowControl = {
 
 export const appControl = {
   quit: (slot, save) => api().app.quit(slot, save),
+  /** The build's version number, e.g. `1.0.2`. */
+  version: () => api().app.version(),
 };
 
 /**

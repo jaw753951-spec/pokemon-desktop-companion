@@ -22,6 +22,7 @@ import { inFieldSpace } from '../render/field.mjs';
 import { alreadyOwned, earn, formatMoney, lossFor, prizeFor } from '../engine/shop.mjs';
 import { restockBerry } from '../engine/items.mjs';
 import { battleScene } from './battle.mjs';
+import { hallOfFameScene } from './halloffame.mjs';
 import { inventoryScene } from '../ui/inventory.mjs';
 
 /**
@@ -162,6 +163,9 @@ export function leagueScene({ session, onLeave, onCrowned }) {
         session,
         foes,
         trainer: round,
+        // Each of the four and the champion stands in their room before
+        // their first ball, as a gym leader does in the gym.
+        presented: true,
         backdrop: backdropForLeagueRound(index, rounds.length),
         music: gameData().bgm.cues[last ? 'battleChampion' : 'battleEliteFour'],
         onFinish: (result) => {
@@ -223,11 +227,19 @@ export function leagueScene({ session, onLeave, onCrowned }) {
     session.leagueRegion = league.region;
     session.leagueRun = null;
 
+    // The champion is entered into the Hall of Fame before anything else is
+    // said, as the games do; the prize and the way home are read out after.
     const name = nameOf(session.active);
-    app.audio.playJingle(gameData().bgm.cues.victoryLeague ?? null, { intro: true });
-    const prize = t('league.reward', { item: localized(gameData().items[reward]?.name, reward) });
-    app.toast(`${t('league.crowned', { name })}\n${prize}\n${t('league.wentHome')}`, 5000);
-    onCrowned();
+    app.push(hallOfFameScene({
+      pokemon: session.active,
+      league,
+      onFinish: () => {
+        app.pop();
+        const prize = t('league.reward', { item: localized(gameData().items[reward]?.name, reward) });
+        app.toast(`${t('league.crowned', { name })}\n${prize}\n${t('league.wentHome')}`, 5000);
+        onCrowned();
+      },
+    }));
   }
 }
 

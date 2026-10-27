@@ -25,6 +25,13 @@ export function titleScene({ slots }) {
 
       app.audio.playMusic(gameData().bgm.cues.title);
 
+      // Which build this is, small in the corner, for a report of a bug to
+      // say which version it was seen in.
+      const build = el('div.build');
+      appControl.version().then((version) => {
+        build.textContent = `v${version}`;
+      }).catch(() => {});
+
       return el('div.screen#title-screen', {}, [
         el('div.backdrop', {
           style: {
@@ -51,6 +58,7 @@ export function titleScene({ slots }) {
             appControl.quit();
           }),
         ]),
+        build,
       ]);
     },
   };

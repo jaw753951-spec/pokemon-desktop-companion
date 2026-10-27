@@ -294,6 +294,7 @@ const leagueBattle = async (round) => {
     session,
     foes: buildParty(session, trainer, leagueLevel(index, rounds.length)),
     trainer,
+    presented: true,
     backdrop: backdropForLeagueRound(index, rounds.length),
     onFinish: () => app().pop(),
   }));

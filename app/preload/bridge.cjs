@@ -29,5 +29,6 @@ contextBridge.exposeInMainWorld('pdc', {
   },
   app: {
     quit: (slot, save) => invoke('app:quit', { slot, save }),
+    version: () => invoke('app:version'),
   },
 });

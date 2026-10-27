@@ -7,8 +7,9 @@
  * instead, so the renderer can `fetch` them like any web app.
  */
 import { app, ipcMain, net, protocol } from 'electron';
+import { readFileSync } from 'node:fs';
 import { join, normalize, sep } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { ASSET_DIR, AUTHORED_DIR, DATA_DIR } from './paths.mjs';
 import { deleteSlot, listSlots, readSlot, writeSlot } from './save.mjs';
@@ -17,6 +18,14 @@ import { applyScale, beginDrag, dragTo, endDrag } from './window.mjs';
 
 /** Roots the `pdc://` protocol will serve, by host name. */
 const ROOTS = { assets: ASSET_DIR, data: DATA_DIR, authored: AUTHORED_DIR };
+
+/**
+ * The build's version, from the project's own package.json — which the
+ * packaged app carries beside this code. Not `app.getVersion()`: a harness
+ * booting these modules from another entry point gets Electron's version
+ * from that.
+ */
+const VERSION = JSON.parse(readFileSync(fileURLToPath(new URL('../../package.json', import.meta.url)), 'utf8')).version;
 
 /** Must run before `app.ready`. */
 export function registerProtocolScheme() {
@@ -84,6 +93,8 @@ export function registerHandlers() {
     if (at) await saveSettings({ windowX: at.x, windowY: at.y });
     return at;
   });
+
+  handle('app:version', () => VERSION);
 
   handle('app:quit', async ({ slot, save } = {}) => {
     // "Save and quit" must not lose the run if the write fails.

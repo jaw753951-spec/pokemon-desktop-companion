@@ -210,3 +210,21 @@ test('asking for the intro of a song with no loop plays all of it', async () => 
   assert.equal(audio.jingle?.limit, 0.5);
   assert.equal(audio.jingle?.fadeFrom, 0.5);
 });
+
+test('the drum kit and the timpani are struck, not held as tones', async () => {
+  const { voiceFor } = await import('../../app/renderer/core/audio.mjs');
+  // Program 0 is the decomp's drum kit: the champion theme's snare is its 38,
+  // a band of noise up where a snare sits rather than a low D.
+  const snare = voiceFor(0, 38);
+  assert.equal(snare.wave, 'noise');
+  assert.ok(snare.band > 1000, `snare at ${snare.band} Hz`);
+  assert.ok(voiceFor(0, 57).release > snare.release, 'a cymbal rings on longer than a snare');
+  // The drum channel's kit is voiced the same way.
+  assert.equal(voiceFor(128, 38).band, snare.band);
+  // The timpani keeps its pitch but dies away instead of sustaining.
+  const timpani = voiceFor(47, 52);
+  assert.notEqual(timpani.wave, 'noise');
+  assert.ok(timpani.hold && timpani.sustain < 0.2);
+  // A melodic program is left as it was.
+  assert.equal(voiceFor(48, 60).hold, undefined);
+});

@@ -319,8 +319,10 @@ export class AudioEngine {
   playNote(program, note, when, output = null) {
     if (!this.context || !this.musicGain) return;
     const sink = output ?? this.musicGain;
-    const voice = voiceFor(program);
-    const duration = Math.min(note.d, 4);
+    const voice = voiceFor(program, note.n);
+    // A drum or a timpani is struck: it rings as long as it rings, however
+    // long the file holds the key down.
+    const duration = Math.min(note.d, voice.hold ?? 4);
     const gain = this.context.createGain();
     gain.connect(sink);
 
@@ -332,8 +334,8 @@ export class AudioEngine {
       buffer.loop = true;
       const filter = this.context.createBiquadFilter();
       filter.type = 'bandpass';
-      filter.frequency.value = midiToFrequency(note.n);
-      filter.Q.value = 1.2;
+      filter.frequency.value = voice.band ?? midiToFrequency(note.n);
+      filter.Q.value = voice.q ?? 1.2;
       buffer.connect(filter);
       filter.connect(gain);
       source = buffer;
@@ -347,7 +349,7 @@ export class AudioEngine {
 
     const peak = note.v * voice.gain;
     const attack = voice.attack;
-    const release = Math.min(voice.release, duration);
+    const release = voice.hold ? voice.release : Math.min(voice.release, duration);
     gain.gain.setValueAtTime(0.0001, when);
     gain.gain.linearRampToValueAtTime(peak, when + attack);
     gain.gain.setTargetAtTime(peak * voice.sustain, when + attack, Math.max(0.02, duration / 3));
@@ -469,10 +471,22 @@ const BLIPS = {
 
 /**
  * Map a General MIDI program onto one of the four voices the synth has.
+ *
+ * Two of the decomp's programs are not what General MIDI calls them, because
+ * its MIDI numbers each song's own voicegroup rather than the GM bank. Program
+ * 0 is the drum kit, as the drum channel is — every program-0 track repeats a
+ * handful of drum notes — and was voiced as a pitched tone, so a snare came out
+ * as a low D under the tune. And 47 is the timpani, which was a held string.
+ *
  * @param {number} program
+ * @param {number} note the key, which picks the drum of a kit
+ * @returns {{wave: string, gain: number, transpose: number, attack: number, sustain: number, release: number,
+ *   hold?: number, band?: number, q?: number}} `hold` caps a struck note's length, and `band` and `q` place a
+ *   drum's noise
  */
-function voiceFor(program) {
-  if (program >= 128) return { wave: 'noise', gain: 0.5, transpose: 0, attack: 0.002, sustain: 0.2, release: 0.08 };
+export function voiceFor(program, note = 60) {
+  if (program >= 128 || program === 0) return { wave: 'noise', gain: 0.55, transpose: 0, attack: 0.002, sustain: 0.15, hold: 0.04, ...drumOf(note) };
+  if (program === 47) return { wave: 'triangle', gain: 0.6, transpose: 0, attack: 0.003, sustain: 0.1, release: 0.35, hold: 0.1 };
   if (program < 8) return { wave: 'triangle', gain: 0.5, transpose: 0, attack: 0.004, sustain: 0.55, release: 0.12 };
   if (program < 32) return { wave: 'square', gain: 0.32, transpose: 0, attack: 0.006, sustain: 0.6, release: 0.1 };
   // At the pitch it is written at: the tracks already put their bass low, and
@@ -483,6 +497,26 @@ function voiceFor(program) {
   if (program < 80) return { wave: 'square', gain: 0.3, transpose: 0, attack: 0.012, sustain: 0.75, release: 0.12 };
   if (program < 112) return { wave: 'sawtooth', gain: 0.24, transpose: 0, attack: 0.02, sustain: 0.7, release: 0.16 };
   return { wave: 'noise', gain: 0.4, transpose: 0, attack: 0.002, sustain: 0.3, release: 0.1 };
+}
+
+/**
+ * Where a drum of the kit sits, as a band of noise, and how long it rings.
+ *
+ * The kit's keys follow General MIDI's drum map, as the cartridge's own kit
+ * does: the bass drum at the bottom, the snares, the hi-hats and toms, and the
+ * cymbals above.
+ *
+ * @param {number} note
+ */
+function drumOf(note) {
+  if (note <= 36) return { band: 110, q: 1.4, release: 0.08 };
+  if (note <= 40) return { band: 1900, q: 0.7, release: 0.12 };
+  if (note === 42 || note === 44) return { band: 8000, q: 0.9, release: 0.04 };
+  if (note === 46) return { band: 7500, q: 0.9, release: 0.2 };
+  if (note === 49 || note === 52 || note === 55 || note === 57) return { band: 6000, q: 0.5, release: 0.7 };
+  if (note === 51 || note === 53 || note === 59) return { band: 5000, q: 1, release: 0.35 };
+  if (note <= 50) return { band: 160 + (note - 41) * 45, q: 1.2, release: 0.14 };
+  return { band: midiToFrequency(Math.min(note + 12, 120)), q: 1.2, release: 0.1 };
 }
 
 const midiToFrequency = (note) => 440 * 2 ** ((note - 69) / 12);

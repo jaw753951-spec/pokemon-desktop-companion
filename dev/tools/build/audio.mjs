@@ -28,6 +28,8 @@ export const CUES = {
   victoryTrainer: 'mus_victory_trainer',
   victoryLeader: 'mus_victory_gym_leader',
   victoryLeague: 'mus_victory_league',
+  // The room a new champion is entered into, played over the ceremony.
+  hallOfFame: 'mus_hall_of_fame',
   league: 'mus_victory_road',
   encounterTrainer: 'mus_encounter_male',
   encounterLeader: 'mus_encounter_cool',
