@@ -223,10 +223,12 @@ function inspector(app, session, state, stock, rebuild) {
 
   const buyButton = button(t('shop.buy', { amount: formatMoney(total) }), () => {
     const result = buy(session, slug, state.count);
+    // The count stays where it was set after a purchase, so buying the same
+    // ten again is one press rather than setting ten all over; it goes back
+    // to one only when another item is picked.
     if (result === 'bought') {
       app.audio.blip('confirm');
       app.toast(t('shop.bought', { item: localized(item.name, slug), count: many ? state.count : 1 }));
-      state.count = 1;
     } else {
       app.audio.blip('error');
       app.toast(t(result === 'poor' ? 'shop.poor' : 'shop.owned'));

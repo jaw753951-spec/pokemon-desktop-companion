@@ -122,7 +122,8 @@ Gym Leaders show up in place of trainers as your Pokémon grows, and beating one
 ## The Pokémon League
 
 **Once you have 8 badges**, a **Head for the Pokémon League** button appears at the bottom of the field. Beat the Elite Four
-and then the Champion in turn to become Champion. If you leave partway with
+and then the Champion in turn to become Champion and be entered into the Hall of Fame, where the crown is
+handed over. Each of them stands on the field before their first Pokémon, as a Gym Leader does. If you leave partway with
 **Get ready**, you can pick up again from where you won. Badges and the Champion title are kept per Pokémon.
 
 <table>
