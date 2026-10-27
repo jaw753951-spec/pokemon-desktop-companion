@@ -40,16 +40,52 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v') || (inputs.release_tag != '' && inputs.platforms == 'all')
     runs-on: ubuntu-latest
     steps:
+      # What changed, from the description of the pull request the release was
+      # merged by. GitHub's generated notes listed only that pull request's
+      # title, and closed on a link comparing this tag with the last one —
+      # which goes nowhere once the old releases and their tags are cleared
+      # away. The description is what says what the release is.
+      - name: Read the release notes from its pull request
+        id: notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version='${{ inputs.release_tag || github.ref_name }}'
+          version="${version#v}"
+          # A tag goes on the merge commit of the release's pull request, so
+          # that commit's merged pull request is the release's.
+          # A failed lookup prints its error where the answer would go, so it
+          # counts as no pull request rather than as one.
+          pr=$(gh api 'repos/${{ github.repository }}/commits/${{ github.sha }}/pulls' \
+            --jq '[.[] | select(.merged_at != null)][0] // empty' 2>/dev/null) || pr=''
+          {
+            echo 'text<<NOTES_END'
+            if [ -n "$pr" ]; then
+              echo "## What's new in $version"
+              echo
+              # Its opening "The x release." line, the version bump and the
+              # generated-with footer tell a player nothing; the blank lines
+              # those leave at either end go with them.
+              jq -r '.body // ""' <<<"$pr" | tr -d '\r' \
+                | grep -v -E '^The .* release\.$|^- Version [0-9.]+\.?$|Generated with \[Claude Code\]' \
+                | awk 'NF { while (blank > 0 && seen) { print ""; blank-- } blank = 0; seen = 1; print; next } { blank++ }'
+              echo
+              echo "Full list of changes: $(jq -r '.html_url' <<<"$pr")"
+            fi
+            echo 'NOTES_END'
+          } >> "$GITHUB_OUTPUT"
+
       - uses: softprops/action-gh-release@v2
         with:
           # The dispatched tag is created at this commit if it does not exist.
           tag_name: ${{ inputs.release_tag || github.ref_name }}
           target_commitish: ${{ github.sha }}
           draft: true
-          generate_release_notes: true
           body: |
             A desktop tamagotchi: in a small window that always floats on top of your screen, a Pokémon travels,
             battles, farms items and grows up on its own.
+
+            ${{ steps.notes.outputs.text }}
 
             ## Download
 
