@@ -344,7 +344,9 @@ export const CAUGHT_LEVEL = 5;
  *
  * A caught Pokémon is a fresh one: it goes into the box at level 5 whatever it
  * was met at, so a catch is somebody to raise rather than a shortcut to a
- * strong one.
+ * strong one — and it knows what its line knows by then, not the moves an
+ * evolved species lists at level 1 for the move reminder (see
+ * {@link learnedBy}).
  *
  * @param {Pokemon} pokemon
  * @param {number} level
@@ -352,7 +354,7 @@ export const CAUGHT_LEVEL = 5;
 export function resetToLevel(pokemon, level) {
   const species = speciesOf(pokemon.speciesId);
   pokemon.experience = experienceForLevel(species.growthRate, Math.max(1, level));
-  pokemon.moves = defaultMoves(pokemon).map((move) => ({ move, pp: moveOf(move)?.pp ?? 5 }));
+  pokemon.moves = defaultMoves(pokemon, { fresh: true }).map((move) => ({ move, pp: moveOf(move)?.pp ?? 5 }));
   // What it knows now is what it knows; nothing is waiting to be looked at.
   delete pokemon.learned;
   noteLearnedMoves(pokemon);
@@ -365,13 +367,15 @@ export function resetToLevel(pokemon, level) {
  * that at least one of them hits.
  *
  * @param {Pokemon} pokemon
+ * @param {{fresh?: boolean}} [options] `fresh`: only what its line knows by
+ *   this level (see {@link learnedBy}), for one put back to a low level
  * @returns {string[]}
  */
-export function defaultMoves(pokemon) {
+export function defaultMoves(pokemon, { fresh = false } = {}) {
   const species = speciesOf(pokemon.speciesId);
   const level = levelOf(pokemon);
   const learnable = species.learnset.level
-    .filter(([at]) => at <= level)
+    .filter(([at, move]) => at <= level && (!fresh || learnedBy(species, move, at, level)))
     .map(([, move]) => move)
     .filter((move) => moveOf(move));
 
@@ -385,6 +389,28 @@ export function defaultMoves(pokemon) {
   }
 
   return withAttack(chosen, species, level);
+}
+
+/**
+ * Whether a species really knows a move by a level.
+ *
+ * An evolved species lists at level 1 (or 0, on evolving) everything its
+ * line learnt on the way and whatever the move reminder offers: a Granbull
+ * has Outrage at level 1, which no Snubbull learns at all. Such a move
+ * counts only if the species it evolved from knows it by the same level; a
+ * species that evolves from nothing knows its level-1 moves as its own.
+ *
+ * @param {any} species
+ * @param {string} move
+ * @param {number} at the level the species lists it at
+ * @param {number} level
+ * @returns {boolean}
+ */
+function learnedBy(species, move, at, level) {
+  if (at > 1) return true;
+  const before = species.evolvesFrom ? speciesOf(species.evolvesFrom) : null;
+  if (!before) return true;
+  return before.learnset.level.some(([earlier, known]) => known === move && earlier <= level && learnedBy(before, known, earlier, level));
 }
 
 /**

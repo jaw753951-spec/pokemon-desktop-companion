@@ -58,3 +58,16 @@ test('an item made for one species names it', options, () => {
   assert.match(items['red-nectar'].text.ko, /춤추새의 모습을/);
   assert.match(items['red-nectar'].text.en, /form of Oricorio/);
 });
+
+test('a catch back at level 5 knows what its line knows by then, not what the move reminder lists', options, () => {
+  // Granbull lists Outrage at level 1, for the reminder; no Snubbull learns it.
+  const granbull = caught('granbull');
+  assert.ok(!granbull.includes('outrage'), `${granbull}`);
+  // What it does know is what a Snubbull knows by level 5.
+  const snubbull = gameData().species[/** @type {number} */ (speciesIdBySlug('snubbull'))].learnset.level
+    .filter(([at]) => at <= 5)
+    .map(([, move]) => move);
+  assert.ok(granbull.length > 0 && granbull.every((move) => snubbull.includes(move)), `${granbull}`);
+  // A species that evolves from nothing keeps its own level-1 moves.
+  assert.ok(caught('snubbull').length > 0);
+});
