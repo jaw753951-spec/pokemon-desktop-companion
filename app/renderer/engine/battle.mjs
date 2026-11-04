@@ -5967,18 +5967,15 @@ export function secondCondition(policy, slug) {
 /**
  * Choose a move from the player's auto-battle policy.
  *
- * Each move has two conditions, a first and a second, and the moves are tried
- * in the order they sit in their slots. A condition that names a moment — a
- * third of health left, every other turn, a foe nearly beaten — is answered
- * the moment it holds, before anything else: every move's first condition is
- * looked at before any move's second, and within each, the first move in slot
- * order wins. A move with `always` in either is only allowed, and `never` in
- * both takes it out of the fight.
- *
- * When no moment has come, the moves allowed always are left, and of those
- * the hardest-hitting attack is used — or, with no attack among them, the
- * first in slot order. Anything none of this decides falls through to the
- * strongest attack that can land.
+ * Each move has two conditions, a first and a second, and the first are all
+ * gone through before any second. Within each rank, a condition that names a
+ * moment — a third of health left, every other turn, a foe nearly beaten —
+ * comes before `always`: the first move in slot order whose moment has come
+ * is used; with none, of the moves allowed always at that rank the
+ * hardest-hitting attack is used, or with no attack among them the first in
+ * slot order. So: first moments, first always, second moments, second
+ * always. `never` in both takes a move out of the fight. Anything none of
+ * this decides falls through to the strongest attack that can land.
  *
  * @param {Battle} battle
  * @param {Combatant} attacker
@@ -6001,19 +5998,19 @@ export function choosePolicyMove(battle, attacker, defender, usable) {
     candidates.push({ move: slot.move, first: moveCondition(policy, slot.move), second: secondCondition(policy, slot.move) });
   }
 
-  // A condition that names a moment is answered as soon as it comes: the
-  // firsts before the seconds, and each in slot order, which is the player's
-  // to set.
+  // Rank by rank: a moment that has come, in slot order — which is the
+  // player's to set — and then the hardest-hitting of the moves allowed always
+  // at that rank, before anything at the next.
   for (const rank of /** @type {const} */ (['first', 'second'])) {
     const triggered = candidates.find((entry) =>
       entry[rank] !== 'always' && conditionHolds(entry[rank], battle, attacker, defender, entry.move));
     if (triggered) return triggered.move;
-  }
 
-  const pool = candidates.filter((entry) => entry.first === 'always' || entry.second === 'always').map((entry) => entry.move);
-  if (pool.length) {
-    const attacks = usable.filter((slot) => pool.includes(slot.move) && categoryOf(moveOf(slot.move)) === 'damage');
-    return bestDamageMove(battle, attacker, defender, attacks) ?? pool[0];
+    const pool = candidates.filter((entry) => entry[rank] === 'always').map((entry) => entry.move);
+    if (pool.length) {
+      const attacks = usable.filter((slot) => pool.includes(slot.move) && categoryOf(moveOf(slot.move)) === 'damage');
+      return bestDamageMove(battle, attacker, defender, attacks) ?? pool[0];
+    }
   }
 
   // Nothing the policy allows applies this turn. Rather than stand there

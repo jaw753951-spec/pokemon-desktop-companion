@@ -119,7 +119,7 @@
   "auto.condition.foeHpHalf": "Foe HP at half or less",
   "auto.condition.foeHpThird": "Foe HP at 1/3 or less",
   "auto.condition.foeHpQuarter": "Foe HP at 1/4 or less",
-  "auto.order": "Order: a move whose 1st condition holds, then one whose 2nd holds, then the hardest hit among the moves set to Default. Within each, the higher move goes first.",
+  "auto.order": "Order: a move whose 1st condition holds → the hardest hit among moves whose 1st is Default → a move whose 2nd condition holds → the hardest hit among moves whose 2nd is Default. Within each, the higher move goes first.",
   "auto.group.basic": "General",
   "auto.group.turn": "Turns",
   "auto.group.matchup": "Matchup",
