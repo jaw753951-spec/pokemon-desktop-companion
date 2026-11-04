@@ -69,9 +69,11 @@ export function leagueScene({ session, onLeave, onCrowned }) {
   let room = /** @type {HTMLImageElement|null} */ (null);
   let loadedRoom = '';
 
-  const heading = el('div.league-heading');
   const portrait = /** @type {HTMLImageElement} */ (el('img.league-portrait', { alt: '' }));
-  const caption = el('div.league-caption');
+  // Who is waiting, on one plate: what they are, small, over their name.
+  const title = el('span.league-title');
+  const nameLine = el('span.league-name');
+  const caption = el('div.league-caption', {}, [title, nameLine]);
   const actions = el('div.league-actions');
 
   return {
@@ -83,9 +85,9 @@ export function leagueScene({ session, onLeave, onCrowned }) {
       refreshRoom();
 
       return el('div.screen.league-screen', {}, [
-        heading,
-        portrait,
+        // Named first, over the figure, as a card names who is on it.
         caption,
+        portrait,
         actions,
       ]);
     },
@@ -109,8 +111,8 @@ export function leagueScene({ session, onLeave, onCrowned }) {
     const round = rounds[index];
     const last = index === rounds.length - 1;
 
-    heading.textContent = `${localized(league.name, league.region)} ${t(last ? 'league.champion' : 'league.eliteFour')}`;
-    caption.textContent = localized(round.name, round.id);
+    title.textContent = `${localized(league.name, league.region)} ${t(last ? 'league.champion' : 'league.eliteFour')}`;
+    nameLine.textContent = localized(round.name, round.id);
 
     const art = portraitFor(round);
     portrait.hidden = !art;
