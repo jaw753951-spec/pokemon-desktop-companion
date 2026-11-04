@@ -12,7 +12,7 @@
  * Not part of the shipped app.
  */
 window.__soundtrack = async ({ cuts, audio, length }) => {
-  const { AudioEngine } = await import('./core/audio.mjs');
+  const { AudioEngine, loadSamples } = await import('./core/audio.mjs');
   const { loadAudioBuffer } = await import('./core/assets.mjs');
   const { url } = await import('./core/bridge.mjs');
 
@@ -32,7 +32,6 @@ window.__soundtrack = async ({ cuts, audio, length }) => {
   const noise = context.createBuffer(1, RATE, RATE);
   const samples = noise.getChannelData(0);
   for (let i = 0; i < samples.length; i++) samples[i] = Math.random() * 2 - 1;
-  engine.noise = noise;
 
   const master = context.createGain();
   const squeeze = context.createDynamicsCompressor();
@@ -89,27 +88,124 @@ window.__soundtrack = async ({ cuts, audio, length }) => {
         // that bar's downbeat, and leaving it out left a gap at every edit.
         if (note.t < from - SLACK || note.t >= to - SLACK) continue;
         const room = to - note.t;
-        engine.playNote(part.program, { ...note, d: Math.min(note.d, room + 0.04) }, Math.max(start, start + (note.t - from)), bus);
+        engine.playNote(part, { ...note, d: Math.min(note.d, room + 0.04) }, Math.max(start, start + (note.t - from)), bus, track.volume);
       }
     }
   }
 
   const champion = await song('mus_vs_champion');
   const fame = await song('mus_hall_of_fame');
+  await Promise.all([loadSamples(champion), loadSamples(fame)]);
 
   // Bars 4 to 28 under the desktop, the road, the berries and the fights,
-  // through the bare bars that close the first section; then on from the
-  // climax at 36, as the section after them, for the leaders — a cut between
-  // two openings of a section, which the song itself could make. Under the
-  // League's shutter it moves on again to 46, into the run up to the drop at
-  // 50, so the last blow lands where the music falls away.
+  // through the bare bars that close the first section; then, with the
+  // leaders, on from bar 35 — the bar that builds into the climax — without
+  // another cut, through the League and the champion, so the last blow lands
+  // on the downbeat at 44 where the climax gives way to the run.
   const leaders = at('leader-1');
-  const league = at('league');
   const ceremony = at('hall-of-fame');
   lay(champion, { from: 4 * BAR, to: 4 * BAR + leaders, start: 0, fadeOut: 0.03 });
-  lay(champion, { from: 36 * BAR, to: 36 * BAR + (league - leaders), start: leaders, fadeIn: 0.02, fadeOut: 0.12 });
-  lay(champion, { from: 46 * BAR, to: 46 * BAR + (ceremony - league), start: league, fadeIn: 0.05, fadeOut: 0.25 });
+  lay(champion, { from: 35 * BAR, to: 35 * BAR + (ceremony - leaders), start: leaders, fadeIn: 0.02, fadeOut: 0.3 });
   lay(fame, { from: 0, to: Math.min(fame.duration, length - ceremony), start: ceremony, fadeOut: 1.4, level: 1.1 });
+
+  // ----------------------------------------------------------- sound design
+  //
+  // What carries a cut in a trailer as much as the picture does: a rush of
+  // air across a transition, a low hit under the blow that wins it, and a
+  // rise into the logo. All of it noise and sine shaped here, on a bus of
+  // its own under the music.
+  const swish = context.createGain();
+  swish.gain.value = 0.55;
+  swish.connect(master);
+
+  /** A rush of air peaking at the given moment, sweeping up (or down) through the band. */
+  function whoosh(at, length = 0.5, level = 0.35, rise = true) {
+    const start = Math.max(0, at - length * 0.6);
+    const end = at + length * 0.4;
+    const source = context.createBufferSource();
+    source.buffer = noise;
+    source.loop = true;
+    const band = context.createBiquadFilter();
+    band.type = 'bandpass';
+    band.Q.value = 1.2;
+    band.frequency.setValueAtTime(rise ? 350 : 2600, start);
+    band.frequency.exponentialRampToValueAtTime(rise ? 2600 : 350, end);
+    const gain = context.createGain();
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.exponentialRampToValueAtTime(level, at);
+    gain.gain.exponentialRampToValueAtTime(0.0001, end);
+    source.connect(band);
+    band.connect(gain);
+    gain.connect(swish);
+    source.start(start);
+    source.stop(end + 0.05);
+  }
+
+  /** A low hit: a falling sine and a short thump of dark noise. */
+  function impact(at, level = 0.7) {
+    const tone = context.createOscillator();
+    tone.type = 'sine';
+    tone.frequency.setValueAtTime(95, at);
+    tone.frequency.exponentialRampToValueAtTime(36, at + 0.55);
+    const toneGain = context.createGain();
+    toneGain.gain.setValueAtTime(0.0001, at);
+    toneGain.gain.exponentialRampToValueAtTime(level, at + 0.01);
+    toneGain.gain.exponentialRampToValueAtTime(0.0001, at + 0.9);
+    tone.connect(toneGain);
+    toneGain.connect(swish);
+    tone.start(at);
+    tone.stop(at + 0.95);
+
+    const thump = context.createBufferSource();
+    thump.buffer = noise;
+    const dark = context.createBiquadFilter();
+    dark.type = 'lowpass';
+    dark.frequency.value = 500;
+    const thumpGain = context.createGain();
+    thumpGain.gain.setValueAtTime(level * 0.6, at);
+    thumpGain.gain.exponentialRampToValueAtTime(0.0001, at + 0.18);
+    thump.connect(dark);
+    dark.connect(thumpGain);
+    thumpGain.connect(swish);
+    thump.start(at);
+    thump.stop(at + 0.2);
+  }
+
+  /** Noise rising in pitch and loudness between two moments. */
+  function riser(from, to, level = 0.25) {
+    const source = context.createBufferSource();
+    source.buffer = noise;
+    source.loop = true;
+    const band = context.createBiquadFilter();
+    band.type = 'bandpass';
+    band.Q.value = 2;
+    band.frequency.setValueAtTime(250, from);
+    band.frequency.exponentialRampToValueAtTime(6000, to);
+    const gain = context.createGain();
+    gain.gain.setValueAtTime(0.0001, from);
+    gain.gain.exponentialRampToValueAtTime(level, to);
+    gain.gain.exponentialRampToValueAtTime(0.0001, to + 0.08);
+    source.connect(band);
+    band.connect(gain);
+    gain.connect(swish);
+    source.start(from);
+    source.stop(to + 0.1);
+  }
+
+  // Into the window, into the first fight, out of the fights to the gyms, to
+  // the League, the time skip to its last blow, and out of the ceremony.
+  whoosh(at('zoom') + 0.55, 1.1, 0.3);
+  whoosh(at('fight-1') + 0.33, 0.6, 0.32);
+  whoosh(at('leader-1'), 0.5, 0.32);
+  whoosh(at('league'), 0.8, 0.38, false);
+  whoosh(at('champion-walk'), 0.8, 0.3, false);
+  whoosh(at('final-blow'), 0.4, 0.22);
+  // Under the blow that wins it: on the faint the shot asked for.
+  const faint = audio.find((entry) => entry.method === 'blip' && entry.args[0] === 'faint');
+  if (faint) impact(faint.t, 0.75);
+  // Up into the logo, and a hit as its title lands.
+  riser(at('logo') - 1.1, at('logo') + 0.05, 0.22);
+  impact(at('logo') + 0.32, 0.55);
 
   // What the shots asked the speakers for.
   const cries = new Map();
