@@ -251,14 +251,11 @@ test('every line of a turn carries what the bars stood at when it was written', 
   const other = hit.side === 'player' ? 'foe' : 'player';
   assert.ok(hit.hp[hurt] < before.hp[hurt], 'the side that was hit should have dropped');
   assert.equal(hit.hp[other], before.hp[other], 'the other side should not have moved yet');
-});
 
-test('a stamp is never rewritten by a later line', () => {
-  const battle = makeBattle();
-  const log = battle.takeTurn();
+  // And no stamp is rewritten by a later line. Hit points only fall or hold
+  // across a turn in this fixture; what matters is that the sequence is a
+  // history rather than the same number repeated.
   const stamps = log.map((entry) => entry.hp.player);
-  // Hit points only fall or hold across a turn in this fixture; what matters
-  // is that the sequence is a history rather than the same number repeated.
   assert.ok(new Set(stamps).size > 1, `every line read ${stamps[0]}`);
 });
 

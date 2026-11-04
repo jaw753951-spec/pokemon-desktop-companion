@@ -2,14 +2,15 @@
  * Rules brought back in line with the main series: a one-hit KO against
  * something higher, the primal weathers, a wild Pokémon's random moves, the
  * hit points a level brings, a levelling evolution that waits for a level,
- * a tutor move that waits for its TM, and the potions' current numbers.
+ * and a tutor move that waits for its TM. (The potions' current numbers are
+ * checked with the other items' effects, in items.test.mjs.)
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { NEEDS_ASSETS, useRealGameData } from './helpers/data.mjs';
 import { Rng } from '../../app/renderer/core/rng.mjs';
-import { gameData, itemOf, moveOf, speciesIdBySlug } from '../../app/renderer/core/data.mjs';
+import { gameData, moveOf, speciesIdBySlug } from '../../app/renderer/core/data.mjs';
 import { Battle } from '../../app/renderer/engine/battle.mjs';
 import { WEATHER } from '../../app/renderer/engine/field.mjs';
 import { settleForme } from '../../app/renderer/engine/forms.mjs';
@@ -161,10 +162,4 @@ test('a tutor move a TM teaches waits for the TM; one no TM teaches is there alr
       assert.ok(!taught.has(move), `${species.slug} keeps ${move} as a tutor move, which a TM teaches`);
     }
   }
-});
-
-test('the Super Potion and the Hyper Potion restore 60 and 120', options, () => {
-  assert.equal(itemOf('potion')?.use?.hp, 20);
-  assert.equal(itemOf('super-potion')?.use?.hp, 60);
-  assert.equal(itemOf('hyper-potion')?.use?.hp, 120);
 });

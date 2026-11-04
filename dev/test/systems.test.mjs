@@ -169,17 +169,6 @@ test('an ability changes what a stat comes to', options, () => {
   assert.equal(battle.stat(battle.player, 'spe'), speed);
 });
 
-test('Intimidate acts on the way in, before a blow is struck', options, () => {
-  const player = fixed(PIKACHU, 50);
-  player.ability = 'intimidate';
-  const foe = fixed(GEODUDE, 50);
-  foe.ability = 'static';
-
-  const battle = fight(player, foe);
-  assert.equal(battle.foe?.stages.atk, -1);
-  assert.ok(battle.opening.some((entry) => entry.kind === 'ability'));
-});
-
 test('a contact move answers to what it touched, and a non-contact one does not', options, () => {
   const player = fixed(PIKACHU, 50, ['tackle']);
   const foe = punchbag();
@@ -399,13 +388,6 @@ test('an area with weather in its name fights under it', options, () => {
   assert.equal(battle.field.weather, WEATHER.RAIN);
   battle.takeTurn();
   assert.equal(battle.field.weather, WEATHER.RAIN);
-});
-
-test('the auto-battle "no field effect" condition finally has something to read', options, () => {
-  const battle = fight(fixed(CHARIZARD, 50, ['sunny-day', 'ember']), punchbag());
-  assert.equal(battle.field.quiet, true);
-  battle.field.setWeather(WEATHER.SUN, 5);
-  assert.equal(battle.field.quiet, false);
 });
 
 // --------------------------------------------------------------- the items

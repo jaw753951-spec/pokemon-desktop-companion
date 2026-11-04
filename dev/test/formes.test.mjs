@@ -10,9 +10,9 @@ import assert from 'node:assert/strict';
 
 import { NEEDS_ASSETS, useRealGameData } from './helpers/data.mjs';
 import { Rng } from '../../app/renderer/core/rng.mjs';
-import { gameData, spriteKey } from '../../app/renderer/core/data.mjs';
+import { gameData, speciesIdBySlug, spriteKey } from '../../app/renderer/core/data.mjs';
 import { Battle } from '../../app/renderer/engine/battle.mjs';
-import { formeFor, FORM_ABILITY, heldForme, settleForme } from '../../app/renderer/engine/forms.mjs';
+import { formeFor, FORM_ABILITY, HELD_FORMES, heldForme, settleForme } from '../../app/renderer/engine/forms.mjs';
 import { abilityName } from '../../app/renderer/engine/abilities.mjs';
 import { moveOf } from '../../app/renderer/core/data.mjs';
 import { createPokemon, maxHp, setMove } from '../../app/renderer/engine/pokemon.mjs';
@@ -88,6 +88,9 @@ test('Forecast wears one shape per weather and none without', options, () => {
   assert.equal(form(WEATHER.SUN), 'castform-sunny');
   assert.equal(form(WEATHER.RAIN), 'castform-rainy');
   assert.equal(form(WEATHER.SNOW), 'castform-snowy');
+  // Hail is snowy too, and an Ice type with it.
+  assert.equal(form(WEATHER.HAIL), 'castform-snowy');
+  assert.deepEqual(battle.typesOf(battle.player), ['ice']);
   // No weather at all, and the species' own shape comes back — marked as no
   // forme, which is also why walking in under a clear sky announces nothing.
   assert.equal(form(null), null);
@@ -286,7 +289,7 @@ test('a mask does nothing for anyone but Ogerpon', options, () => {
   assert.equal(battle.heldDamage(battle.player, moveOf('tackle'), 1), 1);
 });
 
-test('an Ogerpon is met in any of its four masks', options, () => {
+test('an Ogerpon is met in any of its four masks, and nothing else holding the item that shapes it', options, () => {
   const rng = new Rng(3);
   const seen = new Set();
   for (let roll = 0; roll < 80; roll++) {
@@ -295,4 +298,12 @@ test('an Ogerpon is met in any of its four masks', options, () => {
     assert.equal(ogerpon.forme, heldForme(ogerpon)?.forme, 'the forme matches the mask');
   }
   assert.deepEqual([...seen].sort(), [null, 'cornerstone-mask', 'hearthflame-mask', 'wellspring-mask'].sort());
+
+  for (const slug of HELD_FORMES.keys()) {
+    if (slug === 'ogerpon') continue;
+    const id = /** @type {number} */ (speciesIdBySlug(slug));
+    const held = new Set();
+    for (let seed = 1; seed <= 40; seed++) held.add(createPokemon(new Rng(seed), id, 60).heldItem ?? null);
+    assert.deepEqual([...held], [null], `a ${slug} came holding ${[...held].join(', ')}`);
+  }
 });

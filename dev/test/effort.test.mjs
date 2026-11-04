@@ -91,6 +91,7 @@ test('the 32 items are all in the bag again', options, () => {
 
 test('a defeat pays the species yield, doubled by a Macho Brace, eight more by a Power item', options, () => {
   const pokemon = make('machop', 30);
+  assert.deepEqual(pokemon.evs, { hp: 0, atk: 0, def: 0, spa: 0, spd: 0, spe: 0 }, 'a new Pokémon starts on none');
   assert.deepEqual(defeat(pokemon, 'geodude').effort, { hp: 0, atk: 0, def: 1, spa: 0, spd: 0, spe: 0 });
   assert.equal(pokemon.evs.def, 1);
 

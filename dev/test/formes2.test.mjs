@@ -1,6 +1,6 @@
 /**
  * The holes a second look at the formes found: shapes that changed without
- * anyone seeing it, a weather a Forecast did not read, a young Wishiwashi
+ * anyone seeing it, a young Wishiwashi
  * that schooled, items the bag would not offer, and moves a fusion forgot to
  * trade.
  */
@@ -12,8 +12,7 @@ import { NEEDS_ASSETS, useRealGameData } from './helpers/data.mjs';
 import { Rng } from '../../app/renderer/core/rng.mjs';
 import { artOf, gameData, speciesIdBySlug, spriteKey } from '../../app/renderer/core/data.mjs';
 import { Battle } from '../../app/renderer/engine/battle.mjs';
-import { WEATHER } from '../../app/renderer/engine/field.mjs';
-import { HELD_FORMES, SCHOOLING_LEVEL, settleForme, standingTypes } from '../../app/renderer/engine/forms.mjs';
+import { SCHOOLING_LEVEL, settleForme, standingTypes } from '../../app/renderer/engine/forms.mjs';
 import { formeMoveNeed, itemActions, useItem } from '../../app/renderer/engine/items.mjs';
 import { availableMoves, createPokemon, evolveInto, maxHp, setMove } from '../../app/renderer/engine/pokemon.mjs';
 import { defaultAutoBattle } from '../../app/renderer/engine/session.mjs';
@@ -100,16 +99,6 @@ test('every Pokémon is one still picture, facing left as Black and White drew t
   }
 });
 
-test('a Castform in hail is snowy, as it is in snow', options, () => {
-  const castform = make('castform', 50);
-  castform.ability = 'forecast';
-  const battle = fight(castform);
-  battle.field.setWeather(WEATHER.HAIL, 5);
-  battle.evaluateFormes([]);
-  assert.equal(battle.player.marks.forme, 'castform-snowy');
-  assert.deepEqual(battle.typesOf(battle.player), ['ice']);
-});
-
 test('a Wishiwashi schools only from level 20', options, () => {
   const young = make('wishiwashi', SCHOOLING_LEVEL - 1);
   young.ability = 'schooling';
@@ -118,16 +107,6 @@ test('a Wishiwashi schools only from level 20', options, () => {
   const grown = make('wishiwashi', SCHOOLING_LEVEL);
   grown.ability = 'schooling';
   assert.equal(fight(grown).player.marks.forme, 'wishiwashi-school');
-});
-
-test('only an Ogerpon is met holding the item that shapes it', options, () => {
-  for (const slug of HELD_FORMES.keys()) {
-    const id = /** @type {number} */ (speciesIdBySlug(slug));
-    const held = new Set();
-    for (let seed = 1; seed <= 40; seed++) held.add(createPokemon(new Rng(seed), id, 60).heldItem ?? null);
-    if (slug === 'ogerpon') assert.ok(held.size > 1, 'an Ogerpon comes in its masks');
-    else assert.deepEqual([...held], [null], `a ${slug} came holding ${[...held].join(', ')}`);
-  }
 });
 
 test('the bag offers a nectar to an Oricorio, and to nothing else', options, () => {

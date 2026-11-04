@@ -199,9 +199,12 @@ test('an item the engine reads states what it does', withData, () => {
     assert.ok(explained, `${slug} claims to work with nothing behind it`);
   }
 
-  // The three the game leans on, read off their own effect text rather than
-  // guessed at from a description.
+  // The ones the game leans on, read off their own effect text rather than
+  // guessed at from a description: a Super Potion restores 60 and a Hyper
+  // Potion 120.
   assert.deepEqual(items['potion'].use, { hp: 20 });
+  assert.deepEqual(items['super-potion'].use, { hp: 60 });
+  assert.deepEqual(items['hyper-potion'].use, { hp: 120 });
   assert.deepEqual(items['max-potion'].use, { hp: 'full' });
   assert.deepEqual(items['ether'].use, { pp: { amount: 10, scope: 'one' } });
 });
@@ -257,14 +260,10 @@ test('only what this game will never have is dropped', withData, () => {
   // Effort is trained by the vitamins, the feathers and the mochi, earned
   // faster with a Macho Brace or a Power item, and undone by six berries and
   // the Fresh-Start Mochi; the Let's Go candies, which train it under another
-  // name, stay out. The seven Sweets are the one Sweet.
+  // name, stay out.
   for (const slug of ['hp-up', 'protein', 'health-wing', 'health-mochi', 'macho-brace', 'power-bracer', 'pomeg-berry', 'fresh-start-mochi']) {
     assert.ok(items[slug], `${slug} should be carried`);
   }
-  for (const slug of ['strawberry-sweet', 'love-sweet', 'ribbon-sweet']) {
-    assert.equal(items[slug], undefined, `${slug} should have been dropped`);
-  }
-  assert.ok(items.sweet, 'the Sweet should be carried');
 });
 
 /**

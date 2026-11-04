@@ -136,7 +136,7 @@ const overdue = () => {
   return session;
 };
 
-test('a leader lost to stays away for the next three trainers, then returns', options, () => {
+test('a leader lost to stays away for the next three trainers, then returns, across a save and reload', options, () => {
   const session = overdue();
   assert.equal(shouldSummonLeader(session), true, 'overdue, the leader comes at once');
 
@@ -146,10 +146,8 @@ test('a leader lost to stays away for the next three trainers, then returns', op
   }
   assert.equal(session.leaderRest, 0);
   assert.equal(shouldSummonLeader(session), true, 'the fourth is the leader again');
-});
 
-test('the rest after a lost leader battle survives a save and reload', options, () => {
-  const session = overdue();
+  // The rest is kept in the save, and an older save has none.
   session.leaderRest = 2;
   const again = new Session({ slot: 0, save: session.toSave() });
   assert.equal(again.leaderRest, 2);

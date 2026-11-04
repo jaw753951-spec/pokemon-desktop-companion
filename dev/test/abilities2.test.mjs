@@ -214,7 +214,7 @@ test("a critical hit is counted for a Farfetch'd", options, () => {
   assert.ok((battle.player.marks.crits ?? 0) >= 1);
 });
 
-test('a Ruin ability says so as its holder comes out, and spares a holder of the same', options, () => {
+test('a Ruin ability says so as its holder comes out, weighs on the other side, and spares a holder of the same', options, () => {
   const battle = fight(make('wo-chien', 50, ['tackle'], 'tablets-of-ruin'), make('chansey', 50, ['splash']));
   const mine = battle.opening.filter((entry) => entry.side === 'player');
   assert.deepEqual(mine.map((entry) => entry.kind), ['ability', 'message']);
@@ -227,6 +227,13 @@ test('a Ruin ability says so as its holder comes out, and spares a holder of the
   const both = fight(make('wo-chien', 50, ['tackle'], 'tablets-of-ruin'), make('wo-chien', 50, ['tackle'], 'tablets-of-ruin'));
   assert.equal(both.ruinFactor(both.foe, 'atk'), 1, 'two Tablets of Ruin leave each other be');
   assert.equal(both.ruinFactor(both.player, 'atk'), 1);
+
+  // It is in the stat itself: a Vessel of Ruin across takes a quarter off the
+  // Special Attack, and none off the Pokémon carrying it.
+  const before = fight(make('pikachu', 50, ['tackle'], 'static'), make('geodude', 50, ['defense-curl'], 'sturdy'));
+  const ruined = fight(make('pikachu', 50, ['tackle'], 'static'), make('geodude', 50, ['defense-curl'], 'vessel-of-ruin'));
+  assert.equal(ruined.stat(ruined.player, 'spa'), Math.floor(before.stat(before.player, 'spa') * 0.75));
+  assert.equal(ruined.stat(ruined.foe, 'spa'), before.stat(before.foe, 'spa'));
 });
 
 test('a Reckless powers up a move that crashes as well as one that recoils', options, () => {
