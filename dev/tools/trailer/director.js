@@ -191,7 +191,8 @@
   /**
    * One move landing: used, hit, and how well it worked.
    *
-   * @param {{move: string, foeHp: number, effectiveness?: number, faint?: boolean, won?: boolean}} options
+   * @param {{move: string, foeHp: number, effectiveness?: number|null, faint?: boolean, won?: boolean}} options
+   *   an `effectiveness` of null says nothing about how well it worked
    */
   function moveTurn({ move, foeHp, effectiveness = 2, faint = false, won = false }) {
     return {
@@ -203,8 +204,8 @@
         const entries = [
           { kind: 'move', side: 'player', data: { move }, hp: hp(startHp) },
           { kind: 'damage', side: 'foe', data: { amount: startHp - foeHp }, hp: hp(foeHp) },
-          { kind: 'effectiveness', side: 'foe', data: { effectiveness }, hp: hp(foeHp) },
         ];
+        if (effectiveness !== null) entries.push({ kind: 'effectiveness', side: 'foe', data: { effectiveness }, hp: hp(foeHp) });
         if (faint) entries.push({ kind: 'faint', side: 'foe', data: { pokemon: battle.foe?.pokemon }, hp: hp(0) });
         if (won) entries.push({ kind: 'end', data: { outcome: 'won' }, hp: hp(0) });
         return entries;
@@ -226,8 +227,11 @@
   // ------------------------------------------------------------- the desktop
 
   const stage = () => /** @type {HTMLElement} */ (document.getElementById('stage'));
+  /** The landscape frame every shot is placed in, in the page's own pixels. */
+  const frameWidth = () => (upright ? FRAME.width : innerWidth);
+  const frameHeight = () => (upright ? FRAME.height : innerHeight);
   /** A length on a 1920-wide desktop, in the page's own pixels. */
-  const px = (value) => (value * innerWidth) / 1920;
+  const px = (value) => (value * frameWidth()) / 1920;
   /** The companion's window on the desktop: a quarter of the screen, bottom right. */
   const WINDOW = { width: 480, height: 270, right: 18, bottom: 48 + 18 };
 
@@ -267,7 +271,7 @@
     tray.append(Object.assign(document.createElement('span'), { textContent: '2026-10-27' }));
     bar.append(tray);
     root.append(bar);
-    document.body.prepend(root);
+    (film ?? document.body).prepend(root);
     // The page is see-through where the game is not, which is the desktop.
     document.getElementById('dragframe').style.display = 'none';
     stage().style.boxShadow = `0 ${px(6)}px ${px(24)}px rgba(0,0,0,0.35)`;
@@ -275,8 +279,8 @@
 
   function cornerRect() {
     return {
-      x: innerWidth - px(WINDOW.right + WINDOW.width),
-      y: innerHeight - px(WINDOW.bottom + WINDOW.height),
+      x: frameWidth() - px(WINDOW.right + WINDOW.width),
+      y: frameHeight() - px(WINDOW.bottom + WINDOW.height),
       scale: px(WINDOW.width) / 480,
     };
   }
@@ -293,16 +297,431 @@
    * @param {{x: number, y: number}} focus as shares of the picture
    */
   function closeUp(amount, zoom, focus) {
-    const scale = (innerWidth / 480) * (1 + (zoom - 1) * amount);
+    const across = frameWidth();
+    const down = frameHeight();
+    const scale = (across / 480) * (1 + (zoom - 1) * amount);
     const width = 480 * scale;
     const height = 270 * scale;
-    const x = focus.x * innerWidth + (innerWidth / 2 - focus.x * innerWidth) * amount;
-    const y = focus.y * innerHeight + (innerHeight / 2 - focus.y * innerHeight) * amount;
+    const x = focus.x * across + (across / 2 - focus.x * across) * amount;
+    const y = focus.y * down + (down / 2 - focus.y * down) * amount;
     placeStage(
-      Math.min(0, Math.max(innerWidth - width, x - focus.x * width)),
-      Math.min(0, Math.max(innerHeight - height, y - focus.y * height)),
+      Math.min(0, Math.max(across - width, x - focus.x * width)),
+      Math.min(0, Math.max(down - height, y - focus.y * height)),
       scale,
     );
+  }
+
+  /**
+   * A slow push in on a point of the picture across a whole shot, the point
+   * held where it is on screen: the camera never quite stops, as it does not
+   * in the trailers this one learns from, so a cut reads as the film moving on
+   * rather than as one still picture swapped for another.
+   *
+   * @param {number} frame
+   * @param {number} frames
+   * @param {{x: number, y: number}} focus as shares of the picture
+   * @param {number} [by] how much closer by the end
+   */
+  function push(frame, frames, focus, by = 0.035) {
+    const scale = (frameWidth() / 480) * (1 + by * (frame / frames));
+    placeStage(focus.x * frameWidth() - focus.x * 480 * scale, focus.y * frameHeight() - focus.y * 270 * scale, scale);
+  }
+
+  /**
+   * Whether the game's picture is scaled smoothly. Hard pixels scaled by a
+   * fraction that changes every frame crawl — a column of them doubling here
+   * and there as the camera moves — which is the stutter a push in had; while
+   * the camera moves the picture is sampled smoothly instead.
+   *
+   * @param {boolean} on
+   */
+  function smooth(on) {
+    document.getElementById('scene').style.imageRendering = on ? 'auto' : '';
+  }
+
+  /**
+   * The road's panels the berry picking clears away: the name panel, the
+   * buttons along the bottom left, and the shop's beside the road's name —
+   * which stays, since it is the road that is changing.
+   */
+  function roadChrome() {
+    const hud = document.querySelector('.hud');
+    if (!hud) return [];
+    return [hud.children[0], hud.children[2], hud.children[3]?.querySelector('button')].filter(Boolean);
+  }
+
+  /** @param {number} amount 0 shown, 1 gone */
+  function fadeChrome(amount) {
+    for (const node of roadChrome()) {
+      node.style.transition = 'none';
+      node.style.opacity = String(1 - amount);
+    }
+  }
+
+  /**
+   * How far the camera has come in on the berry picking: from a moment before
+   * the companion reaches the tree, so the walk eases into the close-up
+   * rather than stopping dead under a camera that then starts to move.
+   */
+  function pickingCamera() {
+    const from = montageFrame() - Math.round(PICKING_LEAD_S * FPS);
+    return ease(Math.min(1, Math.max(0, (frameNumber - from) / (PICKING_IN_S * FPS))));
+  }
+
+  /**
+   * The last blow: how long the move takes before it hits, in the game's
+   * time, and how long the film gives that — the rest of the bar and a half
+   * to the faint goes to the hit, which takes as long as it takes.
+   */
+  const FINAL_MOVE_MS = 520;
+  const FINAL_HIT_MS = 680;
+  const FINAL_WINDUP_S = 1.5 * BAR - FINAL_HIT_MS / 1000;
+
+  /** The road the champion walks on at the end. */
+  const ENDING_ROAD = 'route103';
+
+  /** Where on screen the berry picking is, as the camera comes in on it. */
+  const pickingPan = () => PICKING_FOCUS.x + (0.5 - PICKING_FOCUS.x) * pickingCamera();
+
+  // ---------------------------------------------------------------- upright
+
+  /*
+   * The phone-shaped cut is filmed, not cropped out of the landscape one. Its
+   * frame is 1080x1920, drawn on its side in the landscape window (no display
+   * has room for a window that tall) and stood up by record.mjs.
+   *
+   * It is laid out the way a short is, not as a letterboxed trailer: the
+   * picture fills the whole frame, with a big word or two over it on the beat.
+   * Most shots are the game itself, eight screen pixels to a game pixel, slid
+   * under the frame to wherever the shot says to look (`pan`, `tilt`). Two
+   * kinds are panels drawn from the game's canvas instead: a battle cut in two,
+   * the wild one on top and the companion below, so both are seen at once and
+   * large; and the berry picking cut in three, a different Pokémon on a
+   * different road in each, changing on beats of their own. The battle's own
+   * panels and message box are left out — the words say what they would.
+   */
+  let upright = false;
+  const FRAME = { width: 960, height: 540 };
+  const PHONE = { width: 540, height: 960 };
+  /** The landscape frame to the phone's, for a picture that fills its height: eight screen pixels a game pixel. */
+  const LOOK = 2;
+  /** Where the two sides of a battle stand, as shares of the frame's width. */
+  const FOE_SIDE = 0.72;
+  const PLAYER_SIDE = 0.28;
+  /** Between two panels, in the page's pixels (two screen pixels each). */
+  const SEAM = 2;
+  /** @type {HTMLElement | null} */
+  let film = null;
+  /** @type {HTMLElement | null} */
+  let phone = null;
+  /** @type {HTMLElement | null} */
+  let view = null;
+  const panels = { node: /** @type {HTMLElement | null} */ (null), canvases: /** @type {HTMLCanvasElement[]} */ ([]), kind: null, since: 0 };
+  const caption = { node: null, small: null, big: null, key: null, since: 0 };
+  /** Where the battle's words go: over the seam, a little high, off the companion's face. */
+  const BATTLE_AT = 0.43;
+  /** Where the words go for whoever the companion is up against: under their feet. */
+  const RIVAL_AT = 0.8;
+  /** The logo's colours. */
+  const LOGO = { yellow: '#ffcb05', blue: '#2a5ab0', navy: '#0e2350' };
+
+  /**
+   * The battle cut in two: where on the game's canvas each half looks, six
+   * screen pixels a game pixel — the wild one above its platform, the
+   * companion from its feet up.
+   */
+  const SPLIT = { scale: 6, crops: [{ x: 260, y: 30 }, { x: 34, y: 92 }] };
+  /** The berry picking cut in three, six screen pixels a game pixel: the companion and the tree. */
+  const GRID = { scale: 6, crop: { x: 83, y: 82 } };
+
+  /**
+   * The Pokémon the three panels of the berry picking go through, each its
+   * own run of them — none twice — across every generation.
+   */
+  const gridPickers = () => [
+    ...PICKERS,
+    1, 7, 39, 52, 54, 79, 92, 104, 129, 143, 155, 158, 179, 183, 216, 252, 255, 280, 300, 328, 387, 390, 427, 447,
+    501, 570, 607, 650, 653, 661, 700, 725, 728, 810, 816, 835, 848, 877, 909, 912, 921, 926, 957, 446, 113,
+  ];
+
+  // Added to the game's own sheet: its policy turns away a style element.
+  const UPRIGHT_RULES = [
+    `body.trailer-upright :is(.battle-bar, .battle-actions, .battle-message, .battle-balls, .battle-field, .league-actions) { visibility: hidden; }`,
+    // The ceremony's plate is wider than a phone's share of the picture, and
+    // its banner says what the words over it do.
+    `body.trailer-upright .fame-plate { zoom: 0.48; }`,
+    `body.trailer-upright .fame-welcome { visibility: hidden; }`,
+    // The champion's room names him under his portrait; the words over the picture do, larger.
+    `body.trailer-upright .league-caption { visibility: hidden; }`,
+  ];
+
+  function uprightSetup() {
+    document.body.classList.add('trailer-upright');
+    document.body.style.background = '#11151f';
+    const sheet = [...document.styleSheets].find((entry) => entry.href?.endsWith('styles.css')) ?? document.styleSheets[0];
+    for (const rule of UPRIGHT_RULES) sheet.insertRule(rule, sheet.cssRules.length);
+    // The phone's frame, turned a quarter clockwise to lie across the window:
+    // its top edge along the window's right.
+    phone = document.createElement('div');
+    Object.assign(phone.style, {
+      position: 'fixed', left: '0', top: '0', width: `${PHONE.width}px`, height: `${PHONE.height}px`,
+      transform: `translateX(${FRAME.width}px) rotate(90deg)`, transformOrigin: '0 0', overflow: 'hidden',
+      background: '#11151f',
+    });
+    document.body.append(phone);
+    view = document.createElement('div');
+    Object.assign(view.style, { position: 'absolute', inset: '0', overflow: 'hidden', zIndex: '1' });
+    // Transformed, so that what is fixed inside it — the desktop — is fixed
+    // to the landscape frame rather than the window.
+    film = document.createElement('div');
+    Object.assign(film.style, {
+      position: 'absolute', left: '0', top: '0', width: `${FRAME.width}px`, height: `${FRAME.height}px`,
+      transform: `scale(${LOOK})`, transformOrigin: '0 0', overflow: 'hidden',
+    });
+    film.append(stage());
+    view.append(film);
+    phone.append(view);
+    panels.node = document.createElement('div');
+    Object.assign(panels.node.style, { position: 'absolute', inset: '0', zIndex: '2', background: '#f4f4f0', display: 'none', overflow: 'hidden' });
+    phone.append(panels.node);
+    caption.node = document.createElement('div');
+    Object.assign(caption.node.style, {
+      // Over the transitions too: the words stay up through a cut.
+      position: 'absolute', left: '0', right: '0', zIndex: '150', display: 'flex', flexDirection: 'column', alignItems: 'center',
+      color: '#fff', fontFamily: "'Segoe UI Black', 'Malgun Gothic', sans-serif", fontWeight: '900', whiteSpace: 'nowrap',
+      lineHeight: '1', pointerEvents: 'none',
+    });
+    const outline = (width, colour) => [...Array(16)].map((_, i) => {
+      const angle = (i / 16) * Math.PI * 2;
+      return `${(Math.cos(angle) * width).toFixed(1)}px ${(Math.sin(angle) * width).toFixed(1)}px 0 ${colour}`;
+    }).join(', ');
+    // In the logo's colours: the big line in its yellow, edged in its blue;
+    // the small line white on the same blue.
+    caption.small = document.createElement('div');
+    Object.assign(caption.small.style, { fontSize: '30px', letterSpacing: '0.02em', textShadow: outline(3.5, LOGO.blue) });
+    caption.big = document.createElement('div');
+    Object.assign(caption.big.style, {
+      fontSize: '96px', letterSpacing: '0.01em', color: LOGO.yellow, textShadow: `${outline(7, LOGO.blue)}, 0 10px 0 ${LOGO.navy}`,
+    });
+    caption.node.append(caption.small, caption.big);
+    phone.append(caption.node);
+  }
+
+  /**
+   * Slide the frame under the phone so it looks at a point: shares of the
+   * frame's width and height, kept from running past its edges.
+   */
+  function aim(across, down = 0.5) {
+    const width = PHONE.width / LOOK;
+    const height = PHONE.height / LOOK;
+    const left = Math.min(FRAME.width - width, Math.max(0, across * FRAME.width - width / 2));
+    const top = Math.min(FRAME.height - height, Math.max(0, down * FRAME.height - height / 2));
+    // To the screen pixel, of which there are two to the page's.
+    film.style.left = `${-Math.round(left * LOOK * 2) / 2}px`;
+    film.style.top = `${-Math.round(top * LOOK * 2) / 2}px`;
+  }
+
+  /**
+   * A value eased from one to the next between moments of a shot, and held
+   * before the first and after the last.
+   *
+   * @param {number} t seconds into the shot
+   * @param {Array<[number, number]>} keys [seconds, value] in order
+   */
+  function glide(t, keys) {
+    if (t <= keys[0][0]) return keys[0][1];
+    for (let i = 1; i < keys.length; i++) {
+      const [from, start] = keys[i - 1];
+      const [to, end] = keys[i];
+      if (t < to) return start + (end - start) * ease((t - from) / (to - from));
+    }
+    return keys[keys.length - 1][1];
+  }
+
+  /** Past the mark and back, for a word that lands. */
+  const overshoot = (x) => 1 + 2.2 * (x - 1) ** 3 + 1.2 * (x - 1) ** 2;
+
+  /**
+   * Show the panels of a kind — 'split' or 'grid' — or the picture itself
+   * (null). Panels coming in slide into place, a little apart.
+   */
+  function showPanels(kind) {
+    if (panels.kind === kind) return;
+    panels.kind = kind;
+    panels.since = frameNumber;
+    panels.node.style.display = kind ? 'block' : 'none';
+    view.style.visibility = kind ? 'hidden' : 'visible';
+    panels.node.replaceChildren();
+    panels.canvases = [];
+    if (!kind) return;
+    const rows = kind === 'split' ? 2 : 3;
+    const height = (PHONE.height - SEAM * (rows - 1)) / rows;
+    for (let row = 0; row < rows; row++) {
+      const canvas = document.createElement('canvas');
+      canvas.width = PHONE.width * 2;
+      canvas.height = Math.round(height * 2);
+      Object.assign(canvas.style, {
+        position: 'absolute', left: '0', top: `${row * (height + SEAM)}px`, width: `${PHONE.width}px`, height: `${height}px`,
+        imageRendering: 'pixelated',
+      });
+      const context = canvas.getContext('2d');
+      context.imageSmoothingEnabled = false;
+      panels.node.append(canvas);
+      panels.canvases.push(canvas);
+    }
+  }
+
+  /** Slide each panel the rest of the way in. */
+  function settlePanels() {
+    const t = (frameNumber - panels.since) / FPS;
+    panels.canvases.forEach((canvas, row) => {
+      const local = Math.min(1, Math.max(0, (t - row * 0.07) / 0.28));
+      const away = 1 - ease(local);
+      // A battle's halves meet from above and below; the picking's rows from either side.
+      canvas.style.transform = panels.kind === 'split'
+        ? `translateY(${(row === 0 ? -1 : 1) * away * 100}%)`
+        : `translateX(${(row % 2 ? 1 : -1) * away * 100}%)`;
+    });
+  }
+
+  /**
+   * Draw part of the game's canvas into a panel, a whole number of screen
+   * pixels to a game pixel.
+   */
+  function fill(canvas, scale, x, y) {
+    const context = canvas.getContext('2d');
+    const width = canvas.width / scale;
+    const height = Math.ceil(canvas.height / scale);
+    context.fillStyle = '#000';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(app().canvas, x, y, width, height, 0, 0, width * scale, height * scale);
+  }
+
+  /**
+   * Paint the game's canvas again as it stands, without moving the game on:
+   * a frame of no time, so the road takes up whoever and wherever it was just
+   * given. It picks up a new sprite and sky when they have loaded — from the
+   * cache, but a promise later — so it is given a moment and painted again.
+   */
+  async function redraw() {
+    app().tick(0);
+    await settle(1);
+    app().tick(0);
+  }
+
+  /**
+   * The phone's picture for this frame, once the game has drawn it: the
+   * panels the shot asks for, drawn from the game's canvas.
+   */
+  async function compose(shot, frame) {
+    const kind = shot.panels?.call(shot, frame) ?? null;
+    showPanels(kind);
+    if (!kind) return;
+    settlePanels();
+    if (kind === 'split') {
+      panels.canvases.forEach((canvas, row) => fill(canvas, SPLIT.scale, SPLIT.crops[row].x, SPLIT.crops[row].y));
+      return;
+    }
+    // The picking: the game drawn again for each row, with that row's
+    // Pokémon on that row's road, the game itself not moved on.
+    const keep = { speciesId: session().active.speciesId, area: session().area, hour: clock.hour };
+    for (const [row, canvas] of panels.canvases.entries()) {
+      const { picker, road } = gridCell(shot, frame, row);
+      session().active.speciesId = picker;
+      session().active.forme = null;
+      if (road.area) session().area = road.area;
+      clock.hour = road.hour;
+      await redraw();
+      fill(canvas, GRID.scale, GRID.crop.x, GRID.crop.y);
+    }
+    session().active.speciesId = keep.speciesId;
+    session().area = keep.area;
+    clock.hour = keep.hour;
+  }
+
+  /**
+   * Who is on which road in a row of the picking: each row changes every
+   * three eighth notes, as the bob goes, the next row an eighth after it, so
+   * the change runs down the rows.
+   */
+  function gridCell(shot, frame, row) {
+    const eighth = Math.floor(frame / FPS / (BEAT / 2) + 1e-6);
+    const turn = Math.max(0, Math.floor((eighth - row) / 3));
+    const index = turn * 3 + row;
+    const pickers = gridPickers();
+    return { picker: pickers[index % pickers.length], road: shot.areas[(index * 5) % shot.areas.length] };
+  }
+
+  /**
+   * The words over the picture: a small line and a big one, which comes in
+   * large and lands. Where on the phone they sit follows the layout — over
+   * the top of the picture, or across the seam between two panels.
+   *
+   * @param {{key: string, small?: string, big: string, at?: number, under?: boolean}|null} line
+   *   `under` puts the small line below the big one
+   */
+  function drawCaption(line) {
+    if (!caption.node) return;
+    if (!line) {
+      caption.node.style.opacity = '0';
+      caption.key = null;
+      return;
+    }
+    if (line.key !== caption.key) {
+      caption.key = line.key;
+      caption.since = frameNumber;
+    }
+    caption.small.textContent = line.small ?? '';
+    caption.small.style.display = line.small ? 'block' : 'none';
+    caption.node.style.flexDirection = line.under ? 'column-reverse' : 'column';
+    caption.small.style.margin = line.under ? '10px 0 0' : '0 0 8px';
+    caption.big.textContent = line.big;
+    // As large as fits across, with a margin either side.
+    let size = 96;
+    caption.big.style.fontSize = `${size}px`;
+    while (caption.big.offsetWidth > PHONE.width - 36 && size > 30) caption.big.style.fontSize = `${(size -= 4)}px`;
+    const middle = (line.at ?? 0.2) * PHONE.height;
+    caption.node.style.top = `${middle - caption.node.offsetHeight / 2}px`;
+    const t = (frameNumber - caption.since) / FPS;
+    const land = Math.min(1, t / 0.22);
+    caption.node.style.opacity = String(Math.min(1, t / 0.06));
+    caption.big.style.transform = `scale(${1.5 - 0.5 * overshoot(land)}) rotate(${-3 * (1 - land) - 1}deg)`;
+    caption.small.style.transform = `translateY(${(1 - ease(Math.min(1, t / 0.18))) * 14}px)`;
+  }
+
+  /** The lines, by language. */
+  const SAY = {
+    en: {
+      desktop: ['A POKÉMON ADVENTURE', 'ON YOUR DESKTOP'],
+      walk: ['IT WALKS ON ITS OWN', 'WITH YOU'],
+      pokemon: ['POKÉMON TO MEET', ''],
+      battle: ['WITH YOUR POKÉMON', 'BATTLE!'],
+      rival: ['BATTLE AGAINST', ''],
+      fame: ['YOU BECOME THE', 'CHAMPION!'],
+      onward: ['AND THE JOURNEY', 'GOES ON'],
+    },
+    ko: {
+      desktop: ['바탕화면에서 펼쳐지는', '포켓몬 모험'],
+      walk: ['알아서 걷고 탐험하는', '나의 파트너'],
+      pokemon: ['만날 수 있는 포켓몬', ''],
+      battle: ['내 포켓몬과 함께', '배틀!'],
+      rival: ['대결 상대', ''],
+      fame: ['드디어', '챔피언!'],
+      onward: ['모험은', '계속된다'],
+    },
+  };
+
+  /** A line of {@link SAY}, as {@link drawCaption} takes it. */
+  function say(key, options = {}) {
+    const [small, big] = (SAY[lang()] ?? SAY.en)[key];
+    return { key, small, big, ...options };
+  }
+
+  /** The number of Pokémon, counting up to 1,025 across the picking's first bar and a half. */
+  function pokedexCount(frame) {
+    const share = Math.min(1, frame / FPS / (1.5 * BAR));
+    const count = Math.round(1 + 1024 * (1 - (1 - share) ** 3));
+    return lang() === 'ko' ? `${count.toLocaleString('en-US')}종` : count.toLocaleString('en-US');
   }
 
   // ------------------------------------------------------------ transitions
@@ -325,12 +744,14 @@
     const layer = (style) => {
       const node = document.createElement('div');
       Object.assign(node.style, { position: 'fixed', left: '0', right: '0', zIndex: '100', pointerEvents: 'none', ...style });
-      document.body.append(node);
+      // Over the whole phone, panels and all.
+      (phone ?? document.body).append(node);
       return node;
     };
     curtain.top = layer({ top: '0', height: '0', background: '#05070c' });
     curtain.bottom = layer({ bottom: '0', height: '0', background: '#05070c' });
     curtain.white = layer({ top: '0', bottom: '0', background: '#ffffff', opacity: '0' });
+    // The whole window, as record.mjs photographed it.
     curtain.frozen = document.createElement('img');
     Object.assign(curtain.frozen.style, { position: 'fixed', inset: '0', width: '100%', height: '100%', zIndex: '99', opacity: '0', pointerEvents: 'none' });
     document.body.append(curtain.frozen);
@@ -378,14 +799,26 @@
     ['granite-cave', 12], ['kanto-route-25', 19], ['rock-tunnel', 12], ['route117', 8],
   ];
 
-  /** The five fights: who throws what at whom, and where. */
+  /**
+   * The fights: who is sent out against what, and where — and for the last,
+   * the move it lands.
+   */
   const FIGHTS = [
-    { player: 448, foe: 10102, move: 'aura-sphere', backdrop: 'cave', effectiveness: 4, foeHp: 0.18 },
-    { player: 658, foe: 10230, move: 'water-shuriken', backdrop: 'water', effectiveness: 4, foeHp: 0.3 },
-    { player: 778, foe: 887, move: 'play-rough', backdrop: 'long-grass', effectiveness: 2, foeHp: 0.35 },
-    { player: 908, foe: 195, move: 'flower-trick', backdrop: 'pond', effectiveness: 4, foeHp: 0.12 },
+    { player: 448, foe: 10102, backdrop: 'cave' },
+    { player: 658, foe: 10230, backdrop: 'water' },
+    { player: 778, foe: 887, backdrop: 'long-grass' },
+    { player: 908, foe: 195, backdrop: 'pond' },
+    { player: 94, foe: 10163, backdrop: 'building' },
+    { player: 248, foe: 823, backdrop: 'rock' },
     { player: 25, foe: 130, move: 'thunderbolt', backdrop: 'sky', effectiveness: 4, foeHp: 0.08 },
   ];
+
+  /**
+   * How long into a wild fight, after the way in, a send-out shot opens: just
+   * before the companion's ball goes up, so that it lands — and the Pokémon
+   * comes out — on the second beat of the shot's bar.
+   */
+  const SEND_OUT_AT = 1000 + 16 - (2 * BEAT * 1000 - 520);
 
   const LEADERS = [
     { id: 'normal-whitney', foe: 241 },
@@ -394,8 +827,15 @@
   ];
 
   /** The camera on the berry picking: the companion and the tree, a little closer. */
-  const PICKING_ZOOM = 1.4;
+  const PICKING_ZOOM = 1.5;
+  /** The close-up starts this long before the tree is reached, and takes this long. */
+  const PICKING_LEAD_S = 0.35;
+  const PICKING_IN_S = 1.2;
   const PICKING_FOCUS = { x: (Math.round(240 * 0.32) + 10) / 240, y: 0.58 };
+
+  /** Where the camera pushes in on a send-out, and on a leader. */
+  const SENT_OUT = { x: 0.32, y: 0.62 };
+  const LEADER = { x: 0.72, y: 0.48 };
 
   let wallpaperUrl = '';
   let berryStarted = false;
@@ -409,7 +849,7 @@
   /**
    * One of the fights. Most are a send-out — the wild one standing there, the
    * companion's ball thrown and the companion out — and nobody moves after
-   * it; \`attack\` opens on a move landing instead. \`entry\` keeps the game's
+   * it; `attack` opens on a move landing instead. `entry` keeps the game's
    * own way into the fight at the start of the shot.
    */
   async function fight(index, { attack = false, entry = false } = {}) {
@@ -427,7 +867,7 @@
     // Under a clear sky, whatever the road the montage ended on was having.
     app().push(battleScene({ session: session(), foes: [enemy], backdrop: spec.backdrop, weather: null, onFinish: () => {} }));
     if (attack) await preroll(() => turnTaken);
-    else if (!entry) await preroll(780);
+    else if (!entry) await preroll(780 + SEND_OUT_AT);
   }
 
   async function leader(index) {
@@ -446,6 +886,7 @@
     // From the moment the way in has opened on the leader, to just before the
     // line that sends the companion out.
     await preroll(780);
+    return (record.name[lang()] ?? record.name.en).toUpperCase();
   }
 
   async function hoennLeague() {
@@ -457,34 +898,68 @@
     {
       name: 'desktop',
       bars: 2,
+      says: () => say('desktop'),
       async begin() {
         desktop(wallpaperUrl);
         const corner = cornerRect();
         placeStage(corner.x, corner.y, corner.scale);
       },
+      // The corner the companion's window is in, and the taskbar under it.
+      pan: () => 1,
+      tilt: () => 1,
     },
     {
       name: 'zoom',
       bars: 1,
+      says: () => say('desktop'),
       before(frame, frames) {
         const corner = cornerRect();
         const progress = ease(Math.min(1, frame / (frames - 1)));
-        const scale = corner.scale + (innerWidth / 480 - corner.scale) * progress;
+        const scale = corner.scale + (frameWidth() / 480 - corner.scale) * progress;
         placeStage(corner.x * (1 - progress), corner.y * (1 - progress), scale);
         stage().style.borderRadius = `${px(6) * (1 - progress)}px`;
+        // Upright, the window is too narrow for the panels: they go as the
+        // camera comes in, as they do on the berry picking.
+        if (upright) fadeChrome(progress);
+        this.companion = (corner.x * (1 - progress) + PICKING_FOCUS.x * 480 * scale) / frameWidth();
+        this.companionY = (corner.y * (1 - progress) + PICKING_FOCUS.y * 270 * scale) / frameHeight();
+      },
+      // On the companion all the way in.
+      pan() {
+        return this.companion;
+      },
+      tilt() {
+        return this.companionY;
       },
       end() {
         document.getElementById('trailer-desktop')?.remove();
         stage().style.boxShadow = 'none';
       },
     },
-    { name: 'walk', bars: 3 },
+    {
+      name: 'walk',
+      bars: 3,
+      says: () => say('walk'),
+      before() {
+        if (upright) fadeChrome(1);
+        const closing = pickingCamera();
+        if (closing <= 0) return;
+        smooth(true);
+        closeUp(closing, PICKING_ZOOM, PICKING_FOCUS);
+        if (!upright) fadeChrome(closing);
+      },
+      pan: pickingPan,
+      tilt: () => PICKING_FOCUS.y + (0.5 - PICKING_FOCUS.y) * pickingCamera(),
+    },
     {
       name: 'montage',
       bars: 8,
+      // Upright, three panels with a Pokémon on a road each, and the count of them over the first seam.
+      panels: () => 'grid',
+      says: (frame) => ({ ...say('pokemon'), big: pokedexCount(frame), at: 1 / 3, under: true }),
       async begin() {
         const { gameData } = await load('./core/data.mjs');
-        await pokemonArt(PICKERS);
+        await pokemonArt(upright ? gridPickers() : PICKERS);
         const areas = gameData().areas;
         await preload(ROADS.flatMap(([id, hour]) => [`areas/${id}/${timeKey(hour)}.png`]));
         this.areas = ROADS.map(([id, hour]) => ({ area: areas.find((entry) => entry.id === id), hour }));
@@ -503,24 +978,20 @@
         }
         if (road.area && session().area !== road.area) session().area = road.area;
         clock.hour = road.hour;
-        // In on the picking as it starts, and held there — the name panel
-        // going as the camera comes in, since the name changes faster than it
-        // can be read.
-        const closing = ease(Math.min(1, frame / (0.7 * FPS)));
+        // In on the picking and held there, the panels going as the camera
+        // comes in: the name changes faster than it could be read.
+        const closing = pickingCamera();
         closeUp(closing, PICKING_ZOOM, PICKING_FOCUS);
-        const panel = namePanel();
-        if (panel) {
-          panel.style.transition = 'none';
-          panel.style.opacity = String(1 - closing);
-        }
+        fadeChrome(upright ? 1 : closing);
       },
       end() {
         clock.speed = 1;
         clock.hour = 12;
-        const panel = namePanel();
-        if (panel) {
-          panel.style.opacity = '';
-          panel.style.transition = '';
+        // The berry tree put the road's own timer back; nothing else is to turn up.
+        session().eventTimer = 1e9;
+        for (const node of roadChrome()) {
+          node.style.opacity = '';
+          node.style.transition = '';
         }
       },
     },
@@ -532,29 +1003,83 @@
       bars: 3,
       listen: true,
       begin: () => fight(0, { entry: true }),
-      before(frame) {
-        if (frame < Math.round(0.39 * FPS)) closeUp(1, PICKING_ZOOM, PICKING_FOCUS);
-        else placeStage(0, 0, innerWidth / 480);
+      // The berry tree while the screen flashes, then the fight cut in two.
+      panels: (frame) => (frame / FPS < 0.45 ? null : 'split'),
+      tilt: () => PICKING_FOCUS.y,
+      says: (frame) => (frame / FPS < 0.45 ? null : say('battle', { at: BATTLE_AT, under: true })),
+      before(frame, frames) {
+        // Still in close on the berry tree while the screen flashes, and back
+        // out to the whole picture while it is shut.
+        const shut = Math.round(0.39 * FPS);
+        if (frame < shut) closeUp(1, PICKING_ZOOM, PICKING_FOCUS);
+        else push(frame - shut, frames - shut, SENT_OUT, 0.03);
       },
+      pan: () => 0.5,
     },
-    // Send-outs, the wild one's cry with each — and a move only in the last.
-    { name: 'fight-2', bars: 1.75, listen: true, begin: () => fight(1) },
-    { name: 'fight-3', bars: 1.75, listen: true, begin: () => fight(2) },
-    { name: 'fight-4', bars: 1.75, listen: true, begin: () => fight(3) },
-    { name: 'fight-5', bars: 1.75, begin: () => fight(4, { attack: true }) },
+    // A bar each: the ball thrown, the Pokémon out on the second beat, and on
+    // into the next fight on the bar line — a send-out a bar, as the music
+    // goes — and a move only in the last.
+    ...[1, 2, 3, 4, 5].map((index) => ({
+      name: 'fight-' + (index + 1),
+      bars: 1,
+      into: { kind: 'fade', frames: 6 },
+      begin: () => fight(index),
+      panels: () => 'split',
+      says: () => say('battle', { at: BATTLE_AT, under: true }),
+      before: (frame, frames) => push(frame, frames, SENT_OUT, 0.03),
+    })),
+    {
+      name: 'fight-7',
+      bars: 2,
+      into: { kind: 'fade', frames: 8 },
+      begin: () => fight(6, { attack: true }),
+      panels: () => 'split',
+      says: () => say('battle', { at: BATTLE_AT, under: true }),
+      before: (frame, frames) => push(frame, frames, { x: 0.55, y: 0.45 }, 0.035),
+    },
     // The leader standing there, stepping off and throwing out their first
-    // Pokémon — and cut before the companion's ball goes up. Each dissolves
-    // into the next, the way into the gyms as well.
-    { name: 'leader-1', bars: 1.5, into: { kind: 'fade', frames: 14 }, begin: () => leader(0) },
-    { name: 'leader-2', bars: 1.5, into: { kind: 'fade', frames: 14 }, begin: () => leader(1) },
-    { name: 'leader-3', bars: 1.5, into: { kind: 'fade', frames: 14 }, begin: () => leader(2) },
+    // Pokémon — and cut before the companion's ball goes up. Out of the fights
+    // through white, and each leader dissolving into the next.
+    {
+      name: 'leader-1',
+      bars: 1.5,
+      into: { kind: 'white', out: 6, in: 10 },
+      async begin() {
+        this.leader = await leader(0);
+      },
+      says() {
+        return { ...say('rival', { at: RIVAL_AT }), key: this.name, big: this.leader };
+      },
+      tilt: () => 0.42,
+      before: (frame, frames) => push(frame, frames, LEADER, 0.04),
+      pan: () => FOE_SIDE,
+    },
+    ...[1, 2].map((index) => ({
+      name: `leader-${index + 1}`,
+      bars: 1.5,
+      into: { kind: 'fade', frames: 12 },
+      async begin() {
+        this.leader = await leader(index);
+      },
+      before: (frame, frames) => push(frame, frames, LEADER, 0.04),
+      pan: () => FOE_SIDE,
+      tilt: () => 0.42,
+      says() {
+        return { ...say('rival', { at: RIVAL_AT }), key: this.name, big: this.leader };
+      },
+    })),
     // The League's door and the champion's room in one take: the challenge
     // is taken, the game's own way into the fight plays, and Steven is
     // standing there when it opens.
     {
       name: 'league',
-      bars: 2.5,
+      bars: 3,
       into: { kind: 'shutter', out: 12, in: 14 },
+      says() {
+        return { ...say('rival', { at: RIVAL_AT }), key: 'champion', big: this.champion };
+      },
+      // Steven in his room, and over to his side once the fight has begun.
+      pan: () => (document.querySelector('.battle-screen') ? FOE_SIDE : 0.5),
       async begin() {
         const { leagueScene } = await load('./scenes/league.mjs');
         const league = await hoennLeague();
@@ -567,21 +1092,36 @@
         // Steven opens with the Metagross the last blow lands on, so the two
         // shots are one fight rather than two Pokémon.
         league.champion.party = [376];
+        this.champion = (league.champion.name[lang()] ?? league.champion.name.en).toUpperCase();
         await pokemonArt([6, 376], true);
         await preload(['trainers/portraits/steven.png', 'rooms/champion.png', 'battle/champion.png']);
         app().push(leagueScene({ session: session(), onLeave: () => {}, onCrowned: () => {} }));
         await preroll(400);
       },
-      before(frame) {
+      before(frame, frames) {
         // So that the champion's Metagross is all the way out of its ball by
         // the cut, and the companion's has not yet been thrown — the cut the
         // leaders' shots make too.
-        if (frame === Math.round(0.38 * FPS)) document.querySelector('.league-actions button.primary')?.click();
+        if (frame === Math.round((0.38 + 2 * BEAT) * FPS)) document.querySelector('.league-actions button.primary')?.click();
+        push(frame, frames, { x: 0.6, y: 0.45 }, 0.04);
       },
     },
     {
       name: 'final-blow',
       bars: 3,
+      into: { kind: 'fade', frames: 8 },
+      before(frame, frames) {
+        push(frame, frames, { x: 0.5, y: 0.5 }, 0.04);
+        // The move wound up slowly, and the blow and the faint straight after:
+        // the faint on the downbeat a bar and a half in, as the music has it.
+        clock.speed = frame / FPS < FINAL_WINDUP_S ? FINAL_MOVE_MS / (FINAL_WINDUP_S * 1000) : 1;
+      },
+      end() {
+        clock.speed = 1;
+      },
+      // The Metagross above and the companion's Charizard below.
+      panels: () => 'split',
+
       async begin() {
         const { battleScene } = await load('./scenes/battle.mjs');
         const league = await hoennLeague();
@@ -590,16 +1130,18 @@
         await pokemonArt([6, 376], true);
         const metagross = await foe(376, 80, 0.22);
         turnTaken = false;
-        scripted = moveTurn({ move: 'flare-blitz', foeHp: 0, effectiveness: 2, faint: true, won: true });
+        // Straight from the hit to the faint, without a word on how well it worked.
+        scripted = moveTurn({ move: 'flare-blitz', foeHp: 0, effectiveness: null, faint: true, won: true });
         app().push(battleScene({ session: session(), foes: [metagross], trainer: league.champion, backdrop: 'champion', weather: null, onFinish: () => {} }));
         await preroll(() => turnTaken);
-        // Into the move, so the faint lands on the downbeat a bar and a half in.
-        await preroll(Math.max(0, 520 + 680 + 620 - 1.5 * BAR * 1000));
       },
     },
     {
       name: 'hall-of-fame',
       seconds: 5.4,
+      says: () => say('fame', { at: 0.1 }),
+      // Down far enough for the plate the champion is entered on.
+      tilt: () => 0.85,
       // Out of the fight into white, which the ceremony opens out of itself.
       into: { kind: 'white', out: 14, in: 0 },
       async begin() {
@@ -607,6 +1149,8 @@
         const league = await hoennLeague();
         closeAll();
         session().champion = true;
+        smooth(false);
+        placeStage(0, 0, frameWidth() / 480);
         await pokemonArt([6], true);
         app().push(hallOfFameScene({ pokemon: session().active, league, onFinish: () => {} }));
       },
@@ -617,17 +1161,25 @@
     {
       name: 'champion-walk',
       seconds: 3,
-      into: { kind: 'fade', frames: 16 },
+      says: () => say('onward'),
+      into: { kind: 'shutter', out: 12, in: 14 },
+      // On the champion: the frame below is centred a little to its right.
+      pan: () => 0.5 + ((PICKING_FOCUS.x * 480 - 190) * 1.55) / 480,
       async begin() {
         const { gameData } = await load('./core/data.mjs');
         closeAll();
         await travelWith(6, 80);
         session().champion = true;
         session().badges = ['rock', 'fighting', 'electric', 'fire', 'normal', 'flying', 'psychic', 'water'];
-        session().area = gameData().areas.find((entry) => entry.id === 'route101');
+        // On an open road: Route 101's tall grass hides the champion's feet.
+        session().area = gameData().areas.find((entry) => entry.id === ENDING_ROAD);
+        // And nothing turning up on it: the road's events came back on their
+        // own timer once the berry tree had been picked.
+        session().eventTimer = 1e9;
         clock.hour = 16;
+        smooth(true);
         await pokemonArt([6]);
-        await preload(['areas/route101/' + timeKey(16) + '.png']);
+        await preload([`areas/${ENDING_ROAD}/${timeKey(16)}.png`]);
         // Long enough for the berry tree the montage stopped at to be picked
         // and left behind.
         await preroll(3600);
@@ -635,11 +1187,12 @@
       },
       before(frame, frames) {
         app().dismissToast();
+        if (upright) fadeChrome(1);
         // Held on a point of the picture rather than eased towards one: the
         // frame is chosen to leave the panels out from the first frame.
         const zoom = 1.55 + 0.05 * (frame / frames);
-        const centre = { x: 190, y: 158 };
-        const scale = (innerWidth / 480) * zoom;
+        const centre = { x: 190, y: upright ? 122 : 158 };
+        const scale = (frameWidth() / 480) * zoom;
         placeStage(-(centre.x - 240 / zoom) * scale, -(centre.y - 135 / zoom) * scale, scale);
       },
     },
@@ -651,25 +1204,33 @@
       async begin() {
         closeAll();
         clock.hour = 12;
-        placeStage(0, 0, innerWidth / 480);
+        smooth(false);
+        placeStage(0, 0, frameWidth() / 480);
+        // Upright, the card covers the phone's whole frame, the line above
+        // the picture with it, and the title takes two lines; its sizes are
+        // for a 1080-wide frame, as the landscape card's are for a 1920-wide one.
+        const size = upright ? (value) => (value * PHONE.width) / 1080 : px;
         const card = document.createElement('div');
         card.id = 'trailer-logo';
         Object.assign(card.style, {
-          position: 'fixed', inset: '0', zIndex: '10', background: '#11151f', display: 'flex', flexDirection: 'column',
-          alignItems: 'center', justifyContent: 'center', gap: `${px(28)}px`, color: '#fff',
-          fontFamily: "'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif",
+          position: upright ? 'absolute' : 'fixed', inset: '0', zIndex: upright ? '60' : '10', background: '#11151f', display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center', gap: `${size(28)}px`, color: '#fff',
+          fontFamily: "'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif", textAlign: 'center',
         });
         const icon = document.createElement('img');
         icon.src = window.__trailerIcon;
-        Object.assign(icon.style, { width: `${px(220)}px`, height: `${px(220)}px`, imageRendering: 'pixelated' });
+        Object.assign(icon.style, { width: `${size(upright ? 300 : 220)}px`, height: `${size(upright ? 300 : 220)}px`, imageRendering: 'pixelated' });
         const title = document.createElement('div');
-        title.textContent = 'POKÉMON DESKTOP COMPANION';
-        Object.assign(title.style, { fontSize: `${px(76)}px`, fontWeight: '800', letterSpacing: '0.04em', textShadow: `0 ${px(8)}px 0 #384a63, 0 0 ${px(40)}px rgba(0,0,0,0.6)` });
+        title.textContent = upright ? 'POKÉMON\nDESKTOP COMPANION' : 'POKÉMON DESKTOP COMPANION';
+        Object.assign(title.style, {
+          fontSize: `${size(upright ? 72 : 76)}px`, fontWeight: '800', letterSpacing: '0.04em', whiteSpace: 'pre-line', lineHeight: '1.15',
+          textShadow: `0 ${size(8)}px 0 #384a63, 0 0 ${size(40)}px rgba(0,0,0,0.6)`,
+        });
         const line = document.createElement('div');
         line.textContent = lang() === 'ko' ? '비영리 팬 게임 · Windows / macOS / Linux' : 'A non-commercial fan game · Windows / macOS / Linux';
-        Object.assign(line.style, { fontSize: `${px(28)}px`, color: '#a9b3c7' });
+        Object.assign(line.style, { fontSize: `${size(upright ? 30 : 28)}px`, color: '#a9b3c7' });
         card.append(icon, title, line);
-        document.body.append(card);
+        (phone ?? document.body).append(card);
         this.card = card;
         this.parts = [icon, title, line];
       },
@@ -683,9 +1244,6 @@
       },
     },
   ];
-
-  /** The road's panel with the companion's name and health on it. */
-  const namePanel = () => /** @type {HTMLElement|null} */ (document.querySelector('.hud > .panel.hud-window'));
 
   function timeKey(hour) {
     const bands = [['night', 0], ['dawn', 5], ['day', 10], ['afternoon', 14], ['dusk', 18], ['night', 21]];
@@ -726,9 +1284,10 @@
     BAR,
 
     /** Boot a fresh run with Charmander on Route 101, and take the clock. */
-    async setup({ wallpaper, icon }) {
+    async setup({ wallpaper, icon, upright: lying = false }) {
       wallpaperUrl = wallpaper;
       window.__trailerIcon = icon;
+      upright = lying;
       for (let i = 0; i < 200 && !app()?.scene; i++) await settle(50);
       document.getElementById('notice-screen')?.click();
       await settle(400);
@@ -753,6 +1312,7 @@
       // faded the way they do with nobody's pointer over them.
       for (let i = 0; i < FPS * 6; i++) step();
       await settle(200);
+      if (upright) uprightSetup();
       counts = frameCounts();
       return SHOTS.map((shot, index) => ({
         name: shot.name,
@@ -787,9 +1347,15 @@
         forceEvent('berry');
       }
       await shot.before?.call(shot, frame, counts[index]);
+      if (upright) {
+        aim(shot.pan?.call(shot, frame, counts[index]) ?? 0.5, shot.tilt?.call(shot, frame, counts[index]) ?? 0.5);
+        drawCaption(shot.says?.call(shot, frame) ?? null);
+      }
       drawTransition(index, frame);
       const before = app().scene?.offset;
       step();
+      // Panels are drawn from the frame the game has just painted.
+      if (upright) await compose(shot, frame);
       if (berryStarted && !window.__arrived && before !== undefined && app().scene?.offset === before) {
         window.__arrived = true;
         console.log(`arrived at the tree on frame ${frameNumber}, the montage starts on ${montageFrame()}`);

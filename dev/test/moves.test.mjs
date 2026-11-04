@@ -294,14 +294,6 @@ test('Tachyon Cutter strikes twice and never misses', options, () => {
   assert.equal(hitsOf(log), 2);
 });
 
-test('Population Bomb keeps going', options, () => {
-  const battle = fight(fixed(MAUSHOLD, 60, ['population-bomb']), punchbag(90));
-  battle.player.stages.acc = 6;
-  const log = battle.takeTurn();
-  // Every hit rolls its own accuracy; at +6 none of them misses.
-  assert.equal(hitsOf(log), 10);
-});
-
 test('Roar sends a wild Pokémon away, and the battle ends there', options, () => {
   const battle = fight(fixed(SNORLAX, 60, ['roar']), punchbag());
   // Roar is never picked automatically; call it the way a choice would.
@@ -440,8 +432,11 @@ test('the signature moves do what their descriptions say', options, () => {
 
 test('each strike of a multi-hit move drains the bar on its own, in order', options, () => {
   const battle = fight(fixed(MAUSHOLD, 60, ['population-bomb']), punchbag(90));
+  // Every hit of a Population Bomb rolls its own accuracy; at +6 none of the
+  // ten misses, so it keeps going to the end.
   battle.player.stages.acc = 6;
   const log = battle.takeTurn();
+  assert.equal(hitsOf(log), 10);
   const strikes = log.filter((entry) => entry.kind === 'damage' && entry.side === 'foe');
   assert.deepEqual(strikes.map((entry) => entry.data?.hit), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
   // Every line stands where the bar stood after that strike, lower each time.

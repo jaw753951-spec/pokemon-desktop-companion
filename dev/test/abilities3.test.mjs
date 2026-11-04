@@ -45,7 +45,12 @@ test('a Trace copies for the battle only, and the copy acts on the way in', opti
   assert.equal(porygon.ability, 'trace', 'the save keeps the ability it had');
 });
 
-test('an Intimidate is shrugged off, turned round, or run from', options, () => {
+test('an Intimidate acts on the way in, and is shrugged off, turned round, or run from', options, () => {
+  // Before a blow is struck, it says so and the Attack is down.
+  const plain = fight(make('pikachu', 50, ['splash'], 'static'), make('gyarados', 50, ['splash'], 'intimidate'));
+  assert.equal(plain.player.stages.atk, -1);
+  assert.ok(plain.opening.some((entry) => entry.kind === 'ability' && entry.side === 'foe'));
+
   const steady = fight(make('lucario', 50, ['splash'], 'inner-focus'), make('gyarados', 50, ['splash'], 'intimidate'));
   assert.equal(steady.player.stages.atk, 0);
 

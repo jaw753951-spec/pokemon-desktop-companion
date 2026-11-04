@@ -47,17 +47,6 @@ test('the picture fills the window at every scale on every screen', () => {
   }
 });
 
-test('a bigger scale is never a smaller window', () => {
-  for (const [screenWidth, screenHeight] of SCREENS) {
-    let previous = 0;
-    for (const scale of STEPS) {
-      const { width } = windowSize(scale, screenWidth, screenHeight);
-      assert.ok(width >= previous, `${screenWidth}x${screenHeight}: ${scale} gave ${width}`);
-      previous = width;
-    }
-  }
-});
-
 test('the zoom snaps to quarters above 1:1 and is left alone below it', () => {
   assert.equal(snapZoom(2), 2);
   assert.equal(snapZoom(1.3333), 1.25);

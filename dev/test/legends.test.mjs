@@ -242,22 +242,8 @@ test("a legendary's own item is found only while it is the one travelling", opti
   for (const item of signatureItems().keys()) assert.ok(!tiers.has(item), `${item} is in the ordinary finds`);
 });
 
-test("a legendary's own item is rarer on the save's first run", options, () => {
+test("a legendary's own item is rarer on the save's first run; plates, memories and drives more often once there is a champion", options, () => {
   assert.ok(FIRST_RUN_SIGNATURE_FIND_CHANCE > 0 && FIRST_RUN_SIGNATURE_FIND_CHANCE < SIGNATURE_FIND_CHANCE);
-  /** @param {boolean} firstRun */
-  const askedAt = (firstRun) => {
-    let odds = null;
-    const session = fakeSession({}, make('kyogre'));
-    session.firstRun = firstRun;
-    session.rng.chance = (/** @type {number} */ chance) => ((odds = chance), true);
-    signatureFind(session);
-    return odds;
-  };
-  assert.equal(askedAt(true), FIRST_RUN_SIGNATURE_FIND_CHANCE);
-  assert.equal(askedAt(false), SIGNATURE_FIND_CHANCE);
-});
-
-test('plates, memories and drives turn up more often than a one-off item, once there is a champion', options, () => {
   assert.ok(COLLECTION_FIND_CHANCE > SIGNATURE_FIND_CHANCE && COLLECTION_FIND_CHANCE < 1);
   /** @param {string} slug @param {boolean} firstRun */
   const askedFor = (slug, firstRun) => {
@@ -267,6 +253,10 @@ test('plates, memories and drives turn up more often than a one-off item, once t
     session.rng.chance = (/** @type {number} */ chance) => ((odds = chance), true);
     return { item: signatureFind(session), odds };
   };
+  // A one-off item.
+  assert.equal(askedFor('kyogre', true).odds, FIRST_RUN_SIGNATURE_FIND_CHANCE);
+  assert.equal(askedFor('kyogre', false).odds, SIGNATURE_FIND_CHANCE);
+  // A set to collect.
   for (const [slug, pattern] of /** @type {Array<[string, RegExp]>} */ ([['arceus', /-plate$/], ['silvally', /-memory$/], ['genesect', /-drive$/]])) {
     const found = askedFor(slug, false);
     assert.match(String(found.item), pattern, slug);

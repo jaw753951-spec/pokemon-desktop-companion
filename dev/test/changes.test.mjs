@@ -1,8 +1,9 @@
 /**
  * The round of changes that moved badges onto the Pokémon that won them, kept
  * a league challenge across a step out to prepare, put every catch at level 5,
- * folded the Sweets into one, gave an Alcremie a random look, took effort out,
- * and handed a battle's used-up items back afterwards.
+ * folded the Sweets into one, gave an Alcremie a random look, and handed a
+ * battle's used-up items back afterwards. (A new Pokémon starting on no
+ * effort is checked in effort.test.mjs.)
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -21,7 +22,6 @@ import {
   maxHp,
   resetToLevel,
   setMove,
-  statsOf,
 } from '../../app/renderer/engine/pokemon.mjs';
 import { defaultAutoBattle, leagueOpen, Session } from '../../app/renderer/engine/session.mjs';
 import { rollWildPokemon } from '../../app/renderer/engine/encounter.mjs';
@@ -137,16 +137,6 @@ test('a Pokémon that is caught goes into the box at level 5, with the moves of 
   const small = fixed(id('pidgey'), 2);
   resetToLevel(small, CAUGHT_LEVEL);
   assert.equal(levelOf(small), 5);
-});
-
-test('a new Pokémon starts on no effort, and the items that train it are carried', options, () => {
-  const pokemon = fixed(id('pikachu'), 50);
-  assert.deepEqual(pokemon.evs, { hp: 0, atk: 0, def: 0, spa: 0, spd: 0, spe: 0 });
-  const stats = statsOf(pokemon);
-  assert.ok(Object.values(stats).every((value) => value > 0));
-  for (const slug of ['hp-up', 'protein', 'macho-brace', 'power-anklet', 'pomeg-berry', 'fresh-start-mochi']) {
-    assert.ok(gameData().items[slug], `${slug} should be carried`);
-  }
 });
 
 test('the seven Sweets are one, and an Alcremie is one of seven at random', options, () => {

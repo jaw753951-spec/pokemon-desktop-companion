@@ -23,16 +23,11 @@ test('the rest stop is never rolled, only called', () => {
   for (let i = 0; i < 5000; i++) assert.notEqual(scheduler.roll(rng), 'heal');
 });
 
-test('the last two events are damped to 1% and 10%', () => {
+test('the last two events are damped to 1% and 10%, and what they give up is split among the rest', () => {
   const weights = new EventScheduler({ recent: ['berry', 'ball'] }).weights();
   close(weights.berry, RECENT_WEIGHTS[0]);
   close(weights.ball, RECENT_WEIGHTS[1]);
-  close(sum(weights), 100);
-});
-
-test('what the two remembered events give up is split among the rest', () => {
-  const weights = new EventScheduler({ recent: ['wild', 'trainer'] }).weights();
-  const open = EVENT_KINDS.filter((kind) => kind !== 'wild' && kind !== 'trainer');
+  const open = EVENT_KINDS.filter((kind) => kind !== 'berry' && kind !== 'ball');
   const expected = (100 - RECENT_WEIGHTS[0] - RECENT_WEIGHTS[1]) / open.length;
   for (const kind of open) close(weights[kind], expected);
   close(sum(weights), 100);
@@ -94,7 +89,7 @@ test('the long-run distribution stays close to even', () => {
   }
 });
 
-test('scheduler state round-trips through a save', () => {
+test('scheduler state round-trips through a save, a forced event and all', () => {
   const scheduler = new EventScheduler();
   scheduler.roll(new Rng(3));
   scheduler.roll(new Rng(4));
@@ -103,6 +98,10 @@ test('scheduler state round-trips through a save', () => {
   assert.deepEqual(restored.recent, scheduler.recent);
   assert.deepEqual(restored.weights(), scheduler.weights());
   assert.deepEqual(restored.shortages, ['balls']);
+
+  // One forced before the save still fires next after the reload.
+  scheduler.force('heal');
+  assert.equal(new EventScheduler(JSON.parse(JSON.stringify(scheduler))).roll(new Rng(5)), 'heal');
 });
 
 test('a save written before the memory existed keeps its last event damped', () => {
@@ -138,11 +137,4 @@ test('a called rest stop fires next, and takes no slot in the memory', () => {
   assert.equal(scheduler.roll(new Rng(1)), 'heal');
   assert.deepEqual(scheduler.recent, ['berry', 'ball']);
   assert.notEqual(scheduler.roll(new Rng(1)), 'heal');
-});
-
-test('a forced event survives a save and reload', () => {
-  const scheduler = new EventScheduler();
-  scheduler.force('heal');
-  const restored = new EventScheduler(JSON.parse(JSON.stringify(scheduler)));
-  assert.equal(restored.roll(new Rng(5)), 'heal');
 });

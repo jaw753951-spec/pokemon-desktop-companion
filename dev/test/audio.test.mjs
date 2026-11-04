@@ -17,15 +17,27 @@ const timers = new Map();
 let nextTimer = 1;
 let now = 0;
 
+/** An audio parameter, reduced to what the engine calls on one. */
+const param = () => ({ value: 0, setTargetAtTime() {}, setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {} });
+
 /** Every Web Audio node the engine touches, reduced to what it calls on them. */
 const node = () => ({
   connect() {},
   disconnect() {},
   start() {},
   stop() {},
-  gain: { setTargetAtTime() {}, setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {} },
-  frequency: { value: 0 },
-  Q: { value: 0 },
+  setPeriodicWave() {},
+  gain: param(),
+  frequency: param(),
+  detune: param(),
+  playbackRate: param(),
+  pan: param(),
+  Q: param(),
+  threshold: param(),
+  knee: param(),
+  ratio: param(),
+  attack: param(),
+  release: param(),
   type: '',
   buffer: null,
   loop: false,
@@ -45,6 +57,10 @@ globalThis.AudioContext = /** @type {any} */ (function AudioContextStub() {
     createBufferSource: node,
     createBiquadFilter: node,
     createBuffer: node,
+    createStereoPanner: node,
+    createConvolver: node,
+    createDynamicsCompressor: node,
+    createPeriodicWave: () => ({}),
   };
 });
 
@@ -211,20 +227,243 @@ test('asking for the intro of a song with no loop plays all of it', async () => 
   assert.equal(audio.jingle?.fadeFrom, 0.5);
 });
 
-test('the drum kit and the timpani are struck, not held as tones', async () => {
-  const { voiceFor } = await import('../../app/renderer/core/audio.mjs');
-  // Program 0 is the decomp's drum kit: the champion theme's snare is its 38,
-  // a band of noise up where a snare sits rather than a low D.
-  const snare = voiceFor(0, 38);
-  assert.equal(snare.wave, 'noise');
-  assert.ok(snare.band > 1000, `snare at ${snare.band} Hz`);
-  assert.ok(voiceFor(0, 57).release > snare.release, 'a cymbal rings on longer than a snare');
-  // The drum channel's kit is voiced the same way.
-  assert.equal(voiceFor(128, 38).band, snare.band);
-  // The timpani keeps its pitch but dies away instead of sustaining.
-  const timpani = voiceFor(47, 52);
-  assert.notEqual(timpani.wave, 'noise');
-  assert.ok(timpani.hold && timpani.sustain < 0.2);
-  // A melodic program is left as it was.
-  assert.equal(voiceFor(48, 60).hold, undefined);
+test('a looping song plays its intro once and then goes round its loop', async () => {
+  const audio = new AudioEngine();
+  /** @type {Array<{n: number, when: number}>} */
+  const voiced = [];
+  audio.playNote = (track, note, when) => voiced.push({ n: note.n, when });
+
+  const started = now;
+  await audio.playMusic('looped');
+  // Three times through the song's length, a tenth of a second at a time.
+  for (let step = 0; step < 300; step++) tick(0.1);
+  audio.stopMusic();
+
+  const at = (n) => voiced.filter((note) => note.n === n).map((note) => Math.round((note.when - started) * 10) / 10);
+  // The fanfare at 0 is the intro, heard once; the loop is 2 to 10, so its
+  // notes come back every eight seconds rather than every ten.
+  assert.deepEqual(at(60), [0.1]);
+  assert.deepEqual(at(62).slice(0, 3), [2.7, 10.7, 18.7]);
+  assert.deepEqual(at(64).slice(0, 3), [6.1, 14.1, 22.1]);
+});
+
+test('a track plays on the instrument its voicegroup gives it, a kit by the key', async () => {
+  const { voiceAt } = await import('../../app/renderer/core/synth.mjs');
+  /** @typedef {import('../../app/renderer/core/synth.mjs').Voice} Voice */
+  /** @type {Voice} */
+  const snare = { w: 'sample', s: 'sc88pro_rnd_snare', key: 60, fixed: true, env: [255, 0, 255, 242] };
+  const kit = { kit: { 38: snare } };
+  assert.equal(voiceAt(kit, 38), snare);
+  assert.equal(voiceAt(kit, 39), null, 'a key the kit leaves empty is silent');
+
+  /** @type {Voice} */
+  const low = { w: 'sample', s: 'sc88pro_piano1_48', key: 60, env: [255, 250, 0, 200] };
+  /** @type {Voice} */
+  const high = { w: 'sample', s: 'sc88pro_piano1_84', key: 60, env: [255, 250, 0, 200] };
+  const piano = { split: [{ to: 55, voice: low }, { to: 108, voice: high }] };
+  assert.equal(voiceAt(piano, 40), low);
+  assert.equal(voiceAt(piano, 80), high);
+  assert.equal(voiceAt(piano, 120), high, 'above the last range is the last range');
+
+  /** @type {Voice} */
+  const square = { w: 'square', duty: 2, env: [0, 0, 15, 0] };
+  assert.equal(voiceAt({ voice: square }, 60), square);
+  // A track from before the instruments were known still makes a sound.
+  assert.ok(voiceAt({ program: 33 }, 40));
+});
+
+test("envelopes keep the driver's shape: struck sounds die, held ones sustain", async () => {
+  const { envelopeOf } = await import('../../app/renderer/core/synth.mjs');
+  // The champion theme's pizzicato: full at once, falling to nothing.
+  const pizzicato = envelopeOf({ w: 'sample', s: 'pizzicato_strings', key: 60, env: [255, 216, 0, 165] });
+  assert.ok(pizzicato.attack < 0.01);
+  assert.equal(pizzicato.sustain, 0);
+  assert.ok(pizzicato.decay > 0.05 && pizzicato.decay < 0.2, `decay ${pizzicato.decay}`);
+  // Its flute: held at full, and let go quickly.
+  const flute = envelopeOf({ w: 'sample', s: 'flute', key: 60, env: [255, 0, 255, 165] });
+  assert.equal(flute.sustain, 1);
+  assert.ok(flute.release < 0.1);
+  // A Game Boy square at sustain 7 of 15, a step a frame down from full.
+  const square = envelopeOf({ w: 'square', duty: 2, env: [0, 1, 7, 1] });
+  assert.ok(Math.abs(square.sustain - 7 / 15) < 1e-9);
+  assert.ok(Math.abs(square.decay - 8 / 60) < 1e-9);
+  // Release 0 cuts the note, all but at once.
+  assert.ok(envelopeOf({ w: 'square', duty: 2, env: [0, 0, 15, 0] }).release < 0.02);
+});
+
+test('samples are stood in for by what they are', async () => {
+  const { sampleSound } = await import('../../app/renderer/core/synth.mjs');
+  assert.ok('drum' in sampleSound('sc88pro_rnd_snare'), 'a snare is struck');
+  assert.ok('drum' in sampleSound('drum_and_percussion_kick'));
+  assert.ok('drum' in sampleSound('sd90_ambient_tom'));
+  const timpani = sampleSound('sc88pro_timpani');
+  assert.ok('harmonics' in timpani && timpani.ring > 0, 'the timpani has a pitch and rings out');
+  const flute = sampleSound('sc88pro_flute');
+  assert.ok('harmonics' in flute && !flute.ring, 'a flute is held as long as the key');
+  const pizzicato = sampleSound('sc88pro_pizzicato_strings');
+  assert.ok('harmonics' in pizzicato && pizzicato.ring, 'a pizzicato is plucked, not bowed');
+  assert.ok('harmonics' in sampleSound('sc88pro_string_ensemble_72'));
+});
+
+/**
+ * A context that writes down what the synth asks of it: each oscillator's
+ * frequency, and the automation on each gain.
+ */
+function recordingContext() {
+  const oscillators = [];
+  const gains = [];
+  const param = (log) => ({
+    value: 0,
+    setValueAtTime: (value, at) => log?.push(['set', value, at]),
+    linearRampToValueAtTime: (value, at) => log?.push(['ramp', value, at]),
+    setTargetAtTime: (value, at) => log?.push(['target', value, at]),
+    exponentialRampToValueAtTime: (value, at) => log?.push(['exp', value, at]),
+  });
+  const base = () => ({ connect() {}, disconnect() {}, start() {}, stop() {}, setPeriodicWave() {}, frequency: param(), detune: param(), Q: param(), playbackRate: param(), pan: param() });
+  return {
+    oscillators,
+    gains,
+    sampleRate: 48000,
+    createOscillator() {
+      const node = base();
+      oscillators.push(node);
+      return node;
+    },
+    createGain() {
+      const log = [];
+      const node = { ...base(), gain: param(log), log };
+      gains.push(node);
+      return node;
+    },
+    createBiquadFilter: base,
+    createBufferSource: base,
+    createStereoPanner: base,
+    createBuffer: () => ({ getChannelData: () => new Float32Array(1) }),
+    createPeriodicWave: () => ({}),
+  };
+}
+
+test('the wave channel sounds its table an octave under a pulse channel on the same note', async () => {
+  const { playVoice } = await import('../../app/renderer/core/synth.mjs');
+  const note = { t: 0, d: 0.2, n: 69, v: 0.8 };
+  const context = recordingContext();
+  /** @type {any} */
+  const sink = {};
+  playVoice(/** @type {any} */ (context), { voice: { w: 'square', duty: 2, env: [0, 0, 15, 0] } }, note, 0, sink);
+  playVoice(/** @type {any} */ (context), { voice: { w: 'wave', wave: Array(32).fill(0), env: [0, 0, 15, 0] } }, note, 0, sink);
+  assert.deepEqual(context.oscillators.map((oscillator) => oscillator.frequency.value), [440, 220]);
+});
+
+test('a Game Boy note let go before it has decayed starts its release then, not after', async () => {
+  const { playVoice } = await import('../../app/renderer/core/synth.mjs');
+  const context = recordingContext();
+  // Decay of 7 frames a step from full down to nothing: two seconds, on a
+  // note held for a tenth of one.
+  playVoice(/** @type {any} */ (context), { voice: { w: 'square', duty: 2, env: [0, 7, 0, 1] } }, { t: 0, d: 0.1, n: 60, v: 1 }, 0, /** @type {any} */ ({}));
+  const [gain] = context.gains;
+  const last = Math.max(...gain.log.filter(([kind]) => kind !== 'target').map(([, , at]) => at));
+  assert.ok(last <= 0.1 + 1e-9, `the decay ran on to ${last}`);
+  assert.deepEqual(gain.log.at(-1).slice(0, 1), ['target']);
+  assert.equal(gain.log.at(-1)[2], 0.1, 'released at the end of the note');
+});
+
+test('a recorded sample is retuned from key 60 and loops where it loops; a fixed one is not retuned', async () => {
+  const { playVoice, storeSample } = await import('../../app/renderer/core/synth.mjs');
+  const pcm = Buffer.from(Array(100).fill(128)).toString('base64');
+  storeSample('test_flute', { rate: 4000, pitch: 4000, loop: 40, end: 99, pcm });
+  // The high piano is slower than an audio buffer may be.
+  storeSample('test_high', { rate: 1672, pitch: 1672.4, loop: null, end: 100, pcm });
+  const sources = [];
+  /** @type {any} */
+  const context = recordingContext();
+  context.createBuffer = (channels, length, rate) => ({ sampleRate: rate, length, getChannelData: () => new Float32Array(length) });
+  context.createBufferSource = () => {
+    const source = { connect() {}, start() {}, stop() {}, playbackRate: { value: 0 }, detune: { setValueAtTime() {} }, loop: false, loopStart: 0, loopEnd: 0, buffer: null };
+    sources.push(source);
+    return source;
+  };
+  const sink = /** @type {any} */ ({});
+  const note = (n) => ({ t: 0, d: 0.5, n, v: 0.8 });
+  playVoice(/** @type {any} */ (context), { voice: { w: 'sample', s: 'test_flute', key: 60, env: [255, 0, 255, 165] } }, note(72), 0, sink);
+  playVoice(/** @type {any} */ (context), { voice: { w: 'sample', s: 'test_flute', key: 60, fixed: true, env: [255, 0, 255, 165] } }, note(72), 0, sink);
+  playVoice(/** @type {any} */ (context), { voice: { w: 'sample', s: 'test_high', key: 60, env: [255, 0, 255, 165] } }, note(60), 0, sink);
+  const [up, fixed, high] = sources;
+  assert.equal(up.playbackRate.value, 2, 'an octave up is twice as fast');
+  assert.equal(up.loop, true);
+  assert.equal(up.loopStart, 40 / 4000);
+  assert.equal(up.loopEnd, 99 / 4000, 'round before the sample after the end');
+  assert.equal(fixed.playbackRate.value, 1);
+  assert.ok(high.buffer.sampleRate >= 3000);
+  assert.ok(Math.abs(high.playbackRate.value * high.buffer.sampleRate - 1672.4) < 1e-6, 'and still plays at its own rate');
+  assert.equal(high.loop, false);
+});
+
+test('the Game Boy channels play nothing lower than C2', async () => {
+  const { playVoice } = await import('../../app/renderer/core/synth.mjs');
+  const context = recordingContext();
+  const sink = /** @type {any} */ ({});
+  playVoice(/** @type {any} */ (context), { voice: { w: 'square', duty: 2, env: [0, 0, 15, 0] } }, { t: 0, d: 0.2, n: 33, v: 0.8 }, 0, sink);
+  playVoice(/** @type {any} */ (context), { voice: { w: 'square', duty: 2, env: [0, 0, 15, 0] } }, { t: 0, d: 0.2, n: 36, v: 0.8 }, 0, sink);
+  const [low, c2] = context.oscillators.map((oscillator) => oscillator.frequency.value);
+  assert.equal(low, c2);
+});
+
+/** A buffer of a steady tone for a while, then silence. */
+function steadyBuffer(amplitude, seconds, silence = 0) {
+  const rate = 1000;
+  const data = new Float32Array(Math.round((seconds + silence) * rate));
+  for (let i = 0; i < seconds * rate; i++) data[i] = i % 2 ? amplitude : -amplitude;
+  return /** @type {any} */ ({ sampleRate: rate, length: data.length, numberOfChannels: 1, getChannelData: () => data });
+}
+
+test('a recording\'s level is how loud it is while it sounds, not counting the silence after', async () => {
+  const { levelOf } = await import('../../app/renderer/core/audio.mjs');
+  const half = 20 * Math.log10(0.5);
+  assert.ok(Math.abs(levelOf(steadyBuffer(0.5, 1)) - half) < 0.01);
+  // The same sound with a second of silence after it measures the same.
+  assert.ok(Math.abs(levelOf(steadyBuffer(0.5, 1, 1)) - half) < 0.01);
+});
+
+test('cries are brought to one loudness, the quiet up and the loud down', async () => {
+  const audio = new AudioEngine();
+  audio.start();
+  /** @type {any[]} */
+  const trims = [];
+  const context = /** @type {any} */ (audio.context);
+  const createGain = context.createGain;
+  context.createGain = () => {
+    const gain = createGain();
+    trims.push(gain);
+    return gain;
+  };
+  // Both within the twelve dB a cry may be moved either way.
+  /** @type {Array<[string, number]>} */
+  const recordings = [['cries/1.ogg', 0.3], ['cries/2.ogg', 0.05]];
+  for (const [path, amplitude] of recordings) audio.buffers.set(path, Promise.resolve(steadyBuffer(amplitude, 0.5)));
+  await audio.playCry(1);
+  await audio.playCry(2);
+  const [loud, quiet] = trims.map((gain) => gain.gain.value);
+  // Each lands on the same level: 0.3 × loud = 0.05 × quiet, to a float's precision.
+  assert.ok(loud < 1 && quiet > 1);
+  assert.ok(Math.abs((0.3 * loud) / (0.05 * quiet) - 1) < 1e-6);
+});
+
+test('a quiet cry with a sharp crack in it is not turned up past full scale', async () => {
+  const audio = new AudioEngine();
+  audio.start();
+  /** @type {any[]} */
+  const trims = [];
+  const context = /** @type {any} */ (audio.context);
+  const createGain = context.createGain;
+  context.createGain = () => {
+    const gain = createGain();
+    trims.push(gain);
+    return gain;
+  };
+  // Quiet all through but for one sample at half of full scale.
+  const crack = steadyBuffer(0.02, 0.5);
+  crack.getChannelData(0)[10] = 0.5;
+  audio.buffers.set('cries/3.ogg', Promise.resolve(crack));
+  await audio.playCry(3);
+  assert.ok(trims[0].gain.value <= 2 + 1e-9, `turned up ${trims[0].gain.value} times`);
 });

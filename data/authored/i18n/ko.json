@@ -119,7 +119,7 @@
   "auto.condition.foeHpHalf": "적 체력 1/2 이하",
   "auto.condition.foeHpThird": "적 체력 1/3 이하",
   "auto.condition.foeHpQuarter": "적 체력 1/4 이하",
-  "auto.order": "판단 순서: 1순위 조건이 맞는 기술 → 2순위 조건이 맞는 기술 → '기본'인 기술 중 가장 센 공격. 같은 순위에서는 위에 있는 기술이 먼저입니다.",
+  "auto.order": "판단 순서: 1순위 조건이 맞는 기술 → 1순위가 '기본'인 기술 중 가장 센 공격 → 2순위 조건이 맞는 기술 → 2순위가 '기본'인 기술 중 가장 센 공격. 같은 순서 안에서는 위에 있는 기술이 먼저입니다.",
   "auto.group.basic": "일반",
   "auto.group.turn": "턴",
   "auto.group.matchup": "상황",

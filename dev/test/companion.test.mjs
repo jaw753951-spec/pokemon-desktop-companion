@@ -223,7 +223,7 @@ test('an item nothing can carry says so, rather than being lost', () => {
   assert.equal(run.countOf('escape-rope'), 1, 'and it stays in the bag');
 });
 
-test('using a berry on a Pokémon that needs no healing hands it over instead', () => {
+test('using a berry on a Pokémon that needs no healing hands it over instead, and one that does is eaten', () => {
   const mon = pokemon(11, ['tackle']);
   // Nothing to restore: this is the case that used to answer "that cannot be
   // used right now" and leave the berry in the bag.
@@ -234,16 +234,13 @@ test('using a berry on a Pokémon that needs no healing hands it over instead', 
   assert.equal(result.ok, true);
   assert.equal(mon.heldItem, 'oran-berry');
   assert.equal(run.countOf('oran-berry'), 0);
-});
 
-test('and one that does need healing is still eaten', () => {
-  const mon = pokemon(11, ['tackle']);
-  mon.hp = 1;
-  const run = /** @type {any} */ (session(mon, { 'oran-berry': 1 }));
-
-  const result = useItem(run, 'oran-berry');
-  assert.equal(result.ok, true);
-  assert.equal(mon.heldItem, null, 'eaten, not pocketed');
-  assert.equal(mon.hp, 11);
-  assert.equal(run.countOf('oran-berry'), 0);
+  // One that does need healing still eats it.
+  const hurt = pokemon(11, ['tackle']);
+  hurt.hp = 1;
+  const fed = /** @type {any} */ (session(hurt, { 'oran-berry': 1 }));
+  assert.equal(useItem(fed, 'oran-berry').ok, true);
+  assert.equal(hurt.heldItem, null, 'eaten, not pocketed');
+  assert.equal(hurt.hp, 11);
+  assert.equal(fed.countOf('oran-berry'), 0);
 });

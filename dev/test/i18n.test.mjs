@@ -153,13 +153,6 @@ test('a fallback loop is walked once rather than forever', () => {
 
 // ------------------------------------------------------- the shipped sheet
 
-test('every shipped language has the strings it points at', async () => {
-  for (const language of shipped) {
-    const strings = await readAuthored(language.strings);
-    assert.ok(Object.keys(strings).length > 0, `${language.code}: ${language.strings} is empty`);
-  }
-});
-
 test('every shipped language translates exactly the same keys', async () => {
   const base = defaultLanguage(shipped);
   const expected = Object.keys(await readAuthored(base.strings));

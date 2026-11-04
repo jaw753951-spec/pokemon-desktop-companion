@@ -3,14 +3,16 @@
  * Film the trailer: the real game, driven shot by shot, a frame at a time.
  *
  *   npx electron dev/tools/trailer/record.mjs --ffmpeg path/to/ffmpeg [--out trailer] [--lang en] [--only fight-1] [--stills 30]
- *     [--sound-only | --vertical-only]
+ *     [--upright] [--sound-only]
  *
  * Boots the game's own main-process modules (as the screenshot harness does)
  * into a hidden 1920x1080 window, hands the page to `director.js`, and
  * pipes every frame it photographs straight into ffmpeg. The soundtrack is
  * mixed afterwards by `soundtrack.js` from what the shots asked the speakers
- * for, and the two are put together at the end — and cut again upright, for
- * the phone-shaped feeds. Nothing here ships.
+ * for, and the two are put together at the end. With `--upright` the same
+ * film is shot again in a 1080x1920 window for the phone-shaped feeds —
+ * Shorts, Reels, TikTok — with the camera on each shot's subject and a line
+ * about it above the picture. Nothing here ships.
  */
 import { app, BrowserWindow, screen } from 'electron';
 import { spawn } from 'node:child_process';
@@ -38,12 +40,20 @@ const FFMPEG = option('--ffmpeg', 'ffmpeg');
 const ONLY = option('--only', null)?.split(',') ?? null;
 /** Mix the soundtrack again over the film already made, from its timeline. */
 const SOUND_ONLY = args.includes('--sound-only');
-/** Cut the upright version again from the finished film, and nothing else. */
-const VERTICAL_ONLY = args.includes('--vertical-only');
+/** Film the phone-shaped cut rather than the landscape one. */
+const UPRIGHT = args.includes('--upright');
 /** Keep a still every so many frames, for looking at without playing the film. */
 const STILLS = Number(option('--stills', '0'));
+/**
+ * The window is landscape either way. A window as tall as the phone's frame
+ * fits on no ordinary display, so the upright cut is drawn lying on its side
+ * (see `director.js`) and stood up again by ffmpeg.
+ */
 const WIDTH = 1920;
 const HEIGHT = 1080;
+/** What this cut's files are called apart from the other's. */
+const CUT = UPRIGHT ? '-upright' : '';
+const FINAL = join(OUT_DIR, `trailer-${LANGUAGE}${UPRIGHT ? '-vertical' : ''}.mp4`);
 /**
  * The page is laid out at half the film's size and drawn at twice the pixel
  * density: a window as big as the film is cut down to fit the screen on most
@@ -63,7 +73,7 @@ registerProtocolScheme();
 app.whenReady().then(async () => {
   registerProtocolHandler();
   registerHandlers();
-  await mkdir(join(OUT_DIR, 'stills'), { recursive: true });
+  await mkdir(join(OUT_DIR, `stills${CUT}`), { recursive: true });
 
   // A window is kept inside its display's work area, so a film-sized one on a
   // display with a taskbar comes out short. It is put, hidden, on a display
@@ -88,14 +98,18 @@ app.whenReady().then(async () => {
       backgroundThrottling: false,
     },
   });
+  // It is cut to the primary display's work area as it is made, wherever it
+  // is told to go; sized again once there, it is its full size.
+  window.setContentSize(size.width, size.height);
   window.webContents.on('console-message', (event) => console.log(`[page] ${/** @type {any} */ (event).message}`));
   await window.loadFile(join(RENDERER_DIR, 'index.html'));
   const run = (code) => window.webContents.executeJavaScript(code, true);
+  const inner = await run('[innerWidth, innerHeight]');
+  if (inner[0] !== size.width || inner[1] !== size.height) console.warn(`the page is ${inner.join('x')}, not ${size.width}x${size.height}: the frames will be stretched to fit`);
 
-  const video = join(OUT_DIR, ONLY ? `video-${ONLY.join('+')}.mp4` : 'video.mp4');
-  if (!SOUND_ONLY && !VERTICAL_ONLY) await film(run, window, video);
-  if (!ONLY && !VERTICAL_ONLY) await mix(run, video);
-  if (!ONLY) await upright();
+  const video = join(OUT_DIR, ONLY ? `video${CUT}-${ONLY.join('+')}.mp4` : `video${CUT}.mp4`);
+  if (!SOUND_ONLY) await film(run, window, video);
+  if (!ONLY) await mix(run, video);
   app.quit();
 });
 
@@ -110,12 +124,13 @@ async function film(run, window, video) {
   await run(`${await readFile(join(HERE, 'director.js'), 'utf8')};true`);
   const wallpaper = `data:image/jpeg;base64,${(await readFile(option('--wallpaper', 'C:/Windows/Web/Wallpaper/Windows/img0.jpg'))).toString('base64')}`;
   const icon = `data:image/png;base64,${(await readFile(join(ROOT, 'dev', 'build', 'icon.png'))).toString('base64')}`;
-  const shots = await run(`window.__trailer.setup(${JSON.stringify({ wallpaper, icon })})`);
+  const shots = await run(`window.__trailer.setup(${JSON.stringify({ wallpaper, icon, upright: UPRIGHT })})`);
   console.log(shots.map((shot) => `${shot.name}:${shot.frames}`).join(' '));
 
   const encoder = spawn(FFMPEG, [
     '-y', '-loglevel', 'error',
     '-f', 'rawvideo', '-pix_fmt', 'bgra', '-s', `${WIDTH}x${HEIGHT}`, '-r', '60', '-i', '-',
+    ...(UPRIGHT ? ['-vf', 'transpose=cclock'] : []),
     '-c:v', 'libx264', '-preset', 'medium', '-crf', '14', '-pix_fmt', 'yuv420p', '-movflags', '+faststart',
     video,
   ], { stdio: ['pipe', 'inherit', 'inherit'] });
@@ -135,7 +150,7 @@ async function film(run, window, video) {
       if (size.width !== WIDTH || size.height !== HEIGHT) image = image.resize({ width: WIDTH, height: HEIGHT, quality: 'best' });
       if (!encoder.stdin.write(image.toBitmap())) await new Promise((resolve) => encoder.stdin.once('drain', resolve));
       if ((STILLS && frame % STILLS === 0) || frame === 0) {
-        await writeFile(join(OUT_DIR, 'stills', `${shot.name}-${String(frame).padStart(4, '0')}.png`), image.toPNG());
+        await writeFile(join(OUT_DIR, `stills${CUT}`, `${shot.name}-${String(frame).padStart(4, '0')}.png`), image.toPNG());
       }
       filmed++;
       // A shot that fades in does so off the last frame of this one.
@@ -152,7 +167,7 @@ async function film(run, window, video) {
   const cuts = await run('window.__trailer.cuts()');
   const log = await run('window.__trailer.audioLog()');
   const length = shots.reduce((sum, shot) => sum + shot.frames, 0) / 60;
-  await writeFile(join(OUT_DIR, 'timeline.json'), JSON.stringify({ length, shots, cuts, audio: log }, null, 1));
+  await writeFile(join(OUT_DIR, `timeline${CUT}.json`), JSON.stringify({ length, shots, cuts, audio: log }, null, 1));
 }
 
 /**
@@ -160,45 +175,27 @@ async function film(run, window, video) {
  * put it under the film.
  */
 async function mix(run, video) {
-  const timeline = JSON.parse(await readFile(join(OUT_DIR, 'timeline.json'), 'utf8'));
+  const timeline = JSON.parse(await readFile(join(OUT_DIR, `timeline${CUT}.json`), 'utf8'));
   const { cuts, audio: log } = timeline;
   const length = timeline.length ?? timeline.shots.reduce((sum, shot) => sum + shot.frames, 0) / 60;
   await run(`${await readFile(join(HERE, 'soundtrack.js'), 'utf8')};true`);
   const wav = await run(`window.__soundtrack(${JSON.stringify({ cuts, audio: log, length })})`);
-  const audio = join(OUT_DIR, 'soundtrack.wav');
+  const audio = join(OUT_DIR, `soundtrack${CUT}.wav`);
   await writeFile(audio, Buffer.from(wav, 'base64'));
-  const final = join(OUT_DIR, `trailer-${LANGUAGE}.mp4`);
-  await ffmpeg(['-i', video, '-i', audio, '-c:v', 'copy', '-c:a', 'aac', '-b:a', '256k', '-shortest', final]);
-  console.log(`wrote ${final}`);
-}
-
-/**
- * The film cut upright (1080x1920) for Shorts, Reels and TikTok.
- *
- * The game is a 16:9 picture whose windows sit at its edges, so cropping it
- * to a phone's shape would cut the name plates and the message box in half.
- * It is laid across the middle at the full width instead, and the space above
- * and below is filled with the same frame blown up, blurred and dimmed, so
- * the fill moves and changes colour with whatever is on screen.
- */
-async function upright() {
-  const final = join(OUT_DIR, `trailer-${LANGUAGE}.mp4`);
-  const vertical = join(OUT_DIR, `trailer-${LANGUAGE}-vertical.mp4`);
+  // With the end card as its cover, so the file shows the game's logo
+  // rather than the desktop it opens on: a frame from the card's last second,
+  // once everything on it has come in.
+  const cover = join(OUT_DIR, `cover${CUT}.png`);
+  await ffmpeg(['-ss', String(Math.max(0, length - 1)), '-i', video, '-frames:v', '1', cover]);
   await ffmpeg([
-    '-i', final,
-    '-filter_complex', [
-      '[0:v]split=2[fill][band]',
-      // Blurred small and scaled back up, which is a softer blur and far cheaper.
-      '[fill]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,scale=135:240,gblur=sigma=9,scale=1080:1920,eq=brightness=-0.24:saturation=1.2[back]',
-      '[band]scale=1080:-2:flags=lanczos[front]',
-      '[back][front]overlay=(W-w)/2:(H-h)/2,format=yuv420p[v]',
-    ].join(';'),
-    '-map', '[v]', '-map', '0:a',
-    '-c:v', 'libx264', '-preset', 'medium', '-crf', '16', '-r', '60', '-movflags', '+faststart',
-    '-c:a', 'copy',
-    vertical,
+    '-i', video, '-i', audio, '-i', cover,
+    '-map', '0:v', '-map', '1:a', '-map', '2:v',
+    '-c:v:0', 'copy', '-c:v:1', 'png', '-disposition:v:1', 'attached_pic',
+    // Not cut to the shortest stream: the cover is one frame long. The
+    // soundtrack is mixed to the film's own length.
+    '-c:a', 'aac', '-b:a', '256k', FINAL,
   ]);
-  console.log(`wrote ${vertical}`);
+  console.log(`wrote ${FINAL}`);
 }
 
 /** @param {string[]} parameters */

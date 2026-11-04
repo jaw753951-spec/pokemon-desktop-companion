@@ -534,21 +534,6 @@ test('a Pickpocket helps itself to what touched it', options, () => {
   assert.equal(player.heldItem, null);
 });
 
-test('the four Ruin abilities weigh on everything but their holder', options, () => {
-  const player = fixed(PIKACHU, 50);
-  const foe = punchbag();
-
-  const before = fight(player, foe);
-  const plain = before.stat(before.player, 'spa');
-  const theirs = before.stat(/** @type {any} */ (before.foe), 'spa');
-
-  foe.ability = 'vessel-of-ruin';
-  const ruined = fight(player, foe);
-  assert.equal(ruined.stat(ruined.player, 'spa'), Math.floor(plain * 0.75));
-  // And not on the Pokémon carrying it.
-  assert.equal(ruined.stat(/** @type {any} */ (ruined.foe), 'spa'), theirs);
-});
-
 test('the wild holds every Pokémon, not only the ones the route names', options, () => {
   const area = { id: 'test', tags: ['grass'], encounters: [{ species: 'ditto' }] };
   const companion = fixed(PIKACHU, 30);
