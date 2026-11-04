@@ -97,6 +97,8 @@
 
   const audioLog = [];
   let recording = false;
+  /** Whether the shot rolling keeps its Pokémon's cries out of the film (`quiet`). */
+  let hushed = false;
   let filmTime = 0;
 
   function muteAndLog() {
@@ -104,7 +106,7 @@
     for (const method of ['playCry', 'blip', 'playJingle', 'playMusic', 'playSample', 'stopMusic']) {
       audio[method] = (...args) => {
         if (method === 'playMusic') audio.wanted = args[0] ?? null;
-        if (recording) audioLog.push({ t: filmTime, method, args });
+        if (recording && !(hushed && method === 'playCry')) audioLog.push({ t: filmTime, method, args });
         return Promise.resolve();
       };
     }
@@ -1039,10 +1041,13 @@
     },
     // The leader standing there, stepping off and throwing out their first
     // Pokémon — and cut before the companion's ball goes up. Out of the fights
-    // through white, and each leader dissolving into the next.
+    // through white, and each leader dissolving into the next. Without the
+    // cry the Pokémon gives as its ball opens: it comes a moment before each
+    // cut and rings on into the next leader.
     {
       name: 'leader-1',
       bars: 1.5,
+      quiet: true,
       into: { kind: 'white', out: 6, in: 10 },
       async begin() {
         this.leader = await leader(0);
@@ -1057,6 +1062,7 @@
     ...[1, 2].map((index) => ({
       name: `leader-${index + 1}`,
       bars: 1.5,
+      quiet: true,
       into: { kind: 'fade', frames: 12 },
       async begin() {
         this.leader = await leader(index);
@@ -1330,6 +1336,7 @@
       const shot = SHOTS[index];
       filmTime = frameNumber / FPS;
       recording = Boolean(shot.listen);
+      hushed = Boolean(shot.quiet);
       await shot.begin?.call(shot);
       await settle(120);
       recording = true;
