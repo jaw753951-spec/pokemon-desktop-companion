@@ -24,6 +24,7 @@ import { restockBerry } from '../engine/items.mjs';
 import { battleScene } from './battle.mjs';
 import { hallOfFameScene } from './halloffame.mjs';
 import { inventoryScene } from '../ui/inventory.mjs';
+import { shutter } from '../ui/shutter.mjs';
 
 /**
  * The level each round's team stands at: the Elite Four in order, then the
@@ -167,6 +168,9 @@ export function leagueScene({ session, onLeave, onCrowned }) {
         // their first ball, as a gym leader does in the gym.
         presented: true,
         backdrop: backdropForLeagueRound(index, rounds.length),
+        // Fought indoors, in their rooms: the road's rain or sandstorm
+        // outside has no business on the field.
+        weather: null,
         music: gameData().bgm.cues[last ? 'battleChampion' : 'battleEliteFour'],
         onFinish: (result) => {
           app.pop();
@@ -228,17 +232,20 @@ export function leagueScene({ session, onLeave, onCrowned }) {
     session.leagueRun = null;
 
     // The champion is entered into the Hall of Fame before anything else is
-    // said, as the games do; the prize and the way home are read out after.
+    // said, as the games do; the prize and the way home are read out after,
+    // once the shutter has closed on the ceremony and opened on the road.
     const name = nameOf(session.active);
     app.push(hallOfFameScene({
       pokemon: session.active,
       league,
-      onFinish: () => {
-        app.pop();
-        const prize = t('league.reward', { item: localized(gameData().items[reward]?.name, reward) });
-        app.toast(`${t('league.crowned', { name })}\n${prize}\n${t('league.wentHome')}`, 5000);
-        onCrowned();
-      },
+      onFinish: () => shutter({
+        onShut: () => {
+          app.pop();
+          const prize = t('league.reward', { item: localized(gameData().items[reward]?.name, reward) });
+          app.toast(`${t('league.crowned', { name })}\n${prize}\n${t('league.wentHome')}`, 5000);
+          onCrowned();
+        },
+      }),
     }));
   }
 }
