@@ -3,14 +3,18 @@
  *
  * The game does not ship a sampled instrument bank — the renderer plays these
  * events on a small WebAudio synth (see `src/renderer/core/audio.mjs`), which
- * keeps the download tiny and suits the GBA-era material.
+ * keeps the download tiny and suits the GBA-era material. What each track is
+ * played on comes from the song's own voicegroup, as the cartridge has it
+ * (see `lib/voicegroups.mjs`), and the song carries its master volume.
  */
 import { join } from 'node:path';
 import { readFile } from 'node:fs/promises';
 
 import { fetchBuffer, writeOut } from '../lib/http.mjs';
 import { parseMidi } from '../lib/midi.mjs';
+import { instrumentFor, parseKeysplits, parseMidiConfig, parseSample, parseVoicegroups, waveSteps } from '../lib/voicegroups.mjs';
 import { EMERALD } from '../sources.mjs';
+import { BGM_TRIM_DB } from './bgm-levels.mjs';
 
 /**
  * Tracks the game needs beyond the per-area music, keyed by the role the game
@@ -56,6 +60,34 @@ export const CUES = {
 const MUSIC_ALIASES = { mus_route118: 'mus_route119' };
 
 /**
+ * The decomp's instruments: every song's voicegroup and the drum kits and key
+ * splits they share, the key split tables, the Game Boy wave tables, and the
+ * voicegroup and volume each song is built with.
+ *
+ * @param {<T>(task: () => Promise<T>) => Promise<T>} pool
+ */
+async function loadInstruments(pool) {
+  const text = async (path) => (await fetchBuffer(`${EMERALD}/${path}`)).toString('utf8');
+  const songs = parseMidiConfig(await text('sound/songs/midi/midi.cfg'));
+  const index = await text('sound/voice_groups.inc');
+  const files = [...index.matchAll(/\.include "(sound\/voicegroups\/[\w/]+\.inc)"/g)].map((match) => match[1]);
+  const own = new Set([...songs.values()].map((song) => `sound/voicegroups/${song.group}.inc`));
+  // The kits and splits the songs share, and the songs' own groups.
+  const sources = await Promise.all(
+    files.filter((file) => /voicegroups\/(drumsets|keysplits)\//.test(file) || own.has(file)).map((file) => pool(() => text(file))),
+  );
+  const groups = parseVoicegroups(sources.join('\n'));
+  const keysplits = parseKeysplits(await text('sound/keysplit_tables.inc'));
+  const waveFiles = [...(await text('sound/programmable_wave_data.inc')).matchAll(/(ProgrammableWaveData_\d+)::\s*\.incbin "([^"]+)"/g)];
+  /** @type {Map<string, number[]>} */
+  const waves = new Map();
+  await Promise.all(
+    waveFiles.map(([, label, file]) => pool(async () => waves.set(label, waveSteps(await fetchBuffer(`${EMERALD}/${file}`))))),
+  );
+  return { songs, groups, keysplits, wave: (label) => waves.get(label) ?? null };
+}
+
+/**
  * @param {{assetDir: string, dataDir: string, log: (message: string) => void, pool: <T>(task: () => Promise<T>) => Promise<T>}} context
  */
 export async function buildAudio({ assetDir, dataDir, log, pool }) {
@@ -73,6 +105,9 @@ export async function buildAudio({ assetDir, dataDir, log, pool }) {
   /** @type {Record<string, {duration: number, tracks: number, notes: number}>} */
   const built = {};
   const missing = [];
+  const library = await loadInstruments(pool);
+  /** The recorded samples the songs are played on. */
+  const samples = new Set();
 
   await Promise.all(
     [...wanted].map((name) =>
@@ -87,12 +122,43 @@ export async function buildAudio({ assetDir, dataDir, log, pool }) {
           missing.push(name);
           return;
         }
-        await writeOut(join(assetDir, 'bgm', `${name}.json`), JSON.stringify(song));
+        const options = library.songs.get(name);
+        if (!options) log(`  ${name}: no voicegroup in midi.cfg`);
+        const tracks = song.tracks.map((track) => {
+          const instrument = options
+            ? instrumentFor(library, options.group, track.program, track.notes.map((note) => note.n))
+            : null;
+          if (options && !instrument) log(`  ${name}: program ${track.program} is not a sound in ${options.group}`);
+          for (const voice of [instrument?.voice, ...(instrument?.split ?? []).map((range) => range.voice), ...Object.values(instrument?.kit ?? {})]) {
+            if (voice?.w === 'sample') samples.add(voice.s);
+          }
+          return { channel: track.channel, program: track.program, ...instrument, notes: track.notes };
+        });
+        // The cartridge's master volume, and the trim that levels it with the
+        // rest (see `bgm-levels.mjs`).
+        const volume = Math.round(((options?.volume ?? 127) / 127) * 10 ** ((BGM_TRIM_DB[name] ?? 0) / 20) * 1000) / 1000;
+        await writeOut(join(assetDir, 'bgm', `${name}.json`), JSON.stringify({ ...song, volume, tracks }));
         built[name] = {
           duration: song.duration,
           tracks: song.tracks.length,
           notes: song.tracks.reduce((sum, track) => sum + track.notes.length, 0),
         };
+      }),
+    ),
+  );
+
+  // The samples, each as the game plays it (see `parseSample`). One that will
+  // not download is left to the synth's stand-in for it.
+  const unsampled = [];
+  await Promise.all(
+    [...samples].map((sample) =>
+      pool(async () => {
+        const source = await fetchBuffer(`${EMERALD}/sound/direct_sound_samples/${sample}.wav`, { allowMissing: true });
+        if (!source) {
+          unsampled.push(sample);
+          return;
+        }
+        await writeOut(join(assetDir, 'samples', `${sample}.json`), JSON.stringify(parseSample(source)));
       }),
     ),
   );
@@ -115,5 +181,7 @@ export async function buildAudio({ assetDir, dataDir, log, pool }) {
   await writeOut(join(dataDir, 'bgm.json'), JSON.stringify({ cues, tracks: built }));
   log(`bgm ${Object.keys(built).length}/${wanted.size} tracks`);
   if (missing.length) log(`  missing: ${missing.join(', ')}`);
+  log(`samples ${samples.size - unsampled.length}/${samples.size}`);
+  if (unsampled.length) log(`  missing: ${unsampled.join(', ')}`);
   return built;
 }

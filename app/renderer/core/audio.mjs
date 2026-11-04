@@ -3,12 +3,13 @@
  *
  * The pipeline reduces each MIDI track to note events rather than rendering
  * audio, so music is a few kilobytes per song and is voiced here with
- * oscillators — which suits the GBA-era material it came from. Notes are
- * scheduled on a look-ahead timer so playback stays steady even when the game
- * loop stutters.
+ * oscillators (`synth.mjs`) — which suits the GBA-era material it came from.
+ * Notes are scheduled on a look-ahead timer so playback stays steady even
+ * when the game loop stutters.
  */
 import { loadAudioBuffer } from './assets.mjs';
 import { url } from './bridge.mjs';
+import { hasSample, playVoice, samplesOf, storeSample } from './synth.mjs';
 
 /** How far ahead notes are queued, and how often the queue is topped up. */
 const LOOKAHEAD_S = 0.4;
@@ -34,8 +35,6 @@ export class AudioEngine {
     this.effectGain = null;
     /** @type {GainNode|null} */
     this.cryGain = null;
-    /** @type {AudioBuffer|null} */
-    this.noise = null;
 
     /** @type {{name: string, song: any, startedAt: number, cursors: number[], loops: number}|null} */
     this.current = null;
@@ -79,7 +78,6 @@ export class AudioEngine {
     this.effectGain.connect(this.context.destination);
     this.cryGain.connect(this.context.destination);
     this.applyVolumes();
-    this.noise = createNoiseBuffer(this.context);
   }
 
   /**
@@ -120,6 +118,7 @@ export class AudioEngine {
     let song;
     try {
       song = await this.loadSong(name);
+      await loadSamples(song);
     } catch {
       return; // a missing track is silence, not a broken game
     }
@@ -177,6 +176,7 @@ export class AudioEngine {
     let song;
     try {
       song = await this.loadSong(name);
+      await loadSamples(song);
     } catch {
       return; // a missing cue is not worth a console error, let alone a break
     }
@@ -236,7 +236,7 @@ export class AudioEngine {
         const room = limit - note.t;
         const fade = note.t <= fadeFrom ? 1 : Math.max(0, 1 - (note.t - fadeFrom) / (limit - fadeFrom));
         const clipped = note.d > room || fade < 1 ? { ...note, d: Math.min(note.d, room), v: note.v * fade } : note;
-        this.playNote(track.program, clipped, Math.max(when, this.context.currentTime), this.musicGain);
+        this.playNote(track, clipped, Math.max(when, this.context.currentTime), this.musicGain, song.volume);
         cursors[index]++;
         started++;
       }
@@ -271,29 +271,43 @@ export class AudioEngine {
     this.stopJingle();
   }
 
-  /** Queue every note that starts within the look-ahead window. */
+  /**
+   * Queue every note that starts within the look-ahead window.
+   *
+   * A song plays through once, intro and all, and then goes round from its
+   * loop's start to its end for as long as it is wanted: the intro is heard
+   * once, as on the cartridge, and the loop comes round on its bar line.
+   */
   schedule() {
     if (!this.context || !this.current || !this.musicGain) return;
     const { song, cursors } = this.current;
     const horizon = this.context.currentTime + LOOKAHEAD_S;
+    const { start, length } = loopOf(song);
     let started = 0;
 
     // A song shorter than the look-ahead would otherwise schedule the same loop
     // repeatedly; advancing the origin as soon as the cursor runs out keeps one
     // iteration in flight at a time.
     for (let pass = 0; pass < 4; pass++) {
-      const origin = this.current.startedAt + this.current.loops * song.duration;
+      const loops = this.current.loops;
+      // Where this time round's second 0 falls: after the first time through,
+      // each time round starts at the loop's start, a loop's length on.
+      const origin = loops === 0 ? this.current.startedAt : this.current.startedAt + song.duration + (loops - 1) * length - start;
       let exhausted = true;
 
       song.tracks.forEach((track, index) => {
         while (cursors[index] < track.notes.length && started < MAX_NOTES_PER_TICK) {
           const note = track.notes[cursors[index]];
+          if (note.t >= song.duration) {
+            cursors[index] = track.notes.length;
+            break;
+          }
           const when = origin + note.t;
           if (when > horizon) {
             exhausted = false;
             return;
           }
-          this.playNote(track.program, note, Math.max(when, this.context.currentTime));
+          this.playNote(track, note, Math.max(when, this.context.currentTime), null, song.volume);
           cursors[index]++;
           started++;
         }
@@ -304,82 +318,47 @@ export class AudioEngine {
       if (!exhausted) return;
 
       this.current.loops++;
-      cursors.fill(0);
+      song.tracks.forEach((track, index) => {
+        cursors[index] = firstFrom(track.notes, start);
+      });
     }
   }
 
   /**
-   * @param {number} program General MIDI program, 128 for percussion
-   * @param {{t: number, d: number, n: number, v: number}} note
+   * @param {import('./synth.mjs').Track} track the song's track, which says what it is played on
+   * @param {import('./synth.mjs').Note} note
    * @param {number} when
    * @param {GainNode|null} [output] the channel to voice it on; the music by
    *   default, which is also where the cues go — a fanfare is music, and the
    *   music slider is what a player reaches for to quieten one
+   * @param {number} [level] the song's own volume
    */
-  playNote(program, note, when, output = null) {
+  playNote(track, note, when, output = null, level = 1) {
     if (!this.context || !this.musicGain) return;
-    const sink = output ?? this.musicGain;
-    const voice = voiceFor(program, note.n);
-    // A drum or a timpani is struck: it rings as long as it rings, however
-    // long the file holds the key down.
-    const duration = Math.min(note.d, voice.hold ?? 4);
-    const gain = this.context.createGain();
-    gain.connect(sink);
-
-    /** @type {AudioScheduledSourceNode} */
-    let source;
-    if (voice.wave === 'noise') {
-      const buffer = this.context.createBufferSource();
-      buffer.buffer = this.noise;
-      buffer.loop = true;
-      const filter = this.context.createBiquadFilter();
-      filter.type = 'bandpass';
-      filter.frequency.value = voice.band ?? midiToFrequency(note.n);
-      filter.Q.value = voice.q ?? 1.2;
-      buffer.connect(filter);
-      filter.connect(gain);
-      source = buffer;
-    } else {
-      const oscillator = this.context.createOscillator();
-      oscillator.type = /** @type {OscillatorType} */ (voice.wave);
-      oscillator.frequency.value = midiToFrequency(note.n + voice.transpose);
-      oscillator.connect(gain);
-      source = oscillator;
-    }
-
-    const peak = note.v * voice.gain;
-    const attack = voice.attack;
-    const release = voice.hold ? voice.release : Math.min(voice.release, duration);
-    gain.gain.setValueAtTime(0.0001, when);
-    gain.gain.linearRampToValueAtTime(peak, when + attack);
-    gain.gain.setTargetAtTime(peak * voice.sustain, when + attack, Math.max(0.02, duration / 3));
-    gain.gain.setTargetAtTime(0.0001, when + duration, release / 3);
-
-    // Stopped once the release has died away, not part way down it: at one
-    // release the envelope is still at a twentieth, and cutting a low note off
-    // there is a click.
-    source.start(when);
-    source.stop(when + duration + release * 2);
-    source.onended = () => gain.disconnect();
+    playVoice(this.context, track, note, when, output ?? this.musicGain, level);
   }
 
   /**
    * A Pokémon's cry. Missing cries are simply silent rather than fatal.
    *
    * Cries ride their own gain node so the sound tab can turn them down — or
-   * off — without touching the effects they share a speaker with.
+   * off — without touching the effects they share a speaker with. Each is
+   * brought to the same loudness: they were recorded across nine generations,
+   * and the newest came out a fifth as loud as the oldest.
    *
    * @param {number} speciesId
    */
   async playCry(speciesId) {
-    await this.playSample(`cries/${speciesId}.ogg`, this.cryGain);
+    await this.playSample(`cries/${speciesId}.ogg`, this.cryGain, CRY_LEVEL_DB);
   }
 
   /**
    * @param {string} path
    * @param {GainNode|null} [output] the channel to voice it on, effects by default
+   * @param {number|null} [level] how loud to make it, in dB (see {@link levelOf}),
+   *   or as it was recorded
    */
-  async playSample(path, output = null) {
+  async playSample(path, output = null, level = null) {
     this.start();
     if (!this.context) return;
     const sink = output ?? this.effectGain;
@@ -392,7 +371,14 @@ export class AudioEngine {
       }
       const source = this.context.createBufferSource();
       source.buffer = await pending;
-      source.connect(sink);
+      if (level === null) {
+        source.connect(sink);
+      } else {
+        const trim = this.context.createGain();
+        trim.gain.value = trimTo(source.buffer, level);
+        source.connect(trim);
+        trim.connect(sink);
+      }
       source.start();
     } catch {
       // A missing sample should never interrupt the game.
@@ -419,7 +405,7 @@ export class AudioEngine {
 
       const at = now + (step.at ?? index * spec.gap);
       gain.gain.setValueAtTime(0.0001, at);
-      gain.gain.linearRampToValueAtTime(0.35 * (step.gain ?? 1), at + 0.005);
+      gain.gain.linearRampToValueAtTime(0.35 * 10 ** ((spec.trim ?? 0) / 20) * (step.gain ?? 1), at + 0.005);
       gain.gain.exponentialRampToValueAtTime(0.0001, at + step.length);
       oscillator.start(at);
       oscillator.stop(at + step.length + 0.02);
@@ -443,22 +429,24 @@ export class AudioEngine {
 
 /**
  * A step may name its own start and loudness, for a sound that is not an even
- * run of notes.
- * @type {Record<string, {wave: OscillatorType, gap: number, steps: Array<{frequency: number, length: number, at?: number, gain?: number}>}>}
+ * run of notes. `trim` (dB) brings each to about the same loudness — measured
+ * by `dev/tools/loudness.mjs` — so a confirm is not louder than a select.
+ * @type {Record<string, {wave: OscillatorType, gap: number, trim?: number, steps: Array<{frequency: number, length: number, at?: number, gain?: number}>}>}
  */
 const BLIPS = {
-  select: { wave: 'square', gap: 0, steps: [{ frequency: 880, length: 0.05 }] },
-  confirm: { wave: 'square', gap: 0.06, steps: [{ frequency: 660, length: 0.05 }, { frequency: 990, length: 0.09 }] },
-  cancel: { wave: 'square', gap: 0.05, steps: [{ frequency: 520, length: 0.05 }, { frequency: 340, length: 0.08 }] },
-  error: { wave: 'sawtooth', gap: 0.07, steps: [{ frequency: 220, length: 0.09 }, { frequency: 180, length: 0.12 }] },
+  select: { wave: 'square', gap: 0, trim: 1.7, steps: [{ frequency: 880, length: 0.05 }] },
+  confirm: { wave: 'square', gap: 0.06, trim: -2.3, steps: [{ frequency: 660, length: 0.05 }, { frequency: 990, length: 0.09 }] },
+  cancel: { wave: 'square', gap: 0.05, trim: -1.6, steps: [{ frequency: 520, length: 0.05 }, { frequency: 340, length: 0.08 }] },
+  error: { wave: 'sawtooth', gap: 0.07, trim: 1.8, steps: [{ frequency: 220, length: 0.09 }, { frequency: 180, length: 0.12 }] },
   hit: { wave: 'square', gap: 0, steps: [{ frequency: 160, length: 0.1 }] },
-  faint: { wave: 'triangle', gap: 0.08, steps: [{ frequency: 440, length: 0.1 }, { frequency: 220, length: 0.18 }] },
-  catch: { wave: 'square', gap: 0.09, steps: [{ frequency: 660, length: 0.07 }, { frequency: 880, length: 0.07 }, { frequency: 1320, length: 0.16 }] },
+  faint: { wave: 'triangle', gap: 0.08, trim: 2.4, steps: [{ frequency: 440, length: 0.1 }, { frequency: 220, length: 0.18 }] },
+  catch: { wave: 'square', gap: 0.09, trim: -0.8, steps: [{ frequency: 660, length: 0.07 }, { frequency: 880, length: 0.07 }, { frequency: 1320, length: 0.16 }] },
   // Emerald's SE_SHINY (`sound/songs/midi/se_shiny.mid`) note for note: C7
   // and G7 twice, then C#7 and G#7 three times, dying away.
   shiny: {
     wave: 'triangle',
     gap: 0,
+    trim: 2.9,
     steps: [
       [0, 96, 0.034, 1], [0.034, 103, 0.068, 1],
       [0.102, 96, 0.034, 0.819], [0.148, 103, 0.068, 0.819],
@@ -470,56 +458,112 @@ const BLIPS = {
 };
 
 /**
- * Map a General MIDI program onto one of the four voices the synth has.
- *
- * Two of the decomp's programs are not what General MIDI calls them, because
- * its MIDI numbers each song's own voicegroup rather than the GM bank. Program
- * 0 is the drum kit, as the drum channel is — every program-0 track repeats a
- * handful of drum notes — and was voiced as a pitched tone, so a snare came out
- * as a low D under the tune. And 47 is the timpani, which was a held string.
- *
- * @param {number} program
- * @param {number} note the key, which picks the drum of a kit
- * @returns {{wave: string, gain: number, transpose: number, attack: number, sustain: number, release: number,
- *   hold?: number, band?: number, q?: number}} `hold` caps a struck note's length, and `band` and `q` place a
- *   drum's noise
+ * How loud a cry is brought to, as {@link levelOf} measures it: about six dB
+ * over the music at the default volumes, where it is heard over a battle
+ * theme without jumping out of it.
  */
-export function voiceFor(program, note = 60) {
-  if (program >= 128 || program === 0) return { wave: 'noise', gain: 0.55, transpose: 0, attack: 0.002, sustain: 0.15, hold: 0.04, ...drumOf(note) };
-  if (program === 47) return { wave: 'triangle', gain: 0.6, transpose: 0, attack: 0.003, sustain: 0.1, release: 0.35, hold: 0.1 };
-  if (program < 8) return { wave: 'triangle', gain: 0.5, transpose: 0, attack: 0.004, sustain: 0.55, release: 0.12 };
-  if (program < 32) return { wave: 'square', gain: 0.32, transpose: 0, attack: 0.006, sustain: 0.6, release: 0.1 };
-  // At the pitch it is written at: the tracks already put their bass low, and
-  // an octave under that went down to 20 Hz, which a laptop speaker cannot
-  // play and breaks up trying to.
-  if (program < 40) return { wave: 'sawtooth', gain: 0.42, transpose: 0, attack: 0.006, sustain: 0.7, release: 0.1 };
-  if (program < 56) return { wave: 'sawtooth', gain: 0.26, transpose: 0, attack: 0.03, sustain: 0.8, release: 0.18 };
-  if (program < 80) return { wave: 'square', gain: 0.3, transpose: 0, attack: 0.012, sustain: 0.75, release: 0.12 };
-  if (program < 112) return { wave: 'sawtooth', gain: 0.24, transpose: 0, attack: 0.02, sustain: 0.7, release: 0.16 };
-  return { wave: 'noise', gain: 0.4, transpose: 0, attack: 0.002, sustain: 0.3, release: 0.1 };
+const CRY_LEVEL_DB = -18.5;
+/** No sample is turned more than this far either way, so a quiet one's hiss stays a hiss. */
+const MAX_TRIM_DB = 12;
+
+/** Each buffer's measured level and peak, made once. */
+const levels = new WeakMap();
+
+/**
+ * How loud a recording is: the mean power of its tenth-of-a-second blocks,
+ * leaving out the silence around it (anything under -60 dB, or 10 dB under
+ * the rest), in dB.
+ *
+ * @param {AudioBuffer} buffer
+ */
+export function levelOf(buffer) {
+  return measure(buffer).level;
+}
+
+/** @param {AudioBuffer} buffer */
+function measure(buffer) {
+  const known = levels.get(buffer);
+  if (known) return known;
+  const block = Math.max(1, Math.round(buffer.sampleRate / 10));
+  const powers = [];
+  let peak = 0;
+  for (let start = 0; start < buffer.length; start += block) {
+    const end = Math.min(buffer.length, start + block);
+    let sum = 0;
+    for (let c = 0; c < buffer.numberOfChannels; c++) {
+      const data = buffer.getChannelData(c);
+      for (let i = start; i < end; i++) {
+        sum += data[i] * data[i];
+        peak = Math.max(peak, Math.abs(data[i]));
+      }
+    }
+    powers.push(sum / ((end - start) * buffer.numberOfChannels));
+  }
+  const db = (power) => 10 * Math.log10(power || 1e-12);
+  let kept = powers.filter((power) => db(power) > -60);
+  if (kept.length) {
+    const mean = kept.reduce((a, b) => a + b, 0) / kept.length;
+    kept = kept.filter((power) => db(power) > db(mean) - 10);
+  }
+  const result = { level: kept.length ? db(kept.reduce((a, b) => a + b, 0) / kept.length) : -120, peak };
+  levels.set(buffer, result);
+  return result;
 }
 
 /**
- * Where a drum of the kit sits, as a band of noise, and how long it rings.
- *
- * The kit's keys follow General MIDI's drum map, as the cartridge's own kit
- * does: the bass drum at the bottom, the snares, the hi-hats and toms, and the
- * cymbals above.
- *
- * @param {number} note
+ * The gain that brings a recording to a level, within {@link MAX_TRIM_DB} —
+ * and never so far up that its loudest moment goes past full scale: a quiet
+ * cry with one sharp crack in it stays a little under the rest instead.
  */
-function drumOf(note) {
-  if (note <= 36) return { band: 110, q: 1.4, release: 0.08 };
-  if (note <= 40) return { band: 1900, q: 0.7, release: 0.12 };
-  if (note === 42 || note === 44) return { band: 8000, q: 0.9, release: 0.04 };
-  if (note === 46) return { band: 7500, q: 0.9, release: 0.2 };
-  if (note === 49 || note === 52 || note === 55 || note === 57) return { band: 6000, q: 0.5, release: 0.7 };
-  if (note === 51 || note === 53 || note === 59) return { band: 5000, q: 1, release: 0.35 };
-  if (note <= 50) return { band: 160 + (note - 41) * 45, q: 1.2, release: 0.14 };
-  return { band: midiToFrequency(Math.min(note + 12, 120)), q: 1.2, release: 0.1 };
+function trimTo(buffer, level) {
+  const { level: measured, peak } = measure(buffer);
+  if (measured <= -100) return 1;
+  const gain = 10 ** (Math.max(-MAX_TRIM_DB, Math.min(MAX_TRIM_DB, level - measured)) / 20);
+  return peak > 0 ? Math.min(gain, Math.max(1, 1 / peak)) : gain;
 }
 
-const midiToFrequency = (note) => 440 * 2 ** ((note - 69) / 12);
+/** The samples asked for so far, loaded or loading, so each is fetched once. */
+const sampleLoads = new Map();
+
+/**
+ * Fetch the recorded samples a song plays, before it starts. One that cannot
+ * be had is left out, and the synth stands in for it.
+ *
+ * @param {{tracks: import('./synth.mjs').Track[]}} song
+ */
+export async function loadSamples(song) {
+  await Promise.all(
+    samplesOf(song).map((name) => {
+      if (hasSample(name)) return null;
+      let pending = sampleLoads.get(name);
+      if (!pending) {
+        pending = fetch(url('assets', `samples/${name}.json`))
+          .then((response) => (response.ok ? response.json() : null))
+          .then((file) => file && storeSample(name, file))
+          .catch(() => null);
+        sampleLoads.set(name, pending);
+      }
+      return pending;
+    }),
+  );
+}
+
+/**
+ * Where a song's loop starts, and how long it is. A song that marks no loop
+ * goes round whole.
+ *
+ * @param {{duration: number, loop?: number}} song
+ */
+export function loopOf(song) {
+  const start = song.loop > 0 && song.loop < song.duration ? song.loop : 0;
+  return { start, length: song.duration - start };
+}
+
+/** The first of a track's notes at or after a time (they are in order). */
+function firstFrom(notes, time) {
+  const index = notes.findIndex((note) => note.t >= time - 0.0005);
+  return index < 0 ? notes.length : index;
+}
 
 /**
  * Below this the music has nothing a small speaker can play, and what it
@@ -528,25 +572,63 @@ const midiToFrequency = (note) => 440 * 2 ** ((note - 69) / 12);
 const MUSIC_FLOOR_HZ = 35;
 
 /**
- * Send the music channel to the speakers through a gentle high-pass at
- * {@link MUSIC_FLOOR_HZ}.
+ * How the music reaches the speakers: through a gentle high-pass at
+ * {@link MUSIC_FLOOR_HZ}, a little room around it — the songs are built with
+ * the driver's reverb on (`-R50`), and the square waves are hard without it
+ * — and a soft compressor, so one song is about as loud as the next and a
+ * loud bar does not jump out of a quiet one. The top is left as it is: the
+ * cartridge's trumpets and cymbals are bright, and taking it down dulled them.
  *
  * @param {BaseAudioContext} context
  * @param {GainNode} music
+ * @param {AudioNode} [destination]
  */
-export function connectMusic(context, music) {
+export function connectMusic(context, music, destination = context.destination) {
   const floor = context.createBiquadFilter();
   floor.type = 'highpass';
   floor.frequency.value = MUSIC_FLOOR_HZ;
   floor.Q.value = 0.7;
+  const level = context.createDynamicsCompressor();
+  // Slow enough to let a drum's hit through and to come back up between
+  // beats without pumping in time with them.
+  level.threshold.value = -18;
+  level.knee.value = 12;
+  level.ratio.value = 2;
+  level.attack.value = 0.03;
+  level.release.value = 0.4;
   music.connect(floor);
-  floor.connect(context.destination);
+  floor.connect(level);
+  level.connect(destination);
+
+  const room = context.createConvolver();
+  room.buffer = roomOf(context);
+  const wet = context.createGain();
+  // Enough to take the edge off; more and the quick notes run into each other.
+  wet.gain.value = 0.12;
+  floor.connect(room);
+  room.connect(wet);
+  wet.connect(level);
 }
 
-/** @param {AudioContext} context */
-function createNoiseBuffer(context) {
-  const buffer = context.createBuffer(1, context.sampleRate, context.sampleRate);
-  const data = buffer.getChannelData(0);
-  for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+/**
+ * A small room's echo: a second of noise dying away, darker as it goes, a
+ * little different in each ear.
+ *
+ * @param {BaseAudioContext} context
+ */
+function roomOf(context) {
+  const length = Math.round(context.sampleRate * 1.1);
+  const buffer = context.createBuffer(2, length, context.sampleRate);
+  for (let channel = 0; channel < 2; channel++) {
+    const data = buffer.getChannelData(channel);
+    let dark = 0;
+    for (let i = 0; i < length; i++) {
+      const t = i / context.sampleRate;
+      // Smoothed more the later it comes, which is the air taking the top off.
+      const smoothing = Math.min(0.92, 0.3 + t * 0.7);
+      dark = dark * smoothing + (Math.random() * 2 - 1) * (1 - smoothing);
+      data[i] = dark * Math.exp(-t / 0.28) * (t < 0.012 ? t / 0.012 : 1);
+    }
+  }
   return buffer;
 }
