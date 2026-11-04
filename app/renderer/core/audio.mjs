@@ -25,12 +25,33 @@ const MAX_NOTES_PER_TICK = 64;
  */
 const INTRO_FADE_S = 1.2;
 
+/** The key a part has to reach for an opening run to count it as more than bass (C3). */
+const BASS_BELOW = 48;
+
+/** How long the last note of an opening run rings: the "rong", held, but not into a melody. */
+const RUN_LAST_S = 0.6;
+
+/**
+ * How fast the music goes quiet under a cue, and comes back after it, as Web
+ * Audio time constants: out at once, back over about a third of a second, so
+ * it picks up again mid-phrase without jumping in.
+ */
+const DUCK_OUT_S = 0.015;
+const DUCK_IN_S = 0.1;
+
 export class AudioEngine {
   constructor() {
     /** @type {AudioContext|null} */
     this.context = null;
-    /** @type {GainNode|null} */
+    /** @type {GainNode|null} everything the game plays goes through this */
+    this.masterGain = null;
+    /** @type {GainNode|null} the music slider: the songs and the cues */
     this.musicGain = null;
+    /**
+     * @type {GainNode|null} the songs alone, under the music slider: what a
+     *   cue silences while it plays, leaving the song running underneath
+     */
+    this.songGain = null;
     /** @type {GainNode|null} */
     this.effectGain = null;
     /** @type {GainNode|null} */
@@ -45,6 +66,7 @@ export class AudioEngine {
     /** @type {Map<string, Promise<AudioBuffer>>} */
     this.buffers = new Map();
 
+    this.masterVolume = 1;
     this.musicVolume = 0.6;
     this.effectVolume = 0.8;
     this.cryVolume = 0.9;
@@ -58,10 +80,10 @@ export class AudioEngine {
      * The track the game wants playing under everything else.
      *
      * Kept apart from `current`, which is only what the note scheduler happens
-     * to be running: a cue silences the music while it plays, and this is what
-     * comes back afterwards. It is also set the moment `playMusic` is called
-     * rather than after the song has loaded, so a cue started in the same
-     * frame as a track change resumes the new track and not the old one.
+     * to be running: a track asked for while a cue plays waits for the cue to
+     * end, and this is what starts then. It is also set the moment `playMusic`
+     * is called rather than after the song has loaded, so a cue started in the
+     * same frame as a track change resumes the new track and not the old one.
      * @type {string|null}
      */
     this.wanted = null;
@@ -71,19 +93,24 @@ export class AudioEngine {
   start() {
     if (this.context) return;
     this.context = new AudioContext();
+    this.masterGain = this.context.createGain();
     this.musicGain = this.context.createGain();
+    this.songGain = this.context.createGain();
     this.effectGain = this.context.createGain();
     this.cryGain = this.context.createGain();
-    connectMusic(this.context, this.musicGain);
-    this.effectGain.connect(this.context.destination);
-    this.cryGain.connect(this.context.destination);
+    this.masterGain.connect(this.context.destination);
+    connectMusic(this.context, this.musicGain, this.masterGain);
+    this.songGain.connect(this.musicGain);
+    this.effectGain.connect(this.masterGain);
+    this.cryGain.connect(this.masterGain);
     this.applyVolumes();
   }
 
   /**
-   * @param {{musicVolume?: number, effectVolume?: number, cryVolume?: number}} volumes
+   * @param {{masterVolume?: number, musicVolume?: number, effectVolume?: number, cryVolume?: number}} volumes
    */
-  setVolumes({ musicVolume, effectVolume, cryVolume }) {
+  setVolumes({ masterVolume, musicVolume, effectVolume, cryVolume }) {
+    if (typeof masterVolume === 'number') this.masterVolume = masterVolume;
     if (typeof musicVolume === 'number') this.musicVolume = musicVolume;
     if (typeof effectVolume === 'number') this.effectVolume = effectVolume;
     if (typeof cryVolume === 'number') this.cryVolume = cryVolume;
@@ -91,8 +118,10 @@ export class AudioEngine {
   }
 
   applyVolumes() {
-    if (!this.context || !this.musicGain || !this.effectGain || !this.cryGain) return;
+    if (!this.context || !this.masterGain || !this.musicGain || !this.effectGain || !this.cryGain) return;
     const now = this.context.currentTime;
+    // The sound tab's overall slider, over the three below it.
+    this.masterGain.gain.setTargetAtTime(this.masterVolume, now, 0.05);
     // Music is mixed low: it plays under whatever the user is actually doing.
     this.musicGain.gain.setTargetAtTime(this.musicVolume * 0.22, now, 0.05);
     this.effectGain.gain.setTargetAtTime(this.effectVolume * 0.5, now, 0.05);
@@ -110,10 +139,17 @@ export class AudioEngine {
     // frame — a victory fanfare, a second track change — agrees on what the
     // music is meant to be.
     this.wanted = name;
-    // A cue owns the speaker while it plays; this track comes back under it
-    // when the cue finishes rather than starting underneath it now.
-    if (this.jingle) return;
+    // Already playing — perhaps silenced under a cue, in which case it is
+    // still going round and is heard again, where it has got to, once the
+    // cue ends. Starting it over was what made a battle theme begin again
+    // every time a level-up chime interrupted it.
     if (this.current?.name === name) return;
+    // A different track waits for a cue to end rather than starting under it,
+    // and so is heard from its beginning. The one it replaces stops now.
+    if (this.jingle) {
+      this.haltMusic();
+      return;
+    }
 
     let song;
     try {
@@ -123,8 +159,8 @@ export class AudioEngine {
       return; // a missing track is silence, not a broken game
     }
     // Something asked for a different track, or a cue started, while this one
-    // was loading.
-    if (!this.context || this.wanted !== name || this.jingle) return;
+    // was loading — or a second call for this same track got there first.
+    if (!this.context || this.wanted !== name || this.jingle || this.current?.name === name) return;
 
     this.haltMusic();
     this.current = {
@@ -145,27 +181,32 @@ export class AudioEngine {
    * is what a player reaches for to turn a victory fanfare down, not the one
    * labelled for the interface blips.
    *
-   * These are sound effects that happen to be stored as MIDI: the cartridge
-   * stops the area music, plays the jingle, and resumes. Looping them through
-   * `playMusic` made the heal chime repeat forever, and replaced the area
-   * music with two seconds of silence afterwards.
+   * These are sound effects that happen to be stored as MIDI. Looping them
+   * through `playMusic` made the heal chime repeat forever, and replaced the
+   * area music with two seconds of silence afterwards.
    *
    * Playing one *over* the music was no better — a victory fanfare and the
-   * battle theme in two keys at once — so the music stands down for the cue
-   * and `wanted` brings it back at the end, which is what the cartridge does.
+   * battle theme in two keys at once — so the music is silenced for the cue.
+   * Silenced, not stopped: it goes on underneath and is heard again where it
+   * has got to, so an item found on the road or a level gained mid-battle
+   * does not send the song back to its first bar. A different track asked for
+   * meanwhile starts once the cue is over (see `playMusic`).
    *
    * Scheduling reuses the music machinery, but on a private `current` that
    * clears itself at the end of the song instead of looping.
    *
    * @param {string|null} name
-   * @param {{seconds?: number, intro?: boolean}} [options] how much of the cue
-   *   to play. A fanfare written for a cartridge runs as long as the cartridge
-   *   wanted to hold the screen; here it holds the area music off for that
-   *   whole time, so the long ones are cut short. `seconds` is a hard cut;
-   *   `intro` plays a looping song up to where its loop begins and fades the
-   *   loop out as it comes in, which is how the victory themes are heard on
-   *   the cartridge — a two-second fanfare, then the battle screen closing
-   *   over a body written to be looped for as long as it stays open.
+   * @param {{seconds?: number, intro?: boolean, notes?: number}} [options] how
+   *   much of the cue to play. A fanfare written for a cartridge runs as long
+   *   as the cartridge wanted to hold the screen; here it holds the area music
+   *   off for that whole time, so the long ones are cut short. `seconds` is a
+   *   hard cut; `intro` plays a looping song up to where its loop begins and
+   *   fades the loop out as it comes in, which is how the victory themes are
+   *   heard on the cartridge — a two-second fanfare, then the battle screen
+   *   closing over a body written to be looped for as long as it stays open.
+   *   `notes` plays the song's first so many notes — counting a chord as one
+   *   — and nothing after them: the quick run up a victory theme opens with
+   *   (see `openingRun`).
    */
   async playJingle(name, options = {}) {
     if (!name) return;
@@ -181,10 +222,10 @@ export class AudioEngine {
       return; // a missing cue is not worth a console error, let alone a break
     }
     if (!this.context || !this.musicGain) return;
+    if (options.notes) song = openingRun(song, options.notes);
 
-    // The music steps aside for the cue; `wanted` still names it, so the end
-    // of the cue puts it back.
-    this.haltMusic();
+    // The music goes quiet for the cue, and keeps its place.
+    this.duck(true);
 
     // A song that marks no loop has no intro to stop at, and plays whole.
     const intro = options.intro && song.loop > 0 ? song.loop : null;
@@ -245,8 +286,9 @@ export class AudioEngine {
     if (this.context.currentTime <= end + 0.2) return;
 
     this.stopJingle();
-    // Whatever the game asked for while the cue held the speaker — or was
-    // playing before it started — comes back now.
+    // The track that went quiet under the cue is heard again; one the game
+    // asked for while the cue played — or that had not finished loading —
+    // starts now.
     if (this.wanted) void this.playMusic(this.wanted);
   }
 
@@ -257,11 +299,23 @@ export class AudioEngine {
     this.current = null;
   }
 
-  /** Stop a cue that is playing, without resuming anything. */
+  /** Stop a cue that is playing, and let the music be heard again. */
   stopJingle() {
     if (this.jingleTimer !== undefined) window.clearInterval(this.jingleTimer);
     this.jingleTimer = undefined;
     this.jingle = null;
+    this.duck(false);
+  }
+
+  /**
+   * Silence the songs for a cue, or bring them back, without stopping them.
+   * @param {boolean} quiet
+   */
+  duck(quiet) {
+    if (!this.context || !this.songGain) return;
+    // Each call starts from wherever the last left the level, so a cue that
+    // ends while the music is still going quiet brings it back smoothly.
+    this.songGain.gain.setTargetAtTime(quiet ? 0 : 1, this.context.currentTime, quiet ? DUCK_OUT_S : DUCK_IN_S);
   }
 
   /** Silence for good: no track playing, and none waiting to come back. */
@@ -307,7 +361,7 @@ export class AudioEngine {
             exhausted = false;
             return;
           }
-          this.playNote(track, note, Math.max(when, this.context.currentTime), null, song.volume);
+          this.playNote(track, note, Math.max(when, this.context.currentTime), this.songGain, song.volume);
           cursors[index]++;
           started++;
         }
@@ -328,9 +382,10 @@ export class AudioEngine {
    * @param {import('./synth.mjs').Track} track the song's track, which says what it is played on
    * @param {import('./synth.mjs').Note} note
    * @param {number} when
-   * @param {GainNode|null} [output] the channel to voice it on; the music by
-   *   default, which is also where the cues go — a fanfare is music, and the
-   *   music slider is what a player reaches for to quieten one
+   * @param {GainNode|null} [output] the channel to voice it on: the songs'
+   *   own, which a cue silences, or the music channel over it, which is where
+   *   the cues go — a fanfare is music, and the music slider is what a player
+   *   reaches for to quieten one
    * @param {number} [level] the song's own volume
    */
   playNote(track, note, when, output = null, level = 1) {
@@ -557,6 +612,47 @@ export async function loadSamples(song) {
 export function loopOf(song) {
   const start = song.loop > 0 && song.loop < song.duration ? song.loop : 0;
   return { start, length: song.duration - start };
+}
+
+/**
+ * A song's first so many notes, a chord counting as one, as a song of their
+ * own: the "do-ro-ro-ro-rong" a victory theme opens with, and nothing after.
+ *
+ * It is a run, so it stays one: every note is held no longer than the run's
+ * steps are apart, but the last, which rings for `RUN_LAST_S` — long enough
+ * to land on, not so long it turns the flourish into the start of a melody. The bass that comes in under the last note is
+ * left out too, for the same reason: a pitched part that plays nothing above
+ * C3 there is the band arriving, not the run — and so are the drums.
+ *
+ * @template {{duration: number, loop?: number, tracks: Array<{kit?: object, notes: Array<{t: number, d: number, n: number}>}>}} Song
+ * @param {Song} song
+ * @param {number} count
+ * @returns {Song}
+ */
+export function openingRun(song, count) {
+  // To the millisecond, so a chord whose notes the file puts a hair apart
+  // still counts once.
+  const at = (time) => Math.round(time * 1000);
+  const onsets = [...new Set(song.tracks.flatMap((track) => track.notes.map((note) => at(note.t))))].sort((a, b) => a - b);
+  if (onsets.length <= count) return song;
+  const cut = onsets[count];
+  const run = onsets.slice(0, count);
+  const step = run.length > 1 ? Math.max(...run.slice(1).map((onset, i) => onset - run[i])) / 1000 : Infinity;
+  const last = run[run.length - 1];
+  let duration = 0;
+  const tracks = song.tracks.map((track) => {
+    const notes = track.notes.filter((note) => at(note.t) < cut);
+    if (track.kit || (notes.length && notes.every((note) => note.n < BASS_BELOW))) return { ...track, notes: [] };
+    return {
+      ...track,
+      notes: notes.map((note) => {
+        const d = Math.min(note.d, at(note.t) === last ? Math.max(step, RUN_LAST_S) : step);
+        duration = Math.max(duration, note.t + d);
+        return d === note.d ? note : { ...note, d };
+      }),
+    };
+  });
+  return { ...song, tracks, duration, loop: 0 };
 }
 
 /** The first of a track's notes at or after a time (they are in order). */

@@ -12,7 +12,7 @@ import { defaultLanguage, findLanguage } from '../shared/languages.mjs';
 import { loadLanguages } from './languages.mjs';
 import { SETTINGS_FILE } from './paths.mjs';
 
-/** @typedef {{scale: number, musicVolume: number, effectVolume: number, cryVolume: number, hideIdleHud: boolean, language: string, windowX: number|null, windowY: number|null}} Settings */
+/** @typedef {{scale: number, masterVolume: number, musicVolume: number, effectVolume: number, cryVolume: number, hideIdleHud: boolean, language: string, windowX: number|null, windowY: number|null}} Settings */
 
 /**
  * Everything but the language, whose default is whichever one the sheet marks
@@ -21,6 +21,7 @@ import { SETTINGS_FILE } from './paths.mjs';
  */
 export const DEFAULTS = {
   scale: 1,
+  masterVolume: 1,
   musicVolume: 0.6,
   effectVolume: 0.8,
   cryVolume: 0.9,
@@ -74,6 +75,7 @@ function sanitize(settings, languages) {
   );
   return {
     scale: nearest,
+    masterVolume: clamp01(settings.masterVolume),
     musicVolume: clamp01(settings.musicVolume),
     effectVolume: clamp01(settings.effectVolume),
     cryVolume: clamp01(settings.cryVolume),

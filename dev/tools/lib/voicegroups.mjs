@@ -23,11 +23,12 @@
 
 /**
  * @typedef {{w: 'sample', s: string, key: number, fixed?: boolean, env: number[], p?: number}
- *   | {w: 'square', key: number, duty: number, env: number[], p?: number}
+ *   | {w: 'square', key: number, duty: number, env: number[], sw?: number, p?: number}
  *   | {w: 'wave', key: number, wave: number[], env: number[], p?: number}
  *   | {w: 'noise', key: number, period: number, env: number[], p?: number}} Voice
  * `env` is [attack, decay, sustain, release]; `key` is the note a kit's drum
- * sounds at; `p` a pan the voice fixes, -1 to 1.
+ * sounds at; `p` a pan the voice fixes, -1 to 1; `sw` the first pulse
+ * channel's sweep register, where it slides.
  */
 
 /**
@@ -158,8 +159,12 @@ function voiceOf(library, entry) {
     };
   }
   if (macro.startsWith('voice_square_1')) {
-    const [key, panValue, , duty, ...env] = numbers;
-    return { w: 'square', key, duty, env, ...pan(panValue) };
+    // The first pulse channel's sweep slides the note as it plays — the
+    // chirps the fanfares end on — and was being dropped, leaving a flat beep.
+    const [key, panValue, sweep, duty, ...env] = numbers;
+    // With no step time or no shift it never moves, and is left out.
+    const slides = (sweep & 0x70) !== 0 && (sweep & 0x07) !== 0;
+    return { w: 'square', key, duty, env, ...(slides ? { sw: sweep } : {}), ...pan(panValue) };
   }
   if (macro.startsWith('voice_square_2')) {
     const [key, panValue, duty, ...env] = numbers;

@@ -107,23 +107,49 @@ const tick = (seconds = 0) => {
 /** Let the engine's own promises — loading a song — finish. */
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 
-test('a cue silences the music and hands it back when it ends', async () => {
+/** Watch where the songs' level is sent: 0 under a cue, 1 otherwise. */
+const watchDuck = (audio) => {
+  const levels = [];
+  audio.start();
+  audio.songGain.gain.setTargetAtTime = (value) => levels.push(value);
+  return levels;
+};
+
+test('a cue silences the music without stopping it, and lets it be heard again when it ends', async () => {
   const audio = new AudioEngine();
+  const levels = watchDuck(audio);
   await audio.playMusic('route');
-  assert.equal(audio.current?.name, 'route');
+  const playing = audio.current;
+  assert.equal(playing?.name, 'route');
 
   // The fanfare takes the speaker: the battle theme and a victory jingle
   // playing over each other was the whole complaint.
   await audio.playJingle('victory');
   assert.equal(audio.jingle?.name, 'victory');
-  assert.equal(audio.current, null);
-  assert.equal(audio.wanted, 'route');
+  assert.deepEqual(levels, [0]);
+  // Still going, underneath: a level-up chime sent the battle theme back to
+  // its first bar when the cue stopped it outright.
+  assert.equal(audio.current, playing);
 
-  // Past the end of the cue, the music comes back on its own.
+  // Past the end of the cue, the same playthrough is heard again.
   tick(2);
   await settle();
   assert.equal(audio.jingle, null);
-  assert.equal(audio.current?.name, 'route');
+  assert.equal(audio.current, playing);
+  assert.deepEqual(levels, [0, 1]);
+});
+
+test("the music silenced under a cue keeps its place, its notes still queued on the songs' channel", async () => {
+  const audio = new AudioEngine();
+  /** @type {Array<{output: any, when: number}>} */
+  const voiced = [];
+  audio.playNote = (track, note, when, output) => voiced.push({ output, when });
+  await audio.playMusic('route');
+  await audio.playJingle('victory');
+  voiced.length = 0;
+  tick(0.6);
+  assert.ok(voiced.some((entry) => entry.output === audio.songGain), 'the song goes on under the cue');
+  assert.ok(voiced.every((entry) => entry.output === audio.songGain || entry.output === audio.musicGain));
 });
 
 test('a track asked for during a cue is the one that comes back', async () => {
@@ -133,6 +159,7 @@ test('a track asked for during a cue is the one that comes back', async () => {
 
   // Leaving a battle asks for the area's music while the fanfare is still
   // going; it must not start underneath the cue, and it must not be lost.
+  // The battle theme it replaces stops then and there.
   await audio.playMusic('route');
   assert.equal(audio.current, null);
   assert.equal(audio.wanted, 'route');
@@ -140,6 +167,34 @@ test('a track asked for during a cue is the one that comes back', async () => {
   tick(2);
   await settle();
   assert.equal(audio.current?.name, 'route');
+  assert.equal(audio.current?.startedAt, now + 0.1, 'from its first bar');
+});
+
+test('a cue can be the opening run of a song alone, quick, landing on its last note, without bass or drums', async () => {
+  const audio = new AudioEngine();
+  const voiced = [];
+  audio.playNote = (track, note, when, output) => {
+    if (output === audio.musicGain) voiced.push(note);
+  };
+  // Three notes, then a chord counted as one — held, with a bass and a drum
+  // coming in under it — then the melody the cue stops before.
+  audio.loadSong = async () => ({
+    duration: 10,
+    loop: 2,
+    tracks: [
+      { notes: [{ t: 0, d: 0.1, n: 60, v: 0.5 }, { t: 0.1, d: 0.1, n: 62, v: 0.5 }, { t: 0.2, d: 0.1, n: 64, v: 0.5 }, { t: 0.3, d: 1.2, n: 67, v: 0.5 }, { t: 1.5, d: 0.1, n: 65, v: 0.5 }] },
+      { notes: [{ t: 0.3, d: 1.3, n: 55, v: 0.5 }, { t: 0.5, d: 0.1, n: 50, v: 0.5 }] },
+      { notes: [{ t: 0.3, d: 0.4, n: 40, v: 0.5 }] },
+      { kit: {}, notes: [{ t: 0.3, d: 0.05, n: 40, v: 0.5 }] },
+    ],
+  });
+  await audio.playJingle('run', { notes: 4 });
+  assert.ok(Math.abs((audio.jingle?.limit ?? 0) - 0.9) < 1e-9, 'over once the last note has rung its 0.6 s');
+  for (let step = 0; step < 30 && audio.jingle; step++) tick(0.1);
+  assert.deepEqual(voiced.map((note) => note.n).sort(), [55, 60, 62, 64, 67], 'neither the bass nor the drum');
+  assert.ok(voiced.every((note) => note.v === 0.5), 'no fade');
+  assert.ok(voiced.filter((note) => note.t < 0.3).every((note) => note.d === 0.1), 'the run up as written');
+  assert.deepEqual(voiced.filter((note) => note.t === 0.3).map((note) => Math.round(note.d * 1000)), [600, 600], 'the last held, but not for its written 1.2 s');
 });
 
 test('asking for the track already playing changes nothing', async () => {
@@ -196,9 +251,10 @@ test('cues play on the music channel, where the music slider reaches them', asyn
 test('a cue played for its intro stops where the loop begins, fading the loop out', async () => {
   const audio = new AudioEngine();
   const voiced = [];
-  // Only the cue's own notes: the route plays either side of it.
-  audio.playNote = (program, note) => {
-    if (audio.jingle) voiced.push(note);
+  // Only the cue's own notes: the route plays either side of it, and on
+  // underneath it on its own channel.
+  audio.playNote = (program, note, when, output) => {
+    if (audio.jingle && output === audio.musicGain) voiced.push(note);
   };
 
   await audio.playMusic('route');
@@ -406,6 +462,23 @@ test('the Game Boy channels play nothing lower than C2', async () => {
   playVoice(/** @type {any} */ (context), { voice: { w: 'square', duty: 2, env: [0, 0, 15, 0] } }, { t: 0, d: 0.2, n: 36, v: 0.8 }, 0, sink);
   const [low, c2] = context.oscillators.map((oscillator) => oscillator.frequency.value);
   assert.equal(low, c2);
+});
+
+test("the first pulse channel's sweep slides the note, and running off the top silences it", async () => {
+  const { sweepSteps } = await import('../../app/renderer/core/synth.mjs');
+  // The berry fanfare's last chirp: up a sixty-fourth each 128th of a second
+  // from A4, until the channel's frequency value passes 2047.
+  const up = sweepSteps(0x16, 440, 0.2);
+  assert.ok(Math.abs(up[0].at - 1 / 128) < 1e-9);
+  assert.ok(up[0].hz > 440 && up[1].hz > up[0].hz, 'rising');
+  assert.equal(up.at(-1)?.hz, null, 'switched off at the top');
+  assert.ok(up.length < 15, 'within a tenth of a second');
+  // Down never runs off, and only falls.
+  const down = sweepSteps(0x1d, 1046.5, 0.1);
+  assert.ok(down.every((step, i) => step.hz !== null && step.hz < (i ? down[i - 1].hz : 1046.5)));
+  // No step time, or no shift, is no sweep at all.
+  assert.deepEqual(sweepSteps(0x06, 440, 1), []);
+  assert.deepEqual(sweepSteps(0x10, 440, 1), []);
 });
 
 /** A buffer of a steady tone for a while, then silence. */

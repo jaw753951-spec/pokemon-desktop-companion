@@ -351,7 +351,9 @@ export function fieldScene(session) {
       // Only wild Pokémon can be caught, so only they reach the tray — and
       // only when the companion was the one left standing.
       for (const pokemon of result.defeated) session.addToTray(pokemon);
-      app.audio.playJingle(gameData().bgm.cues.victoryWild ?? null, { intro: true });
+      // Just the five-note run up that opens it, left to ring: a wild win
+      // comes round too often to hold the road's music off for the rest.
+      app.audio.playJingle(gameData().bgm.cues.victoryWild ?? null, { notes: 5 });
     }
 
     // Won on the way down — the last of the foe's taken with it on a recoil —

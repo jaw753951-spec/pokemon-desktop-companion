@@ -60,6 +60,14 @@ export const CUES = {
 const MUSIC_ALIASES = { mus_route118: 'mus_route119' };
 
 /**
+ * Cues played without their Game Boy pulse parts. The berry's fanfare is a
+ * xylophone and a piano with two square-wave chirps over them, and in this
+ * synth the chirps come out as a different game's beeps on top of the
+ * recorded instruments; the tune is all in the rest.
+ */
+const WITHOUT_PULSE = new Set(['mus_obtain_berry']);
+
+/**
  * The decomp's instruments: every song's voicegroup and the drum kits and key
  * splits they share, the key split tables, the Game Boy wave tables, and the
  * voicegroup and volume each song is built with.
@@ -124,7 +132,7 @@ export async function buildAudio({ assetDir, dataDir, log, pool }) {
         }
         const options = library.songs.get(name);
         if (!options) log(`  ${name}: no voicegroup in midi.cfg`);
-        const tracks = song.tracks.map((track) => {
+        const tracks = song.tracks.flatMap((track) => {
           const instrument = options
             ? instrumentFor(library, options.group, track.program, track.notes.map((note) => note.n))
             : null;
@@ -132,7 +140,8 @@ export async function buildAudio({ assetDir, dataDir, log, pool }) {
           for (const voice of [instrument?.voice, ...(instrument?.split ?? []).map((range) => range.voice), ...Object.values(instrument?.kit ?? {})]) {
             if (voice?.w === 'sample') samples.add(voice.s);
           }
-          return { channel: track.channel, program: track.program, ...instrument, notes: track.notes };
+          if (WITHOUT_PULSE.has(name) && instrument?.voice?.w === 'square') return [];
+          return [{ channel: track.channel, program: track.program, ...instrument, notes: track.notes }];
         });
         // The cartridge's master volume, and the trim that levels it with the
         // rest (see `bgm-levels.mjs`).
