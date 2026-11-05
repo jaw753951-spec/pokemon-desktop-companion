@@ -31,6 +31,8 @@ export function inventoryScene({ session, onClose, tabs: shownTabs = /** @type {
     tab: 'pokemon',
     pocket: 'medicine',
     moving: /** @type {number|null} */ (null),
+    /** What the box tab is narrowed to, by name. */
+    boxQuery: '',
     /** Which move slot the Pokémon tab is showing the description for. */
     moveSlot: /** @type {number|null} */ (null),
     /** The item the items tab is showing, which the arrow keys move. */

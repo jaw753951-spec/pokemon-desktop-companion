@@ -84,10 +84,11 @@ function fight(player, foe, extra = {}) {
 
 // ------------------------------------------------------------------ shiny
 
-test('a shiny is rolled at the odds the newest games use', options, () => {
-  // 1/4096 since X and Y; the rate itself is the claim, so it is asserted
-  // rather than sampled — sampling it would need millions of rolls.
-  assert.equal(SHINY_ODDS, 1 / 4096);
+test('a shiny is rolled a little more often than the newest games do', options, () => {
+  // 1/4096 since X and Y, and 1/3072 here; the rate itself is the claim, so
+  // it is asserted rather than sampled — sampling it would need millions of
+  // rolls.
+  assert.equal(SHINY_ODDS, 1 / 3072);
 
   // And it is rolled, rather than being a field nothing ever sets: forcing
   // the roll both ways has to reach the Pokémon.

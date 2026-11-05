@@ -1580,7 +1580,8 @@ canvas {
 /* The search at the end of the pockets, after the purse where there is one:
    it takes what the row has left, so the bag's seven pockets keep it on
    their line rather than pushing it onto one of its own. */
-.pocket-tabs .item-search {
+.pocket-tabs .item-search,
+.box-head .item-search {
   -webkit-app-region: no-drag;
   flex: 1 1 64px;
   max-width: 128px;
@@ -1597,13 +1598,15 @@ canvas {
 
 /* Empty, it shows a magnifier at its right end; with words in it, the clear
    button the box brings of its own stands there instead. */
-.pocket-tabs .item-search:placeholder-shown {
+.pocket-tabs .item-search:placeholder-shown,
+.box-head .item-search:placeholder-shown {
   padding-right: 20px;
   background: var(--paper) no-repeat right 7px center / 10px 10px
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='6.5' cy='6.5' r='4.75' fill='none' stroke='%236b7280' stroke-width='2'/%3E%3Cpath d='M10 10l4.5 4.5' stroke='%236b7280' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E");
 }
 
-.pocket-tabs .item-search:focus {
+.pocket-tabs .item-search:focus,
+.box-head .item-search:focus {
   outline: none;
   border-color: var(--accent);
 }
@@ -1963,6 +1966,17 @@ canvas {
 .box-sort {
   display: flex;
   gap: 3px;
+}
+
+.box-head [hidden] {
+  display: none;
+}
+
+/* What a search that finds no one says, across the grid's whole width. */
+.box-none {
+  grid-column: 1 / -1;
+  padding: 12px 4px;
+  text-align: center;
 }
 
 .box-sort-way {
@@ -2637,6 +2651,13 @@ canvas {
 .item-picker-tile.current {
   border-color: var(--accent-dark);
   border-width: 2px;
+}
+
+/* The one clicked, which the panel beside the grid is showing. */
+.item-picker-tile[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: #fff;
+  box-shadow: inset 0 0 0 1px var(--accent);
 }
 
 .item-picker-tile img {

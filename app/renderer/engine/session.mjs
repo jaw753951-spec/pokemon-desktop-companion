@@ -296,7 +296,7 @@ export class Session {
   }
 
   /**
-   * The odds a wild Pokémon is shiny: the usual one in 4096, or as many rolls
+   * The odds a wild Pokémon is shiny: the usual one in 3072, or as many rolls
    * of it as a Shiny Charm in the bag gives (see the charm in `dex.mjs`).
    */
   get shinyOdds() {
@@ -548,9 +548,8 @@ export function defaultAutoBattle() {
  * How the bag is used without being opened.
  *
  * `berries` are the player's restock choices in order of preference, any of
- * which may be left unset; `autoBerry` hands over the berry in the bag that
- * suits the companion best when none of them is in the bag. Both act on an
- * empty hand after a fight. `healing` names an item to throw,
+ * which may be left unset, handed over to an empty hand after a fight.
+ * `healing` names an item to throw,
  * or null for whatever fits the damage taken, and the health it is thrown
  * at — `never` for a player who
  * would rather do it by hand. `afterBattle` is how far a win tops the
@@ -562,7 +561,6 @@ export function defaultItemPolicy() {
   return {
     /** @type {Array<string|null>} */
     berries: [null, null, null],
-    autoBerry: true,
     healing: { item: /** @type {string|null} */ (null), condition: 'hpThird' },
     afterBattle: 'full',
     afterBattleStatus: true,
@@ -579,10 +577,9 @@ export function normalizeItemPolicy(policy) {
   while (berries.length < 3) berries.push(null);
 
   return {
+    // A save that still carries the old automatic-berry switch drops it here:
+    // only what is listed below is kept.
     berries: berries.map((slug) => slug || null),
-    // A save from before the automatic berry existed takes the default: it
-    // only ever steps in where the player's own order finds nothing.
-    autoBerry: typeof policy.autoBerry === 'boolean' ? policy.autoBerry : fresh.autoBerry,
     healing: {
       item: policy.healing?.item ?? null,
       condition: policy.healing?.condition ?? fresh.healing.condition,

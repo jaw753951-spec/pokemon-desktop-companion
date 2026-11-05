@@ -412,15 +412,14 @@ test('the after-battle top-up defaults to full, for new and old saves alike', ()
   assert.equal(normalizeItemPolicy({ afterBattle: 'hpHalf' }).afterBattle, 'hpHalf');
 });
 
-test('the three ranks and the automatic berry are kept side by side', () => {
-  assert.equal(defaultItemPolicy().autoBerry, true);
+test('the three restock ranks are all there is to the berry order', () => {
   assert.deepEqual(defaultItemPolicy().berries, [null, null, null]);
-  assert.equal(normalizeItemPolicy(null).autoBerry, true);
-  // A save from before the switch keeps its order and takes the default.
-  const old = normalizeItemPolicy({ berries: ['sitrus-berry'] });
+  assert.equal('autoBerry' in defaultItemPolicy(), false);
+  // A save from when there was an automatic berry keeps its order and loses
+  // the switch.
+  const old = normalizeItemPolicy({ berries: ['sitrus-berry'], autoBerry: true });
   assert.deepEqual(old.berries, ['sitrus-berry', null, null]);
-  assert.equal(old.autoBerry, true);
-  assert.equal(normalizeItemPolicy({ autoBerry: false }).autoBerry, false);
+  assert.equal('autoBerry' in old, false);
 });
 
 test('an unset restock rank is skipped, and an empty order holds nothing', withData, () => {
@@ -479,10 +478,10 @@ test('a Shiny Charm raises the odds on the road, is not sold, and is the first t
   assert.equal(itemOf('shiny-charm')?.pocket, 'key');
   assert.deepEqual(itemActions(session, 'shiny-charm'), { use: false, equip: false });
 
-  // Won: fifteen rolls of the usual one in 4096 — about one in 274.
+  // Won: fifteen rolls of the usual one in 3072 — about one in 205.
   session.addItem(championPrize(session));
   assert.equal(session.shinyOdds, shinyOddsFor(15));
-  assert.ok(Math.abs(1 / session.shinyOdds - 274) < 2, `1 in ${Math.round(1 / session.shinyOdds)}`);
+  assert.ok(Math.abs(1 / session.shinyOdds - 205) < 2, `1 in ${Math.round(1 / session.shinyOdds)}`);
   // And the wild roll uses what it is handed.
   const area = session.area ?? { tags: ['grass'], encounters: [] };
   assert.equal(rollWildPokemon(new Rng(2), area, session.active, null, new Set(), 1).shiny, true);

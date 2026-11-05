@@ -222,7 +222,7 @@ const KEPT_ITEMS = {
  * `charm.shinyRolls` is how many times a wild Pokémon is rolled for being
  * shiny while the charm is in the bag. The games roll three; here it is the
  * League's one prize, with no Masuda method or chain to stack on it, so it
- * rolls fifteen — about one in 274, a little better than Sword and Shield's
+ * rolls fifteen — about one in 205, a little better than Sword and Shield's
  * charm after five hundred of a species knocked out.
  *
  * @type {Record<string, {category: string, charm: {shinyRolls?: number}}>}
