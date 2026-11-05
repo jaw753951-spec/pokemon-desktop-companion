@@ -186,7 +186,6 @@ function optionsPane(app, session, refresh) {
       }, { className: 'small' }),
     ]),
     ...[0, 1, 2].map((index) => berryRow(app, session, policy, index, refresh)),
-    autoBerryRow(app, policy, refresh),
 
     el('div.section-title.option-title', { text: t('items.healingUse') }),
     healingItemRow(app, session, policy, refresh),
@@ -299,29 +298,6 @@ function berryRow(app, session, policy, index, refresh) {
           });
         if (chosen === null) return;
         policy.berries[index] = chosen || null;
-        refresh();
-      },
-    }),
-  ]);
-}
-
-/**
- * Whether an empty hand the three ranks cannot fill is given the best berry in
- * the bag instead. See `bestBerry` for how it picks.
- */
-function autoBerryRow(app, policy, refresh) {
-  const on = Boolean(policy.autoBerry);
-
-  return el('div.setting.item-option', {}, [
-    el('span.label', { text: t('items.berryAuto') }),
-    el('span.spacer'),
-    el(`button.chip${on ? '' : '.off'}`, {
-      type: 'button',
-      text: on ? t('items.berryAuto.on') : t('items.berryAuto.off'),
-      'aria-pressed': String(on),
-      onClick: () => {
-        app.audio.blip('select');
-        policy.autoBerry = !on;
         refresh();
       },
     }),

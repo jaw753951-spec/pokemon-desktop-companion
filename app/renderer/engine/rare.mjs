@@ -25,8 +25,8 @@ import { isRare, STRAY_TERRAIN_WEIGHT } from './encounter.mjs';
 
 const HOUR = 60 * 60 * 1000;
 
-/** The odds a wild Pokémon is a rare one, until the wait starts to tell. */
-export const RARE_CHANCE = 0.005;
+/** The odds a wild Pokémon is a rare one, until the wait starts to tell. It was 0.005. */
+export const RARE_CHANCE = 0.006;
 
 /**
  * How long the wait is, in walking time, before the odds start to climb, and
@@ -34,12 +34,13 @@ export const RARE_CHANCE = 0.005;
  *
  * About fifteen wild Pokémon are met an hour, so a third of the waits end
  * early on the low odds and most of the rest in the hour or so after the
- * climb starts: four and a half hours apart on average, and in practice
- * never past seven, as the climb all but makes it certain before the ceiling
- * does. It was three hours and six, about three apart, which made a
- * legendary something met a few times every day.
+ * climb starts: a little over four hours apart on average, and in practice
+ * never past six and a half, as the climb all but makes it certain before
+ * the ceiling does. It was three hours and six, about three apart, which made
+ * a legendary something met a few times every day; then five and ten, about
+ * four and a half apart, which was a little too long.
  */
-export const RARE_CEILING = { soft: 5 * HOUR, hard: 10 * HOUR };
+export const RARE_CEILING = { soft: 4.5 * HOUR, hard: 9 * HOUR };
 
 /** The same, while a key item has a Pokémon waiting to be met. */
 export const CALLED_CEILING = { soft: 0.5 * HOUR, hard: 1.5 * HOUR };

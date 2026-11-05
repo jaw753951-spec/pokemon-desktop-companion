@@ -85,10 +85,21 @@ const STEPS = [
   // What the bag does by itself, which is a screen of its own behind the last
   // pocket tab.
   { name: '11-bag-options', script: 'clickText("button.chip", ["사용 설정", "Use"]) && await wait(300)' },
+  // The first rank's berry picker. Until a berry is clicked the panel shows
+  // the one under the pointer; once one is, the pointer moving over the others
+  // leaves it there.
+  { name: '11b-berry-picker', script: 'clickFirst(".item-options .item-option button.chip") && await wait(300)' },
+  { name: '11b2-berry-hovered', script: 'hoverText(".item-picker-tile", ["오랭", "Oran"]) && await wait(250)' },
+  { name: '11c-berry-pinned', script: 'clickText(".item-picker-tile", ["자뭉", "Sitrus"]) && hoverText(".item-picker-tile", ["오랭", "Oran"]) && await wait(250)' },
+  { name: '11d-berry-taken', script: 'clickText(".item-picker-detail button", ["이 열매로", "Use this one"]) && await wait(300)' },
   { name: '12-bag-box', script: 'seedBox() && clickText("button.tab", ["박스", "Box"])' },
   // The orders the box can be put in, and the box in the order it was caught.
   { name: '12b-box-sort', script: 'clickText("button", ["도감번호순", "Pokédex number"]) && await wait(250)' },
   { name: '12c-box-caught', script: 'clickText(".modal button", ["포획순", "Order caught"]) && await wait(250)' },
+  // The box narrowed to a name, and to one no Pokémon has; then all of it again.
+  { name: '12d-box-search', script: 'typeInto(".box-search", document.documentElement.lang === "en" ? "pika" : "피카") && await wait(300)' },
+  { name: '12e-box-none', script: 'typeInto(".box-search", "zzz") && await wait(250)' },
+  { name: '12f-box-cleared', script: 'typeInto(".box-search", "") && await wait(250)' },
   // The badges are in the key pocket under the charms, the travelling
   // Pokémon's own, with the first open on the panel.
   { name: '13-bag-badges', script: 'seedBadges(8) && seedKeyPocket() && clickText("button.tab", ["아이템", "Items"]) && await wait(250) && clickText("button.chip", ["소중한 것", "Key Items"]) && await wait(250) && clickFirst(".badge-row")' },
@@ -439,6 +450,25 @@ const clickText = (selector, texts) => {
   if (match) { match.click(); return true; }
   console.log('no match for ' + JSON.stringify(texts) + ' among: ' + nodes.map((n) => n.textContent).join(' | '));
   return false;
+};
+/** Put words in a text box as if they had been typed there. */
+const typeInto = (selector, value) => {
+  const input = document.querySelector(selector);
+  if (!input) { console.log('no box to type in at ' + selector); return false; }
+  input.focus();
+  input.value = value;
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  return true;
+};
+/** Move the pointer onto an element found the same way, without clicking it. */
+const hoverText = (selector, texts) => {
+  const match = [...document.querySelectorAll(selector)]
+    .find((node) => texts.some((text) => (node.textContent || '').includes(text)));
+  if (!match) { console.log('nothing to hover for ' + JSON.stringify(texts)); return false; }
+  for (const type of ['pointerover', 'pointerenter', 'mouseover', 'mouseenter']) {
+    match.dispatchEvent(new MouseEvent(type, { bubbles: type.endsWith('over') }));
+  }
+  return true;
 };
 `;
 

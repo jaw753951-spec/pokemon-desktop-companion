@@ -1064,33 +1064,6 @@ function berryContext(pokemon) {
 }
 
 /**
- * The berry in the bag that suits this Pokémon best, or null if the bag holds
- * none worth holding. See {@link berryScore} for the order.
- *
- * @param {import('./session.mjs').Session} session
- * @param {import('./pokemon.mjs').Pokemon} pokemon
- * @returns {string|null}
- */
-export function bestBerry(session, pokemon) {
-  const context = berryContext(pokemon);
-
-  // Every berry in the bag, whichever pocket the data files it in.
-  const held = [...session.pocket('berries'), ...session.pocket('medicine')]
-    .filter(({ slug, item }) => (item?.pocket === 'berries' || slug.endsWith('-berry')) && item?.held && item.works !== false);
-
-  let best = null;
-  let bestScore = 0;
-  for (const { slug, item } of held.sort((a, b) => a.slug.localeCompare(b.slug))) {
-    const score = berryScore(item.held, context);
-    if (score > bestScore) {
-      best = slug;
-      bestScore = score;
-    }
-  }
-  return best;
-}
-
-/**
  * The berry to put in a Pokémon's hand from the player's own order: the first
  * of the three ranks that is actually in the bag.
  *
@@ -1144,18 +1117,16 @@ export function recommendedBerries(session, pokemon) {
 
 /**
  * Hand the companion a berry if it is holding nothing — whatever it held has
- * been eaten, used up or knocked away. The player's three ranks come first;
- * with none of them in the bag, and the automatic setting on, the berry in the
- * bag that suits it best takes the place. Returns the berry handed over, if
- * any.
+ * been eaten, used up or knocked away: the first of the player's three ranks
+ * that is in the bag, and nothing when none of them is. Returns the berry
+ * handed over, if any.
  *
  * @param {import('./session.mjs').Session} session
  * @param {import('./pokemon.mjs').Pokemon} pokemon
  */
 export function restockBerry(session, pokemon) {
   if (!pokemon || pokemon.heldItem) return null;
-  const policy = session.itemPolicy;
-  const berry = berryToHold(session, policy?.berries ?? []) ?? (policy?.autoBerry ? bestBerry(session, pokemon) : null);
+  const berry = berryToHold(session, session.itemPolicy?.berries ?? []);
   if (!berry) return null;
 
   session.removeItem(berry);

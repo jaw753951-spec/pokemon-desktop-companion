@@ -787,54 +787,26 @@ test('the shop sells all but the unique, prices a trainer\'s prize, and a kept i
   assert.equal(lossFor(session), 8 * 20);
 });
 
-test('the best berry halves a 4× weakness, then heals, then halves a 2× one, then raises a stat', options, async () => {
-  const { bestBerry, restockBerry } = await import('../../app/renderer/engine/items.mjs');
-  const charmander = fixed(4, 50); // Fire: weak to Water, Ground and Rock
-  const charizard = fixed(6, 50); // Fire/Flying: four times weak to Rock
-  const bag = (held) => /** @type {any} */ ({
+test('an empty hand is restocked from the player\'s three ranks, and from nothing else', options, async () => {
+  const { restockBerry } = await import('../../app/renderer/engine/items.mjs');
+  const charmander = fixed(4, 50);
+  const bag = (held, berries = [null, null, null]) => /** @type {any} */ ({
     countOf: (slug) => (held.includes(slug) ? 1 : 0),
-    pocket: (pocket) => held
-      .filter((slug) => itemOf(slug)?.pocket === pocket)
-      .map((slug) => ({ slug, count: 1, item: itemOf(slug) })),
     removeItem: () => {},
-    itemPolicy: { autoBerry: true },
+    itemPolicy: { berries },
   });
 
-  assert.equal(bestBerry(bag([]), charmander), null, 'nothing in the bag, nothing held');
-  // A 4× weakness beats even a Sitrus.
-  assert.equal(bestBerry(bag(['sitrus-berry', 'charti-berry']), charizard), 'charti-berry');
-  // A Sitrus beats a 2× resist.
-  assert.equal(bestBerry(bag(['sitrus-berry', 'passho-berry']), charmander), 'sitrus-berry');
-  // A 2× resist beats an Oran at level 50, and a pinch berry.
-  assert.equal(bestBerry(bag(['oran-berry', 'passho-berry', 'salac-berry']), charmander), 'passho-berry');
-  assert.equal(bestBerry(bag(['oran-berry', 'salac-berry']), charmander), 'oran-berry');
-  // A resist berry for a type it is not weak to is never held.
-  assert.equal(bestBerry(bag(['occa-berry']), charmander), null);
+  // The first rank that is in the bag is handed over.
+  charmander.heldItem = null;
+  assert.equal(restockBerry(bag(['sitrus-berry', 'salac-berry'], ['oran-berry', 'salac-berry', null]), charmander), 'salac-berry');
+  assert.equal(charmander.heldItem, 'salac-berry');
+  assert.equal(restockBerry(bag(['sitrus-berry'], ['sitrus-berry', null, null]), charmander), null, 'already holding one');
 
-  // Handed over only when the hand is empty and the setting is on.
+  // A bag full of berries the order does not name hands over none of them.
   charmander.heldItem = null;
-  assert.equal(restockBerry(bag(['sitrus-berry']), charmander), 'sitrus-berry');
-  assert.equal(charmander.heldItem, 'sitrus-berry');
-  assert.equal(restockBerry(bag(['oran-berry']), charmander), null, 'already holding one');
-  charmander.heldItem = null;
-  const off = bag(['sitrus-berry']);
-  off.itemPolicy.autoBerry = false;
-  assert.equal(restockBerry(off, charmander), null);
-
-  // The player's own order comes first, and the automatic pick only fills in
-  // when none of its berries is in the bag.
-  const ranked = bag(['sitrus-berry', 'salac-berry']);
-  ranked.itemPolicy.berries = ['oran-berry', 'salac-berry', null];
-  assert.equal(restockBerry(ranked, charmander), 'salac-berry');
-  charmander.heldItem = null;
-  const fallback = bag(['sitrus-berry']);
-  fallback.itemPolicy.berries = ['oran-berry', null, null];
-  assert.equal(restockBerry(fallback, charmander), 'sitrus-berry');
-  // And the order still works with the switch off.
-  charmander.heldItem = null;
-  const manual = bag(['salac-berry']);
-  manual.itemPolicy = { autoBerry: false, berries: ['salac-berry', null, null] };
-  assert.equal(restockBerry(manual, charmander), 'salac-berry');
+  assert.equal(restockBerry(bag(['sitrus-berry']), charmander), null);
+  assert.equal(restockBerry(bag(['sitrus-berry'], ['oran-berry', null, null]), charmander), null);
+  assert.equal(charmander.heldItem, null);
 });
 
 test('the recommended restock order heals, then halves a weakness, then raises a stat', options, async () => {

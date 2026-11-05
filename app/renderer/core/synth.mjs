@@ -19,6 +19,15 @@ const FRAME_S = 1 / 60;
 const LEVEL = { sample: 0.42, recorded: 0.5, kit: 1.25, square: 0.75, wave: 0.5, noise: 1, drum: 1.4 };
 
 /**
+ * A swept pulse, softened: the fanfares that use one (the berry's, the
+ * heal's) are otherwise played by recorded instruments, and a bare square
+ * chirping up past 8 kHz stands out of them like a different game's sound.
+ * Its top is taken off and it sits back under the xylophone, as on the
+ * cartridge's small speaker, keeping the slide without the "pew".
+ */
+const SWEPT = { lowpass: 2200, level: 0.45 };
+
+/**
  * The recorded samples, by name: their samples as -1 to 1, the file's own
  * rate, how many of them a second sound key 60 (`pitch`), and the loop.
  *
@@ -67,7 +76,7 @@ const PAN_WIDTH = 0.7;
 
 /**
  * @typedef {{w: 'sample', s: string, key?: number, fixed?: boolean, env: number[], p?: number}
- *   | {w: 'square', key?: number, duty: number, env: number[], p?: number}
+ *   | {w: 'square', key?: number, duty: number, env: number[], sw?: number, p?: number}
  *   | {w: 'wave', key?: number, wave: number[], env: number[], p?: number}
  *   | {w: 'noise', key?: number, period: number, env: number[], p?: number}} Voice
  */
@@ -381,8 +390,16 @@ export function playVoice(context, track, note, when, sink, level = 1) {
   // note comes out on C2.
   const low = Math.max(36, key);
   if (voice.w === 'square') {
-    const nodes = tone(context, pulseWave(context, voice.duty), low, note, when, out);
-    shape(nodes, voice, 0, note, when, false, (goal / 15) * LEVEL.square, goal);
+    // A sweep that runs off the top of the channel's range switches it off,
+    // through a gate of its own so the envelope's shape is left alone.
+    let gate = null;
+    if (voice.sw) {
+      gate = context.createGain();
+      gate.connect(out);
+    }
+    const nodes = tone(context, pulseWave(context, voice.duty), low, note, when, gate ?? out, gate ? SWEPT.lowpass : 0);
+    if (gate) sweep(nodes.source.frequency, gate.gain, voice.sw ?? 0, midiToFrequency(low), when, note.d + 0.1);
+    shape(nodes, voice, 0, note, when, false, (goal / 15) * LEVEL.square * (gate ? SWEPT.level : 1), goal);
     return;
   }
   // The wave channel plays its whole 32-step table in the time a pulse
@@ -390,6 +407,64 @@ export function playVoice(context, track, note, when, sink, level = 1) {
   // so the cartridge's tables hold their shape twice to sound at the note.
   const nodes = tone(context, tableWave(context, voice.wave), low, note, when, out, 0, 0.5);
   shape(nodes, voice, 0, note, when, false, (goal / 15) * LEVEL.wave, goal);
+}
+
+/**
+ * The first pulse channel's frequency sweep, as the hardware runs it.
+ *
+ * The register says how often to step (`time`, in 128ths of a second), which
+ * way (`down`), and how far: each step adds or takes away the channel's
+ * eleven-bit frequency value shifted right by `shift`. Going up, the step
+ * that would carry it past 2047 switches the channel off instead — which is
+ * what makes the short rising chirp a fanfare's sparkle ends on, rather than
+ * the steady beep it played as while the sweep was ignored.
+ *
+ * @param {AudioParam} frequency the oscillator's
+ * @param {AudioParam} gate a gain the note passes through, shut at overflow
+ * @param {number} register the voice's sweep value (NR10)
+ * @param {number} hz the note's own frequency
+ * @param {number} when
+ * @param {number} length how long the note can be heard for, at most
+ */
+export function sweep(frequency, gate, register, hz, when, length) {
+  const steps = sweepSteps(register, hz, length);
+  for (const step of steps) {
+    if (step.hz === null) {
+      gate.setValueAtTime(1, when + step.at);
+      gate.linearRampToValueAtTime(0, when + step.at + 0.003);
+      return;
+    }
+    frequency.setValueAtTime(step.hz, when + step.at);
+  }
+}
+
+/**
+ * Where a sweep takes a note, step by step: when each step comes, a second
+ * from the note's start, and the frequency it lands on — or `null`, the step
+ * that runs the channel off the top of its range and silences it.
+ *
+ * @param {number} register
+ * @param {number} hz
+ * @param {number} length
+ * @returns {Array<{at: number, hz: number|null}>}
+ */
+export function sweepSteps(register, hz, length) {
+  const time = (register >> 4) & 7;
+  const down = (register & 8) !== 0;
+  const shift = register & 7;
+  if (!time || !shift) return [];
+  // The channel's frequency value: 131072 / (2048 - x) Hz.
+  let x = Math.max(0, Math.min(2047, Math.round(2048 - 131072 / hz)));
+  const steps = [];
+  for (let at = time / 128; at <= length && steps.length < 256; at += time / 128) {
+    x = down ? x - (x >> shift) : x + (x >> shift);
+    if (x > 2047) {
+      steps.push({ at, hz: null });
+      break;
+    }
+    steps.push({ at, hz: 131072 / (2048 - x) });
+  }
+  return steps;
 }
 
 /**

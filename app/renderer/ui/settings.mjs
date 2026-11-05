@@ -118,6 +118,7 @@ function tabRows(app, tab, rebuild) {
   switch (tab) {
     case 'sound':
       return [
+        volumeRow(app, 'settings.master', 'masterVolume'),
         volumeRow(app, 'settings.music', 'musicVolume'),
         volumeRow(app, 'settings.effects', 'effectVolume'),
         volumeRow(app, 'settings.cries', 'cryVolume'),
@@ -178,7 +179,7 @@ function idleHudRow(app) {
 /**
  * @param {import('../core/app.mjs').App} app
  * @param {string} labelKey
- * @param {'musicVolume'|'effectVolume'|'cryVolume'} key
+ * @param {'masterVolume'|'musicVolume'|'effectVolume'|'cryVolume'} key
  */
 function volumeRow(app, labelKey, key) {
   const value = el('span.value', { text: `${Math.round(app.settings[key] * 100)}%` });

@@ -193,8 +193,11 @@ export function battleScene({ session, foes, trainer = null, leader = false, pre
   const defeated = [];
   /** The level the companion came in at, for the friendship levelling earns. */
   const startLevel = levelOf(session.active);
-  /** What the companion went in holding, which a battle may use up. */
-  const startItem = session.active.heldItem;
+  /**
+   * What the companion went in holding, which a battle may use up — as the
+   * battle saw it before it began: by now walking in may have spent it.
+   */
+  const startItem = battle.startItem;
 
   /** @type {HTMLImageElement|null} */
   let backdropImage = null;
@@ -314,7 +317,10 @@ export function battleScene({ session, foes, trainer = null, leader = false, pre
       // A shiny sparkles once it is out of its ball, as it does in the games.
       if (entry.pokemon?.shiny) sparkle(entry.side, app);
       app.audio.blip('confirm');
-      if (entry.pokemon && entry.side === 'player') app.audio.playCry(entry.pokemon.speciesId);
+      // Each side calls as it comes out: a trainer's Pokémon too, which used
+      // to call at the start of the battle while the gym leader was still
+      // standing where it would be.
+      if (entry.pokemon) app.audio.playCry(entry.pokemon.speciesId);
     }
     tosses = tosses.filter((entry) => entry.elapsed < TOSS_MS + BURST_MS);
   };
@@ -498,7 +504,9 @@ export function battleScene({ session, foes, trainer = null, leader = false, pre
       if (backdrop) loadBackdrop(backdrop).then((image) => { backdropImage = image; });
 
       app.audio.playMusic(music ?? gameData().bgm.cues[trainer ? 'battleTrainer' : 'battleWild']);
-      app.audio.playCry(battle.foe?.pokemon.speciesId ?? session.active.speciesId);
+      // A wild Pokémon is standing there from the start and calls now; a
+      // trainer's calls when its ball opens (see `updateTosses`).
+      if (!trainer && battle.foe) app.audio.playCry(battle.foe.pokemon.speciesId);
 
       queue = [
         { kind: 'intro', data: {} },

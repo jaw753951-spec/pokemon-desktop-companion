@@ -74,17 +74,21 @@ export function pictureLoader(grid, row) {
   /** The pictures still to put up in and near the window, top row first. */
   const wanted = () => {
     const spaces = grid.children;
-    if (spaces.length <= row) return [];
-    const first = spaces[0].getBoundingClientRect();
-    const stride = spaces[row].getBoundingClientRect().top - first.top;
-    if (stride <= 0) return [];
-    // Where the first row sits in the scrolled content, and the stretch of it
-    // wanted now.
-    const offset = first.top - grid.getBoundingClientRect().top + grid.scrollTop;
-    const top = grid.scrollTop - FETCH_AHEAD - offset;
-    const bottom = grid.scrollTop + grid.clientHeight + FETCH_AHEAD - offset;
-    const from = Math.max(0, Math.floor(top / stride)) * row;
-    const to = Math.min(spaces.length, Math.ceil(bottom / stride) * row);
+    let from = 0;
+    let to = spaces.length;
+    // A single row — what a search can leave — is all in the window.
+    if (spaces.length > row) {
+      const first = spaces[0].getBoundingClientRect();
+      const stride = spaces[row].getBoundingClientRect().top - first.top;
+      if (stride <= 0) return [];
+      // Where the first row sits in the scrolled content, and the stretch of
+      // it wanted now.
+      const offset = first.top - grid.getBoundingClientRect().top + grid.scrollTop;
+      const top = grid.scrollTop - FETCH_AHEAD - offset;
+      const bottom = grid.scrollTop + grid.clientHeight + FETCH_AHEAD - offset;
+      from = Math.max(0, Math.floor(top / stride)) * row;
+      to = Math.min(spaces.length, Math.ceil(bottom / stride) * row);
+    }
     /** @type {HTMLImageElement[]} */
     const out = [];
     for (let index = from; index < to; index++) {

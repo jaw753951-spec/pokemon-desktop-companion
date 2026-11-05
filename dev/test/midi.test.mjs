@@ -92,6 +92,7 @@ voice_group test_song
 	voice_square_1 60, 0, 0, 2, 0, 1, 7, 1
 	voice_programmable_wave_alt 60, 0, ProgrammableWaveData_1, 0, 7, 15, 2
 	voice_directsound 60, 0, DirectSoundWaveData_sc88pro_flute, 255, 0, 255, 165
+	voice_square_1_alt 60, 0, 22, 2, 0, 2, 0, 0
 
 voice_group test_drumset, 36
 	voice_directsound_no_resample 60, 64, DirectSoundWaveData_sc88pro_rnd_kick, 255, 0, 255, 0
@@ -122,6 +123,11 @@ test('a program is the entry of the song\'s own voicegroup, not a General MIDI i
   });
   const wave = instrumentFor(library, 'test_song', 3, [60]);
   assert.deepEqual(wave?.voice?.w === 'wave' && wave.voice.wave.slice(0, 4), [0, 15, 15, 0]);
+});
+
+test("a first-pulse-channel voice keeps its sweep, and one that never slides carries none", () => {
+  assert.deepEqual(instrumentFor(library, 'test_song', 5, [60]), { voice: { w: 'square', key: 60, duty: 2, env: [0, 2, 0, 0], sw: 22 } });
+  assert.equal('sw' in (instrumentFor(library, 'test_song', 2, [60])?.voice ?? {}), false);
 });
 
 test('a kit gives each key its drum, counted from where the kit starts', () => {

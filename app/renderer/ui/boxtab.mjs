@@ -6,11 +6,15 @@
  * a favourite, which keeps it in the top rows under a yellow star.
  *
  * The box has no limit: it grows a row at a time as it fills.
+ *
+ * A search box above it narrows it to the Pokémon of a name — the species'
+ * or a nickname — gathered at the top of the grid. Moving one shows the
+ * whole box again, to choose its new space in, until it is put down.
  */
 import { artPath, speciesOf } from '../core/data.mjs';
 import { button, el, scrollable, setChildren, shinyMark } from '../core/dom.mjs';
 import { name as localized, t } from '../core/i18n.mjs';
-import { levelOf, nameOf } from '../engine/pokemon.mjs';
+import { levelOf, matchesName, nameOf } from '../engine/pokemon.mjs';
 import { BOX_SORTS } from '../engine/session.mjs';
 import { championIcon } from './badges.mjs';
 import { pictureLoader } from './pictureloader.mjs';
@@ -34,29 +38,53 @@ const MIN_ROWS = 5;
  *
  * @param {import('../core/app.mjs').App} app
  * @param {import('../engine/session.mjs').Session} session
- * @param {{moving?: number|null}} state
+ * @param {{moving?: number|null, boxQuery?: string}} state
  * @returns {HTMLElement}
  */
 export function boxTab(app, session, state) {
   const grid = scrollable(el('div.box-grid'));
-  const head = el('div.box-head');
+  const hint = el('div.box-hint');
+  const sort = el('div.box-sort');
+  // Made once and never rebuilt, so the caret stays where it is as the grid
+  // narrows under each letter.
+  const search = /** @type {HTMLInputElement} */ (el('input.item-search.box-search', {
+    type: 'search',
+    value: state.boxQuery ?? '',
+    placeholder: ' ',
+    'aria-label': t('box.search'),
+    onInput: () => {
+      state.boxQuery = search.value;
+      update();
+    },
+  }));
+  const head = el('div.box-head', {}, [hint, search, sort]);
 
   const pictures = pictureLoader(grid, ROW);
 
   /** The space each Pokémon is drawn in. @type {Map<any, HTMLElement>} */
   let drawn = new Map();
+  /** The search the grid was last narrowed by. */
+  let shownQuery = (state.boxQuery ?? '').trim();
 
   const update = () => {
     const moving = state.moving ?? null;
-    setChildren(head, header(app, session, state, update));
+    const [hintText, sortButtons] = header(app, session, state, update);
+    hint.textContent = hintText;
+    setChildren(sort, sortButtons);
+    sort.hidden = moving !== null;
+    search.hidden = moving !== null;
+    // Only while nothing is being moved: a Pokémon is put down in the whole box.
+    const query = moving === null ? (state.boxQuery ?? '').trim() : '';
 
-    // Every space in use and at least one free one, in whole rows.
-    const spaces = Math.max(MIN_ROWS, Math.ceil((session.box.length + 1) / ROW)) * ROW;
+    // Every space in use and at least one free one, in whole rows; or, under
+    // a search, the Pokémon it finds and no space besides.
+    const spaces = query ? session.box.length : Math.max(MIN_ROWS, Math.ceil((session.box.length + 1) / ROW)) * ROW;
     /** @type {Map<any, HTMLElement>} */
     const next = new Map();
     const children = [];
     for (let index = 0; index < spaces; index++) {
       const pokemon = session.box[index] ?? null;
+      if (query && !matchesName(pokemon, query)) continue;
       if (!pokemon) {
         children.push(emptySpace(app, session, index, state, update));
         continue;
@@ -68,7 +96,11 @@ export function boxTab(app, session, state) {
       next.set(pokemon, node);
       children.push(node);
     }
+    if (query && !children.length) children.push(el('div.empty.box-none', { text: t('box.noMatch') }));
     grid.replaceChildren(...children);
+    // A new search starts at the top of what it found.
+    if (query !== shownQuery) grid.scrollTop = 0;
+    shownQuery = query;
     drawn = next;
     pictures.refresh();
   };
@@ -85,14 +117,13 @@ export function boxTab(app, session, state) {
  * @param {import('../engine/session.mjs').Session} session
  * @param {{moving?: number|null}} state
  * @param {() => void} update
+ * @returns {[string, HTMLElement[]]}
  */
 function header(app, session, state, update) {
   const moving = state.moving !== null && state.moving !== undefined;
   return [
-    moving
-      ? el('div.box-hint', { text: t('box.moveTarget') })
-      : el('div.box-hint', { text: t('box.count', { count: session.box.filter(Boolean).length }) }),
-    moving ? null : el('div.box-sort', {}, [
+    moving ? t('box.moveTarget') : t('box.count', { count: session.box.filter(Boolean).length }),
+    moving ? [] : [
       button(t(SORT_LABELS[session.boxSort.key]), () => sortMenu(app, session, update), { className: 'small' }),
       // Which way round, beside it: one press turns the box over.
       el('button.btn.small.box-sort-way', {
@@ -106,7 +137,7 @@ function header(app, session, state, update) {
           update();
         },
       }),
-    ]),
+    ],
   ];
 }
 

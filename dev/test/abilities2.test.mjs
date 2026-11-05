@@ -11,7 +11,7 @@ import { moveOf, speciesIdBySlug } from '../../app/renderer/core/data.mjs';
 import { ABILITIES, afterBattle, auraMultiplier } from '../../app/renderer/engine/abilities.mjs';
 import { Battle, weightPower } from '../../app/renderer/engine/battle.mjs';
 import { TERRAIN, WEATHER } from '../../app/renderer/engine/field.mjs';
-import { heldPassive } from '../../app/renderer/engine/items.mjs';
+import { heldPassive, restoreHeldItem } from '../../app/renderer/engine/items.mjs';
 import { createPokemon, maxHp, setMove, statsOf } from '../../app/renderer/engine/pokemon.mjs';
 import { defaultAutoBattle } from '../../app/renderer/engine/session.mjs';
 
@@ -49,6 +49,11 @@ test('Protosynthesis lifts the highest stat in the sun, or on a Booster Energy i
   const boosted = fight(charged, make('chansey', 50, ['splash']));
   assert.equal(boosted.stat(boosted.player, 'atk'), Math.floor(atk * 1.3));
   assert.equal(charged.heldItem, null, 'the Booster Energy is spent');
+  // Spent walking in, it is still what the battle remembers going in with,
+  // and so is given back when the fight is over.
+  assert.equal(boosted.startItem, 'booster-energy');
+  assert.equal(restoreHeldItem(charged, boosted.startItem), true);
+  assert.equal(charged.heldItem, 'booster-energy');
 });
 
 test('Quark Drive works on Electric Terrain, and a Speed boost is half again', options, () => {

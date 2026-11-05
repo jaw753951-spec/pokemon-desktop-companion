@@ -328,6 +328,13 @@ export class Battle {
    *   pays, as a run of losses has it do for a while (see `COMEBACK`)
    */
   constructor({ rng, player, foes, policy, items = null, trainerBattle = false, weather = null, environment = null, firstRun = false, experienceBonus = 1 }) {
+    /**
+     * What the player's Pokémon came in holding, for the battle to hand back
+     * once it is over. Read before anything else here: walking in can spend
+     * it — a Booster Energy goes the moment its holder is out, a seed on a
+     * terrain already laid — and by the time the battle is built it was gone.
+     */
+    this.startItem = player.heldItem ?? null;
     this.rng = rng;
     this.policy = policy;
     /**

@@ -117,17 +117,31 @@ async function shopPrices(dataDir, items, moves) {
  * Where an item's icon might live. TMs and HMs share one icon per move type
  * rather than having their own art, which is also how the games draw them.
  *
+ * A machine never looks under its own name. PokeAPI now draws `tm01.png`,
+ * `hm03.png`, `tr13.png` and the rest, but each in the colour of whatever move
+ * that number taught in the game the picture was taken from — TM11 is an
+ * orange disc there while the Water Pulse it teaches here is blue. The disc
+ * for the move's type is the only picture that always agrees with the move.
+ *
  * @param {string} name
  * @param {any} item
  * @param {Record<string, string>} machines
  * @param {Record<string, any>} moves
  * @returns {string[]}
  */
-function iconCandidates(name, item, machines, moves) {
+export function iconCandidates(name, item, machines, moves) {
+  if (item.pocket === 'machines') {
+    const type = moves[machines[name]]?.type;
+    const prefix = name.startsWith('hm') ? 'hm' : 'tm';
+    return [
+      ...(type ? [`${SPRITES}/items/${prefix}-${type}.png`] : []),
+      `${SPRITES}/items/${prefix}-normal.png`,
+    ];
+  }
   // The newest items are only drawn in the generation folders, and a few not
   // at all; those borrow the nearest picture there is.
   const drawn = ICON_STAND_INS[name] ?? name;
-  const candidates = [
+  return [
     ...(MOCHI.includes(name) ? [archiveBagIcon(name)] : []),
     ...(pokespriteIcon(name) ? [`${POKESPRITE}/items/${pokespriteIcon(name)}.png`] : []),
     `${SPRITES}/items/${drawn}.png`,
@@ -136,13 +150,6 @@ function iconCandidates(name, item, machines, moves) {
     `${POKESPRITE}/items/key-item/${drawn}.png`,
     `${POKESPRITE}/items/evo-item/${drawn}.png`,
   ];
-  if (item.pocket === 'machines') {
-    const type = moves[machines[name]]?.type;
-    const prefix = name.startsWith('hm') ? 'hm' : 'tm';
-    if (type) candidates.push(`${SPRITES}/items/${prefix}-${type}.png`);
-    candidates.push(`${SPRITES}/items/${prefix}-normal.png`);
-  }
-  return candidates;
 }
 
 /** The PokéSprite item set, which draws a few key items PokeAPI does not. */

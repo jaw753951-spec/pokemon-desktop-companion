@@ -195,8 +195,14 @@ export function chooseFromList(app, title, entries, options = {}) {
  * The one-line list the other pickers use shows four entries at a time and
  * nothing about any of them but a name, which is no way to choose between
  * twenty berries. This lays them out as a grid of icons with their names and
- * counts, and the one under the pointer — or the last one clicked — is shown
- * large beside the grid with its description, and a button to take it.
+ * counts, and one is shown large beside the grid with its description, and a
+ * button to take it.
+ *
+ * Until one is clicked the panel shows the one under the pointer, to look
+ * through them; a click pins one there, and from then on only another click
+ * moves it. Following the pointer throughout, the panel went with whatever
+ * tile the pointer last crossed on its way to the button, and the berry
+ * chosen could not be taken. A double click still takes a berry at once.
  *
  * @param {import('../core/app.mjs').App} app
  * @param {string} title
@@ -214,6 +220,11 @@ export function chooseItem(app, title, entries, options = {}) {
       };
 
       const detail = el('div.item-picker-detail');
+      /** @type {HTMLElement[]} */
+      const tiles = [];
+      /** @type {typeof entries[number]|null} the one clicked, which the panel stays on */
+      let pinned = null;
+      const first = entries.find((entry) => entry.value === options.current) ?? entries[0] ?? null;
       /** @param {typeof entries[number]|null} entry */
       const show = (entry) => {
         if (!entry) {
@@ -231,16 +242,24 @@ export function chooseItem(app, title, entries, options = {}) {
           }, { className: 'small' }),
         );
       };
+      /** @param {typeof entries[number]|null} entry */
+      const pin = (entry) => {
+        pinned = entry;
+        entries.forEach((each, index) => tiles[index]?.setAttribute('aria-pressed', String(each === entry)));
+        show(entry);
+      };
 
-      const grid = scrollable(el('div.item-picker-grid', {}, entries.map((entry) =>
+      tiles.push(...entries.map((entry) =>
         el(`button.item-picker-tile${entry.value === options.current ? '.current' : ''}`, {
           type: 'button',
           title: entry.label,
-          onMouseEnter: () => show(entry),
-          onFocus: () => show(entry),
+          'aria-pressed': 'false',
+          onMouseEnter: () => {
+            if (!pinned) show(entry);
+          },
           onClick: () => {
             app.audio.blip('select');
-            show(entry);
+            pin(entry);
           },
           // A second click on the one already shown takes it.
           onDblclick: () => {
@@ -254,9 +273,12 @@ export function chooseItem(app, title, entries, options = {}) {
             el('span.item-picker-count', { text: t('items.count', { count: entry.count }) }),
           ]),
         ]),
-      )));
+      ));
+      const grid = scrollable(el('div.item-picker-grid', {}, tiles));
 
-      show(entries.find((entry) => entry.value === options.current) ?? entries[0] ?? null);
+      // The one held now, shown but not pinned, so the others can be looked
+      // through before one is clicked.
+      show(first);
 
       return el('div.panel.item-picker', {}, [
         el('p', { text: title }),

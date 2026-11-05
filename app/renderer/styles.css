@@ -1580,7 +1580,8 @@ canvas {
 /* The search at the end of the pockets, after the purse where there is one:
    it takes what the row has left, so the bag's seven pockets keep it on
    their line rather than pushing it onto one of its own. */
-.pocket-tabs .item-search {
+.pocket-tabs .item-search,
+.box-head .item-search {
   -webkit-app-region: no-drag;
   flex: 1 1 64px;
   max-width: 128px;
@@ -1597,13 +1598,15 @@ canvas {
 
 /* Empty, it shows a magnifier at its right end; with words in it, the clear
    button the box brings of its own stands there instead. */
-.pocket-tabs .item-search:placeholder-shown {
+.pocket-tabs .item-search:placeholder-shown,
+.box-head .item-search:placeholder-shown {
   padding-right: 20px;
   background: var(--paper) no-repeat right 7px center / 10px 10px
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='6.5' cy='6.5' r='4.75' fill='none' stroke='%236b7280' stroke-width='2'/%3E%3Cpath d='M10 10l4.5 4.5' stroke='%236b7280' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E");
 }
 
-.pocket-tabs .item-search:focus {
+.pocket-tabs .item-search:focus,
+.box-head .item-search:focus {
   outline: none;
   border-color: var(--accent);
 }
@@ -1963,6 +1966,17 @@ canvas {
 .box-sort {
   display: flex;
   gap: 3px;
+}
+
+.box-head [hidden] {
+  display: none;
+}
+
+/* What a search that finds no one says, across the grid's whole width. */
+.box-none {
+  grid-column: 1 / -1;
+  padding: 12px 4px;
+  text-align: center;
 }
 
 .box-sort-way {
@@ -2536,15 +2550,7 @@ canvas {
 .league-screen {
   align-items: center;
   justify-content: center;
-  gap: 6px;
-}
-
-.league-heading {
-  color: var(--paper);
-  font-size: 10px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  opacity: 0.75;
+  gap: 18px;
 }
 
 .league-portrait {
@@ -2558,22 +2564,41 @@ canvas {
   filter: brightness(0) opacity(0.7);
 }
 
-/* The name on a plate, as the ceremony's banner and names elsewhere are. */
+/* Who is waiting, on a plate in two parts: what they are on a band in the
+   frame's colour, and their name on paper under it. */
 .league-caption {
-  padding: 4px 16px;
+  display: flex;
+  flex-direction: column;
+  min-width: 92px;
+  overflow: hidden;
   border: 2px solid var(--frame);
-  border-radius: 6px;
-  background: rgba(248, 248, 240, 0.96);
-  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.7);
+  border-radius: 5px;
+  background: rgba(248, 248, 240, 0.97);
+  text-align: center;
+  line-height: 1.25;
+}
+
+.league-title {
+  padding: 1px 10px 2px;
+  background: var(--frame);
+  color: var(--paper);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.league-name {
+  padding: 2px 12px 3px;
   color: var(--ink);
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 800;
 }
 
 .league-actions {
   display: flex;
   gap: 6px;
-  margin-top: 4px;
+  margin-top: 9px;
 }
 
 /* ---------------------------------------------------------- item picker */
@@ -2626,6 +2651,13 @@ canvas {
 .item-picker-tile.current {
   border-color: var(--accent-dark);
   border-width: 2px;
+}
+
+/* The one clicked, which the panel beside the grid is showing. */
+.item-picker-tile[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: #fff;
+  box-shadow: inset 0 0 0 1px var(--accent);
 }
 
 .item-picker-tile img {

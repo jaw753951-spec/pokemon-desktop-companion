@@ -75,11 +75,12 @@ import {
  *
  * The cartridges roll a sixteen-bit number and compare it against the
  * trainer's own; the odds that comes to have been 1/8192 from Gold and Silver
- * through Black and White, and 1/4096 from X and Y onward. This game follows
- * the newest generation's rules everywhere else — its stats, its learnsets,
- * its type chart — so it follows them here too.
+ * through Black and White, and 1/4096 from X and Y onward. This game started
+ * at the newest games' 1/4096, but at about fifteen wild Pokémon an hour that
+ * was one in some 270 hours of walking, and it was raised a little, to a
+ * third as often again: one in about 200.
  */
-export const SHINY_ODDS = 1 / 4096;
+export const SHINY_ODDS = 1 / 3072;
 
 /**
  * The odds of a shiny over so many rolls — a Shiny Charm's, which the games
@@ -88,7 +89,9 @@ export const SHINY_ODDS = 1 / 4096;
  * @param {number} rolls
  */
 export function shinyOddsFor(rolls) {
-  return 1 - (1 - SHINY_ODDS) ** Math.max(1, rolls);
+  // One roll is the odds themselves, exactly: 1 - (1 - p) is not always p.
+  if (rolls <= 1) return SHINY_ODDS;
+  return 1 - (1 - SHINY_ODDS) ** rolls;
 }
 
 /**
@@ -119,7 +122,7 @@ export const WILD_ITEM_ODDS_COMPOUND_EYES = { nothing: 20, common: 80 };
  *   shiny?: boolean,
  *   shinyOdds?: number,
  *   gender?: 'male'|'female'|null,
- * }} [options] `shinyOdds` for something other than the usual one in 4096
+ * }} [options] `shinyOdds` for something other than the usual one in 3072
  * @returns {Pokemon}
  */
 export function createPokemon(rng, speciesId, level, options = {}) {
@@ -515,6 +518,22 @@ export const maxHp = (pokemon) => statsOf(pokemon).hp;
 export function nameOf(pokemon) {
   if (!pokemon) return '';
   return pokemon.nickname || localized(speciesOf(pokemon.speciesId)?.name, '');
+}
+
+/**
+ * Whether a Pokémon is called what a search asks for: its species' name, or
+ * the nickname it was given, with the words anywhere in it. Nothing else — not
+ * its type, its moves or its number. An empty search finds every one.
+ *
+ * @param {Pokemon|null} pokemon
+ * @param {string} query
+ */
+export function matchesName(pokemon, query) {
+  if (!pokemon) return false;
+  const words = query.trim().toLowerCase();
+  if (!words) return true;
+  return [pokemon.nickname ?? '', localized(speciesOf(pokemon.speciesId)?.name, '')]
+    .some((name) => name.toLowerCase().includes(words));
 }
 
 /**
