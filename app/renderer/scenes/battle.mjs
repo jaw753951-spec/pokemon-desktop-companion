@@ -193,8 +193,11 @@ export function battleScene({ session, foes, trainer = null, leader = false, pre
   const defeated = [];
   /** The level the companion came in at, for the friendship levelling earns. */
   const startLevel = levelOf(session.active);
-  /** What the companion went in holding, which a battle may use up. */
-  const startItem = session.active.heldItem;
+  /**
+   * What the companion went in holding, which a battle may use up — as the
+   * battle saw it before it began: by now walking in may have spent it.
+   */
+  const startItem = battle.startItem;
 
   /** @type {HTMLImageElement|null} */
   let backdropImage = null;
