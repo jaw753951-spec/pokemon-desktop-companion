@@ -27,11 +27,7 @@ import {
   nearOverpass,
   POKEMON_SCALE,
   ROOF_COVER,
-  waterDrop,
 } from '../render/field.mjs';
-
-/** How far either side of a Swimmer's spot must be water, in field pixels: about its own half-width. */
-const SWIMMER_HALF_WIDTH = 10;
 
 /** How long each gathering phase takes, as the brief specifies. */
 const HARVEST_MS = 10000;
@@ -1007,14 +1003,14 @@ function startTrainer(session, spawnAt) {
   const classes = gameData().trainerClasses ?? [];
   const leader = shouldSummonLeader(session) ? pickLeader(session) : null;
   if (leader) return startGym(session, spawnAt, leader);
-  // A Swimmer is only met where there is water beside the lane, and swims
-  // in it rather than standing on the road.
-  const drop = waterDrop(session.area, COMPANION_X + spawnAt, SWIMMER_HALF_WIDTH);
+  // Nobody is met in the water. Swimmers and Tubers swam in the strip of
+  // water beside the lane, which on Route 25 lies a little below the path the
+  // companion walks, so they surfaced off to one side of it rather than in its
+  // way. Offering no water leaves those classes out of the roll everywhere.
   const { trainerClass, party } = rollTrainer(session.rng, session.area, session.active, classes, {
-    onWater: drop !== null,
+    onWater: false,
     levelDrop: session.comebackLevelDrop,
   });
-  const swimming = Boolean(trainerClass?.water) && drop !== null;
 
   for (const member of party) session.markSeen(member.speciesId);
 
@@ -1025,7 +1021,7 @@ function startTrainer(session, spawnAt) {
     timer: 0,
     flash: 0,
     phaseDuration: 800,
-    prop: { kind: 'trainer', sprite: null, frame: 'ripe', drop: swimming ? drop : 0 },
+    prop: { kind: 'trainer', sprite: null, frame: 'ripe', drop: 0 },
     carried: null,
     setup: { foes: party, trainer: trainerClass, leader: null },
     onArrive: () => 'battle',
