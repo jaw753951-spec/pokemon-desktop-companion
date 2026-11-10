@@ -48,7 +48,7 @@ async function buildTrainerPortraits(assetDir, pool, log) {
     ...new Set([...header.matchAll(/graphics\/trainers\/front_pics\/([a-z0-9_]+)\.png/g)].map((m) => m[1])),
   ];
 
-  /** @type {Record<string, {width: number, height: number}>} */
+  /** @type {Record<string, {width: number, height: number, gba?: boolean}>} */
   const out = {};
   await Promise.all(
     names.map((name) =>
@@ -63,7 +63,9 @@ async function buildTrainerPortraits(assetDir, pool, log) {
           join(assetDir, 'trainers', 'portraits', `${name}.png`),
           encodePng(trimmed.width, trimmed.height, trimmed.data),
         );
-        out[name] = { width: trimmed.width, height: trimmed.height };
+        // Drawn for a 64-pixel frame, smaller than the DS games' and
+        // PokéRogue's people: the league screen draws these larger to match.
+        out[name] = { width: trimmed.width, height: trimmed.height, gba: true };
       }),
     ),
   );
@@ -91,7 +93,7 @@ async function buildTrainerPortraits(assetDir, pool, log) {
 async function buildNamedPortraits(assetDir, pool) {
   const roots = { emerald: EMERALD, firered: FIRERED, platinum: PLATINUM };
 
-  /** @type {Record<string, {width: number, height: number}>} */
+  /** @type {Record<string, {width: number, height: number, gba?: boolean}>} */
   const out = {};
   await Promise.all(
     Object.entries(NAMED_PORTRAITS).map(([id, { source, path }]) =>
@@ -113,7 +115,7 @@ async function buildNamedPortraits(assetDir, pool) {
           join(assetDir, 'trainers', 'portraits', `${id}.png`),
           encodePng(trimmed.width, trimmed.height, trimmed.data),
         );
-        out[id] = { width: trimmed.width, height: trimmed.height };
+        out[id] = { width: trimmed.width, height: trimmed.height, gba: source === 'firered' };
       }),
     ),
   );
