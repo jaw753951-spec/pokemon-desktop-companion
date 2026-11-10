@@ -2702,7 +2702,7 @@ canvas {
    stays in front of the tallest portraits' heads. */
 .league-figure,
 .league-actions {
-  transform: translateY(-20px);
+  transform: translateY(-30px);
 }
 
 .league-portrait {
