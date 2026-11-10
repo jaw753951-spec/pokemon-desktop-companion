@@ -2697,12 +2697,12 @@ canvas {
   height: 172px;
 }
 
-/* The figure and the buttons under it sit a little above the middle, so the
-   buttons are clear of the bottom edge. Only drawn higher: the plate keeps its
-   place, and stays in front of the tallest portraits' heads. */
+/* The figure and the buttons under it sit above the middle, so the buttons are
+   clear of the bottom edge. Only drawn higher: the plate keeps its place, and
+   stays in front of the tallest portraits' heads. */
 .league-figure,
 .league-actions {
-  transform: translateY(-10px);
+  transform: translateY(-20px);
 }
 
 .league-portrait {
@@ -2751,6 +2751,14 @@ canvas {
   display: flex;
   gap: 6px;
   margin-top: 9px;
+}
+
+/* A size under the usual, in keeping with the smaller figure over them. */
+.league-actions .btn {
+  min-height: 19px;
+  padding: 2px 10px;
+  border-radius: 10px;
+  font-size: 11px;
 }
 
 /* ---------------------------------------------------------- item picker */
