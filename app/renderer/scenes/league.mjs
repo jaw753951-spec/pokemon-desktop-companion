@@ -26,8 +26,20 @@ import { hallOfFameScene } from './halloffame.mjs';
 import { inventoryScene } from '../ui/inventory.mjs';
 import { shutter } from '../ui/shutter.mjs';
 
-/** How many screen pixels each of a portrait's own is drawn as. */
-const PORTRAIT_SCALE = 2;
+/**
+ * How many screen pixels each of a portrait's own is drawn as. One and a half,
+ * not two: at twice its size a figure filled the room from the plate to the
+ * buttons. A half step keeps every pixel even at the default window size.
+ */
+const PORTRAIT_SCALE = 1.5;
+
+/**
+ * The same for a Game Boy Advance portrait. Those were drawn for a 64-pixel
+ * frame, and a standing adult in one is about 60 pixels tall; the DS games and
+ * PokéRogue drew their people nearer 78. At one scale, Johto's Koga stood a
+ * head shorter than Karen beside him. A third larger brings them level.
+ */
+const GBA_PORTRAIT_SCALE = 2;
 
 /** The tallest a portrait is drawn: twice the tallest there is, near enough. */
 const PORTRAIT_HEIGHT = 172;
@@ -76,11 +88,13 @@ export function leagueScene({ session, onLeave, onCrowned }) {
   let loadedRoom = '';
 
   const portrait = /** @type {HTMLImageElement} */ (el('img.league-portrait', { alt: '' }));
-  // Shown at twice its own size, every pixel two, and no more than the frame
+  /** The scale of the portrait being shown, set with its picture. */
+  let portraitScale = PORTRAIT_SCALE;
+  // Shown larger than its own size, by its scale, and no more than the frame
   // it stands in holds: at its own size it stood a third the height of the
   // room it was waiting in.
   portrait.addEventListener('load', () => {
-    const scale = Math.min(PORTRAIT_SCALE, PORTRAIT_HEIGHT / Math.max(1, portrait.naturalHeight));
+    const scale = Math.min(portraitScale, PORTRAIT_HEIGHT / Math.max(1, portrait.naturalHeight));
     portrait.style.width = `${Math.round(portrait.naturalWidth * scale)}px`;
     portrait.style.height = `${Math.round(portrait.naturalHeight * scale)}px`;
   });
@@ -132,7 +146,10 @@ export function leagueScene({ session, onLeave, onCrowned }) {
 
     const art = portraitFor(round);
     portrait.hidden = !art;
-    if (art) portrait.src = url('assets', `trainers/portraits/${art.name}.png`);
+    if (art) {
+      portraitScale = gameData().actors?.portraits?.[art.name]?.gba ? GBA_PORTRAIT_SCALE : PORTRAIT_SCALE;
+      portrait.src = url('assets', `trainers/portraits/${art.name}.png`);
+    }
     // Somebody nobody drew is a shape, not another person's face.
     portrait.classList.toggle('silhouette', Boolean(art && !art.own));
 
