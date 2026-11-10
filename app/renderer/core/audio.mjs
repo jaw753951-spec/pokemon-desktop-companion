@@ -6,6 +6,14 @@
  * oscillators (`synth.mjs`) — which suits the GBA-era material it came from.
  * Notes are scheduled on a look-ahead timer so playback stays steady even
  * when the game loop stutters.
+ *
+ * Voicing every note as it comes is what most of the game's running cost was,
+ * though: a node or four built and wired for each of thirty-odd notes a
+ * second, every second the music plays. So a song is also recorded, once, the
+ * first time it is asked for — by the same synthesiser, off the clock and on
+ * a thread of its own (`recordSong`) — and the recording takes over from the
+ * live notes as soon as it is done (`handOver`). Playing a recording back
+ * costs next to nothing. The cues stay live: they are short, and rare.
  */
 import { loadAudioBuffer } from './assets.mjs';
 import { url } from './bridge.mjs';
@@ -39,6 +47,45 @@ const RUN_LAST_S = 0.6;
 const DUCK_OUT_S = 0.015;
 const DUCK_IN_S = 0.1;
 
+/** How far down the music channel sits under the music slider: under whatever the player is doing. */
+const MUSIC_MIX = 0.22;
+
+/**
+ * The rate a song is recorded at. The synthesiser's brightest parts — the
+ * cartridge's trumpets and cymbals, the pulse channels' edges — reach past
+ * twelve kHz, which a 24 kHz recording would lose; 32 kHz keeps up to
+ * sixteen, which is all the music has, at two-thirds of the memory of 48.
+ */
+export const TAPE_RATE = 32000;
+
+/**
+ * How many songs' recordings are kept: the area's, and the two battle themes
+ * a walk keeps coming back to, so a fight does not have the road's music
+ * recorded all over again after it.
+ */
+const TAPES_KEPT = 3;
+
+/**
+ * The music slider a song is recorded at, and played back scaled from. The
+ * compressor on the music works on how loud it is, so a recording made at one
+ * level and turned up or down is only the same as the live music at that
+ * level; this is the one the game starts at.
+ */
+const TAPE_MUSIC_VOLUME = 0.6;
+
+/** How long the live notes and the recording cross over for when one takes over. */
+const TAPE_HANDOVER_S = 0.03;
+
+/** How far ahead of now the takeover is put, so it lands on a time not yet played. */
+const TAPE_LEAD_S = 0.08;
+
+/**
+ * How much of a song is queued at a time while it is recorded. Queueing the
+ * whole song at once left thousands of notes waiting in the graph from the
+ * first moment, and the recording took ten times as long.
+ */
+const TAPE_STEP_S = 1;
+
 export class AudioEngine {
   constructor() {
     /** @type {AudioContext|null} */
@@ -56,8 +103,31 @@ export class AudioEngine {
     this.effectGain = null;
     /** @type {GainNode|null} */
     this.cryGain = null;
+    /**
+     * @type {GainNode|null} where a recorded song plays: past the music's
+     *   filter, compressor and room, which are in the recording already. It
+     *   is silenced under a cue as `songGain` is.
+     */
+    this.tapeGain = null;
+    /** @type {GainNode|null} the music slider, for the recordings */
+    this.tapeLevel = null;
+    /**
+     * The songs recorded, or being recorded, most recently asked for last.
+     * @type {Map<string, Promise<AudioBuffer|null>>}
+     */
+    this.tapes = new Map();
 
-    /** @type {{name: string, song: any, startedAt: number, cursors: number[], loops: number}|null} */
+    /**
+     * The song playing: where it is up to, live, and — once it has taken
+     * over — its recording.
+     *
+     * `live` is the gain its live notes go through, which the recording
+     * crosses over from; `queuedTo` is how far ahead they have been queued;
+     * `recorded` is its recording once ready, and `tape` the recording once
+     * it is the one playing.
+     *
+     * @type {{name: string, song: any, startedAt: number, cursors: number[], loops: number, live: GainNode|null, queuedTo: number, recorded: AudioBuffer|null, tape: {source: AudioBufferSourceNode, level: GainNode}|null}|null}
+     */
     this.current = null;
     /** @type {number|undefined} */
     this.timer = undefined;
@@ -103,6 +173,10 @@ export class AudioEngine {
     this.songGain.connect(this.musicGain);
     this.effectGain.connect(this.masterGain);
     this.cryGain.connect(this.masterGain);
+    this.tapeGain = this.context.createGain();
+    this.tapeLevel = this.context.createGain();
+    this.tapeGain.connect(this.tapeLevel);
+    this.tapeLevel.connect(this.masterGain);
     this.applyVolumes();
   }
 
@@ -123,9 +197,25 @@ export class AudioEngine {
     // The sound tab's overall slider, over the three below it.
     this.masterGain.gain.setTargetAtTime(this.masterVolume, now, 0.05);
     // Music is mixed low: it plays under whatever the user is actually doing.
-    this.musicGain.gain.setTargetAtTime(this.musicVolume * 0.22, now, 0.05);
+    this.musicGain.gain.setTargetAtTime(this.musicVolume * MUSIC_MIX, now, 0.05);
+    this.tapeLevel?.gain.setTargetAtTime(this.musicVolume / TAPE_MUSIC_VOLUME, now, 0.05);
     this.effectGain.gain.setTargetAtTime(this.effectVolume * 0.5, now, 0.05);
     this.cryGain.gain.setTargetAtTime(this.cryVolume * 0.6, now, 0.05);
+
+    // With every slider at nought nothing can be heard, but the songs went on
+    // being played and mixed into silence all the same, which kept the audio
+    // thread as busy as the rest of the game put together. It is let go
+    // instead, and picks up where it was when a slider comes up again.
+    const silent = this.silent;
+    if (silent && this.context.state === 'running') this.context.suspend().catch(() => {});
+    else if (!silent && this.context.state === 'suspended') this.context.resume().catch(() => {});
+    // A song that was not recorded while nothing could be heard is now.
+    if (!silent && this.current && !this.current.recorded && !this.current.tape) this.record(this.current);
+  }
+
+  /** Whether every slider is at nought, so nothing the game plays can be heard. */
+  get silent() {
+    return this.masterVolume <= 0 || (this.musicVolume <= 0 && this.effectVolume <= 0 && this.cryVolume <= 0);
   }
 
   /**
@@ -163,15 +253,91 @@ export class AudioEngine {
     if (!this.context || this.wanted !== name || this.jingle || this.current?.name === name) return;
 
     this.haltMusic();
+    // Its live notes go through a gain of their own, under the songs' channel,
+    // so the recording can cross over from them alone.
+    const live = this.context.createGain();
+    if (this.songGain) live.connect(this.songGain);
+    const startedAt = this.context.currentTime + 0.1;
     this.current = {
       name,
       song,
-      startedAt: this.context.currentTime + 0.1,
+      startedAt,
       cursors: song.tracks.map(() => 0),
       loops: 0,
+      live,
+      queuedTo: startedAt,
+      recorded: null,
+      tape: null,
     };
     this.timer = window.setInterval(() => this.schedule(), TICK_MS);
     this.schedule();
+    this.record(this.current);
+  }
+
+  /**
+   * Have the song playing recorded — or find the recording made the last time
+   * it played — for it to take over from the live notes.
+   *
+   * Nothing is recorded while nothing can be heard: it would be work for
+   * nobody. Turning a slider up again records it then.
+   *
+   * @param {NonNullable<AudioEngine['current']>} playing
+   */
+  record(playing) {
+    if (this.silent) return;
+    let pending = this.tapes.get(playing.name);
+    if (pending) {
+      // Asked for again: it is the most recent now.
+      this.tapes.delete(playing.name);
+    } else {
+      pending = recordSong(playing.song).catch(() => null);
+    }
+    this.tapes.set(playing.name, pending);
+    // Only the last few are kept. One still playing keeps its own recording
+    // for as long as it plays; this only lets go of the engine's hold on it.
+    while (this.tapes.size > TAPES_KEPT) this.tapes.delete(/** @type {string} */ (this.tapes.keys().next().value));
+    pending.then((buffer) => {
+      // Only for the very playthrough that asked: a song stopped, or started
+      // over, in the meantime has a playthrough of its own.
+      if (buffer && this.current === playing) playing.recorded = buffer;
+    });
+  }
+
+  /**
+   * Let the song's recording take over from its live notes, on a moment that
+   * has been queued live but not yet heard: from then on the live notes fade
+   * out as the recording, played from the same place in the song, fades in.
+   * Both are the same synthesiser playing the same notes, so nothing is heard
+   * to change but the cost.
+   */
+  handOver() {
+    const playing = this.current;
+    if (!this.context || !playing?.recorded || playing.tape || !this.tapeGain || !playing.live) return;
+    const at = this.context.currentTime + TAPE_LEAD_S;
+    // Everything up to the takeover has to be queued live already, or the
+    // notes between would be heard from neither.
+    if (playing.queuedTo < at + TAPE_HANDOVER_S) return;
+    const { song } = playing;
+    const { length } = loopOf(song);
+
+    const source = this.context.createBufferSource();
+    source.buffer = playing.recorded;
+    source.loop = true;
+    source.loopStart = song.duration;
+    source.loopEnd = song.duration + length;
+    const level = this.context.createGain();
+    level.gain.setValueAtTime(0, at);
+    level.gain.linearRampToValueAtTime(1, at + TAPE_HANDOVER_S);
+    source.connect(level);
+    level.connect(this.tapeGain);
+    source.start(at, tapeOffset(song, at - playing.startedAt));
+
+    playing.live.gain.setValueAtTime(1, at);
+    playing.live.gain.linearRampToValueAtTime(0, at + TAPE_HANDOVER_S);
+    playing.tape = { source, level };
+    // No more live notes: the recording has the rest of them.
+    if (this.timer !== undefined) window.clearInterval(this.timer);
+    this.timer = undefined;
   }
 
   /**
@@ -296,6 +462,15 @@ export class AudioEngine {
   haltMusic() {
     if (this.timer !== undefined) window.clearInterval(this.timer);
     this.timer = undefined;
+    // A recording playing stops too, faded rather than cut off mid-note.
+    const tape = this.current?.tape;
+    if (tape && this.context) {
+      const now = this.context.currentTime;
+      tape.level.gain.cancelScheduledValues?.(now);
+      tape.level.gain.setTargetAtTime(0, now, TAPE_HANDOVER_S);
+      tape.source.stop(now + TAPE_HANDOVER_S * 8);
+      tape.source.onended = () => tape.level.disconnect();
+    }
     this.current = null;
   }
 
@@ -316,6 +491,7 @@ export class AudioEngine {
     // Each call starts from wherever the last left the level, so a cue that
     // ends while the music is still going quiet brings it back smoothly.
     this.songGain.gain.setTargetAtTime(quiet ? 0 : 1, this.context.currentTime, quiet ? DUCK_OUT_S : DUCK_IN_S);
+    this.tapeGain?.gain.setTargetAtTime(quiet ? 0 : 1, this.context.currentTime, quiet ? DUCK_OUT_S : DUCK_IN_S);
   }
 
   /** Silence for good: no track playing, and none waiting to come back. */
@@ -334,7 +510,16 @@ export class AudioEngine {
    */
   schedule() {
     if (!this.context || !this.current || !this.musicGain) return;
-    const { song, cursors } = this.current;
+    if (this.current.tape) return;
+    this.queue();
+    this.handOver();
+  }
+
+  /** Queue the live notes due within the look-ahead, and note how far that reaches. */
+  queue() {
+    if (!this.context || !this.current) return;
+    const playing = this.current;
+    const { song, cursors } = playing;
     const horizon = this.context.currentTime + LOOKAHEAD_S;
     const { start, length } = loopOf(song);
     let started = 0;
@@ -361,15 +546,20 @@ export class AudioEngine {
             exhausted = false;
             return;
           }
-          this.playNote(track, note, Math.max(when, this.context.currentTime), this.songGain, song.volume);
+          this.playNote(track, note, Math.max(when, this.context.currentTime), playing.live ?? this.songGain, song.volume);
           cursors[index]++;
           started++;
         }
         if (cursors[index] < track.notes.length) exhausted = false;
       });
 
+      // Capped short of the horizon: queued only as far as the notes it got
+      // to, so a takeover is never put past them.
       if (started >= MAX_NOTES_PER_TICK) return;
-      if (!exhausted) return;
+      if (!exhausted) {
+        playing.queuedTo = horizon;
+        return;
+      }
 
       this.current.loops++;
       song.tracks.forEach((track, index) => {
@@ -612,6 +802,73 @@ export async function loadSamples(song) {
 export function loopOf(song) {
   const start = song.loop > 0 && song.loop < song.duration ? song.loop : 0;
   return { start, length: song.duration - start };
+}
+
+/**
+ * Where in a song's recording a moment of its playthrough is.
+ *
+ * A recording is the song once through, intro and all, and then its loop once
+ * more — the second time round, which starts with the end of the first still
+ * ringing into it, is the part that goes round. So a moment in the first
+ * playthrough is that far in, and any later one is that far round the loop,
+ * from where the loop's second time starts.
+ *
+ * @param {{duration: number, loop?: number}} song
+ * @param {number} elapsed seconds since the playthrough began
+ */
+export function tapeOffset(song, elapsed) {
+  if (elapsed < song.duration) return Math.max(0, elapsed);
+  const { length } = loopOf(song);
+  return song.duration + ((elapsed - song.duration) % length);
+}
+
+/**
+ * Record a song the way it is played live: the same voices through the same
+ * filter, compressor and room, at {@link TAPE_MUSIC_VOLUME} — once through and
+ * its loop once more (see {@link tapeOffset}). On a thread of its own and many
+ * times faster than it plays: a minute of music takes about half a second.
+ *
+ * @param {{duration: number, loop?: number, volume?: number, tracks: Array<import('./synth.mjs').Track & {notes: import('./synth.mjs').Note[]}>}} song
+ * @param {number} [rate]
+ * @returns {Promise<AudioBuffer|null>} null where there is no way to record
+ */
+export async function recordSong(song, rate = TAPE_RATE) {
+  if (typeof OfflineAudioContext === 'undefined') return null;
+  const { start, length } = loopOf(song);
+  const seconds = song.duration + length;
+  const context = new OfflineAudioContext(2, Math.ceil(seconds * rate), rate);
+  const music = context.createGain();
+  music.gain.value = TAPE_MUSIC_VOLUME * MUSIC_MIX;
+  connectMusic(context, music, context.destination);
+
+  /** @type {Array<{track: import('./synth.mjs').Track, note: import('./synth.mjs').Note, when: number}>} */
+  const notes = [];
+  for (const track of song.tracks) {
+    for (const note of track.notes) {
+      if (note.t >= song.duration) continue;
+      notes.push({ track, note, when: note.t });
+      if (note.t >= start) notes.push({ track, note, when: song.duration + (note.t - start) });
+    }
+  }
+  notes.sort((a, b) => a.when - b.when);
+
+  // Queued a little at a time as the recording reaches it, as when it plays.
+  let next = 0;
+  const queue = (until) => {
+    while (next < notes.length && notes[next].when < until) {
+      const { track, note, when } = notes[next++];
+      playVoice(context, track, note, when, music, song.volume);
+    }
+  };
+  queue(TAPE_STEP_S * 1.5);
+  for (let at = TAPE_STEP_S; at < seconds - TAPE_STEP_S / 2; at += TAPE_STEP_S) {
+    const step = at;
+    context.suspend(step).then(() => {
+      queue(step + TAPE_STEP_S * 1.5);
+      return context.resume();
+    });
+  }
+  return context.startRendering();
 }
 
 /**

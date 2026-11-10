@@ -31,26 +31,23 @@ import {
   actorScale,
   boostPace,
   COMPANION_X,
-  drawBackground,
-  drawOverlay,
   drawStepDust,
   drawWalker,
   groundY,
-  inFieldSpace,
+  idleBob,
   nearOverpass,
   nextBoost,
   setGroundY,
   WALK_SPEED,
 } from '../render/field.mjs';
 import { backdropForArea } from '../render/backdrop.mjs';
-import { drawWeather } from '../render/weather.mjs';
-import { closeDaylightLayer, openDaylightLayer } from '../render/daylight.mjs';
+import { createFieldLayers } from '../render/fieldlayers.mjs';
 import { weatherForArea } from '../../shared/area-tags.mjs';
-import { LEADER_REST_AFTER_LOSS, VIEW_HEIGHT, VIEW_WIDTH } from '../../shared/constants.mjs';
+import { LEADER_REST_AFTER_LOSS } from '../../shared/constants.mjs';
 import { createHud } from '../render/hud.mjs';
 import { battleScene } from './battle.mjs';
 import { captureScene } from './capture.mjs';
-import { createEventRunner, eventGround } from './fieldevents.mjs';
+import { createEventRunner, drawCarried, drawProp, eventGround, propLook } from './fieldevents.mjs';
 import { leagueScene } from './league.mjs';
 import { inventoryScene } from '../ui/inventory.mjs';
 import { shopScene } from '../ui/shop.mjs';
@@ -139,6 +136,8 @@ export function fieldScene(session) {
   let showActor = true;
 
   let hud = /** @type {ReturnType<typeof createHud>|null} */ (null);
+  /** The road's layers, under the game's canvas. @type {ReturnType<typeof createFieldLayers>|null} */
+  let layers = null;
   /** @type {ReturnType<typeof createEventRunner>|null} */
   let events = null;
   /** @type {import('../core/app.mjs').App|null} */
@@ -565,6 +564,11 @@ export function fieldScene(session) {
       document.documentElement.addEventListener('mousemove', onHoverIn);
       document.documentElement.addEventListener('mouseleave', onHoverOut);
 
+      // The road goes under the game's canvas, which the screens opened over
+      // it — a battle, the capture screen — still draw on.
+      layers = createFieldLayers();
+      document.getElementById('stage')?.insertBefore(layers.root, app.canvas);
+
       refreshArt(app);
       hud.update(session);
       return hud.root;
@@ -593,6 +597,8 @@ export function fieldScene(session) {
       hud = null;
       events = null;
       host = null;
+      layers?.destroy();
+      layers = null;
     },
 
     update(deltaMs, app) {
@@ -671,9 +677,16 @@ export function fieldScene(session) {
       hud?.update(session);
     },
 
-    render(context) {
-      drawField(context);
-      drawCrossing(context);
+    present() {
+      layers?.sync(view());
+    },
+
+    setShown(shown) {
+      layers?.setShown(shown);
+    },
+
+    snapshot(context) {
+      layers?.snapshot(context);
     },
 
     setPaused(value) {
@@ -691,73 +704,79 @@ export function fieldScene(session) {
     },
   };
 
-  /** @param {CanvasRenderingContext2D} context */
-  function drawField(context) {
-    inFieldSpace(context, (field) => {
-      // The road, already graded for the hour by the pipeline.
-      drawBackground(field, background, Math.round(offset));
+  /**
+   * The road as it stands this frame, for its layers (see `fieldlayers.mjs`).
+   *
+   * Each part that changes is named by a key — the same key, the same picture
+   * — so a layer is painted again only when what is on it has changed, and
+   * otherwise only moved.
+   *
+   * @returns {import('../render/fieldlayers.mjs').FieldView}
+   */
+  function view() {
+    const hour = timeOfDay();
+    const scroll = Math.round(offset);
 
-      // Everything standing on it is one picture for every hour, so it is
-      // drawn apart and lit before it lands.
-      const lit = openDaylightLayer();
-      if (lit) {
-        // The height the companion is actually drawn at, so a carried item
-        // clears the head of a Wailord as surely as that of a Wurmple.
-        events?.render(lit, offset, actorHeight(companion, session.active));
+    const standing = events?.standing ?? null;
+    const prop = standing
+      ? {
+          key: propLook(standing),
+          // Where it stands moves with the road a whole pixel at a time, in
+          // step with the road under it.
+          x: COMPANION_X + Math.round(standing.worldX) - scroll,
+          draw: (/** @type {CanvasRenderingContext2D} */ context, /** @type {number} */ x) => drawProp(context, standing, x),
+        }
+      : null;
 
-        const alpha = events?.actorAlpha ?? 1;
-        if (companion && showActor && !events?.hidesActor && alpha > 0) {
-          const moving = !paused && (events?.walking ?? true);
+    const alpha = events?.actorAlpha ?? 1;
+    const shown = Boolean(companion && showActor && !events?.hidesActor && alpha > 0);
+    const moving = !paused && (events?.walking ?? true);
+    const lift = events?.actorLift ?? null;
+    const carried = events?.carried ?? null;
+    const scale = actorScale(companion, session.active);
+    // Walking, it changes as it covers ground — the hop, the dust; standing,
+    // as it bobs, or as whatever it is busy with lifts it.
+    const pose = moving ? `walk${scroll}` : lift !== null ? `lift${lift}` : `bob${idleBob(session.playtime)}`;
+    const actorKey = [
+      shown ? `${loadedSpriteId}|${scale}|${pose}|${lift ?? ''}|${alpha}` : 'none',
+      carried ? carried.icon : '',
+    ].join('|');
+
+    return {
+      offset,
+      hour,
+      background,
+      overlay,
+      weather: weatherForArea(session.area),
+      elapsed: session.playtime,
+      prop,
+      actor: {
+        key: actorKey,
+        draw: (context) => {
+          // Held up over its head, clear of whatever height it is.
+          if (carried) drawCarried(context, carried, actorHeight(companion, session.active));
+          if (!shown || !companion) return;
           const walk = {
             x: COMPANION_X,
             y: groundY(),
-            distance: offset,
+            distance: scroll,
             moving,
             // Standing still in front of a berry tree for ten seconds reads as
             // a frozen game; the bob says it is picking.
-            lift: events?.actorLift ?? null,
-            scale: actorScale(companion, session.active),
+            lift,
+            scale,
             time: session.playtime,
           };
           // Faded as it steps through a doorway, shadow and all.
-          lit.save();
-          lit.globalAlpha *= alpha;
-          drawStepDust(lit, walk);
+          context.globalAlpha *= alpha;
+          drawStepDust(context, walk);
           // A hop while the road moves, and its standing bob while it does not.
-          drawWalker(lit, companion, walk);
-          lit.restore();
-        }
-        closeDaylightLayer(field, timeOfDay());
-      }
-
-      // A bridge overhead goes over whoever is walking under it; it is graded
-      // for the hour already, like the road.
-      drawOverlay(field, overlay, Math.round(offset));
-
-      // The sky the place is under, in front of everything standing in it —
-      // the companion walks in the rain rather than into it at the battle
-      // screen.
-      drawWeather(field, weatherForArea(session.area), session.playtime);
-    });
-  }
-
-  /**
-   * The dark the road is changed behind, drawn over everything in the window's
-   * own pixels rather than the field's so the edges land on whole ones.
-   *
-   * @param {CanvasRenderingContext2D} context
-   */
-  function drawCrossing(context) {
-    const shut = crossingShut();
-    if (shut <= 0) return;
-
-    // Closing in from above and below, the way a door shuts on a room.
-    const reach = Math.ceil((VIEW_HEIGHT / 2) * Math.min(1, shut * 1.15));
-    context.save();
-    context.fillStyle = '#05070c';
-    context.fillRect(0, 0, VIEW_WIDTH, reach);
-    context.fillRect(0, VIEW_HEIGHT - reach, VIEW_WIDTH, reach);
-    context.restore();
+          drawWalker(context, companion, walk);
+        },
+      },
+      flash: events?.takeFlash() ?? 0,
+      shut: crossingShut(),
+    };
   }
 
   /** @param {import('../core/app.mjs').App} app */

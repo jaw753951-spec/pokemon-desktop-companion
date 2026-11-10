@@ -13,6 +13,7 @@ import { url } from '../core/bridge.mjs';
 import { artPath, gameData, speciesOf } from '../core/data.mjs';
 import { button, el, scrollable, setChildren } from '../core/dom.mjs';
 import { name as localized, t } from '../core/i18n.mjs';
+import { championIcon } from './badges.mjs';
 import { pictureLoader } from './pictureloader.mjs';
 import { typeChip } from './typechip.mjs';
 
@@ -84,7 +85,8 @@ function entryButton(app, session, id, detail) {
     // Put up by the Pokédex's `pictureLoader` once it is near the window.
     el('img', { alt: '', decoding: 'async', dataset: { path: artPath({ speciesId: id }) ?? '' } }),
     el('span.dex-number', { text: String(species?.dex ?? id).padStart(4, '0') }),
-    session.champions.has(id) ? el('span.dex-champion', { text: '★' }) : null,
+    // The crown a champion wears in the box, for a species that has been one.
+    session.champions.has(id) ? el('span.dex-champion', {}, [championIcon()]) : null,
   ]);
 }
 
@@ -119,7 +121,7 @@ function showDetail(session, detail, id) {
     // The form under the name, as the games' Pokédex labels it: the name is
     // the species' own, and an Alolan Raichu is told apart here.
     species?.form ? el('span.dex-detail-form', { text: localized(species.form, '') }) : null,
-    session.champions.has(id) ? el('span.dex-champion-mark', { text: t('dex.championBadge') }) : null,
+    session.champions.has(id) ? el('span.dex-champion-mark', {}, [championIcon(), el('span', { text: t('dex.championBadge') })]) : null,
 
     caught
       ? el('div.dex-facts', {}, [

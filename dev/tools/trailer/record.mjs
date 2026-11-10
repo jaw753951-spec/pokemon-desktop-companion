@@ -3,7 +3,7 @@
  * Film the trailer: the real game, driven shot by shot, a frame at a time.
  *
  *   npx electron dev/tools/trailer/record.mjs --ffmpeg path/to/ffmpeg [--out trailer] [--lang en] [--only fight-1] [--stills 30]
- *     [--upright] [--sound-only]
+ *     [--upright] [--no-captions] [--sound-only]
  *
  * Boots the game's own main-process modules (as the screenshot harness does)
  * into a hidden 1920x1080 window, hands the page to `director.js`, and
@@ -44,6 +44,8 @@ const SOUND_ONLY = args.includes('--sound-only');
 const UPRIGHT = args.includes('--upright');
 /** Keep a still every so many frames, for looking at without playing the film. */
 const STILLS = Number(option('--stills', '0'));
+/** Leave the upright cut's lines off the picture, for creators who put their own words over it. */
+const BARE = args.includes('--no-captions');
 /**
  * The window is landscape either way. A window as tall as the phone's frame
  * fits on no ordinary display, so the upright cut is drawn lying on its side
@@ -53,7 +55,7 @@ const WIDTH = 1920;
 const HEIGHT = 1080;
 /** What this cut's files are called apart from the other's. */
 const CUT = UPRIGHT ? '-upright' : '';
-const FINAL = join(OUT_DIR, `trailer-${LANGUAGE}${UPRIGHT ? '-vertical' : ''}.mp4`);
+const FINAL = join(OUT_DIR, `trailer-${LANGUAGE}${UPRIGHT ? '-vertical' : ''}${BARE ? '-nocaption' : ''}.mp4`);
 /**
  * The page is laid out at half the film's size and drawn at twice the pixel
  * density: a window as big as the film is cut down to fit the screen on most
@@ -124,7 +126,7 @@ async function film(run, window, video) {
   await run(`${await readFile(join(HERE, 'director.js'), 'utf8')};true`);
   const wallpaper = `data:image/jpeg;base64,${(await readFile(option('--wallpaper', 'C:/Windows/Web/Wallpaper/Windows/img0.jpg'))).toString('base64')}`;
   const icon = `data:image/png;base64,${(await readFile(join(ROOT, 'dev', 'build', 'icon.png'))).toString('base64')}`;
-  const shots = await run(`window.__trailer.setup(${JSON.stringify({ wallpaper, icon, upright: UPRIGHT })})`);
+  const shots = await run(`window.__trailer.setup(${JSON.stringify({ wallpaper, icon, upright: UPRIGHT, captions: !BARE })})`);
   console.log(shots.map((shot) => `${shot.name}:${shot.frames}`).join(' '));
 
   const encoder = spawn(FFMPEG, [

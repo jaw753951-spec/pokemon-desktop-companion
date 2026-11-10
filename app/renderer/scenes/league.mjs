@@ -26,6 +26,12 @@ import { hallOfFameScene } from './halloffame.mjs';
 import { inventoryScene } from '../ui/inventory.mjs';
 import { shutter } from '../ui/shutter.mjs';
 
+/** How many screen pixels each of a portrait's own is drawn as. */
+const PORTRAIT_SCALE = 2;
+
+/** The tallest a portrait is drawn: twice the tallest there is, near enough. */
+const PORTRAIT_HEIGHT = 172;
+
 /**
  * The level each round's team stands at: the Elite Four in order, then the
  * champion.
@@ -70,6 +76,16 @@ export function leagueScene({ session, onLeave, onCrowned }) {
   let loadedRoom = '';
 
   const portrait = /** @type {HTMLImageElement} */ (el('img.league-portrait', { alt: '' }));
+  // Shown at twice its own size, every pixel two, and no more than the frame
+  // it stands in holds: at its own size it stood a third the height of the
+  // room it was waiting in.
+  portrait.addEventListener('load', () => {
+    const scale = Math.min(PORTRAIT_SCALE, PORTRAIT_HEIGHT / Math.max(1, portrait.naturalHeight));
+    portrait.style.width = `${Math.round(portrait.naturalWidth * scale)}px`;
+    portrait.style.height = `${Math.round(portrait.naturalHeight * scale)}px`;
+  });
+  // Feet on one line, whoever is standing there, so nothing moves between rounds.
+  const figure = el('div.league-figure', {}, [portrait]);
   // Who is waiting, on one plate: what they are, small, over their name.
   const title = el('span.league-title');
   const nameLine = el('span.league-name');
@@ -87,7 +103,7 @@ export function leagueScene({ session, onLeave, onCrowned }) {
       return el('div.screen.league-screen', {}, [
         // Named first, over the figure, as a card names who is on it.
         caption,
-        portrait,
+        figure,
         actions,
       ]);
     },

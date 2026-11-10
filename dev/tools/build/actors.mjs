@@ -100,10 +100,14 @@ async function buildNamedPortraits(assetDir, pool) {
         if (!picture) return;
         // A sheet that marks its own see-through pixels is cut by them: keying
         // out the first palette colour as well would take a PokéRogue
-        // sprite's black outline with it, which is the same black.
-        const trimmed = picture.ownAlpha
-          ? trimOpaque(picture.image)
-          : trimKeyed(/** @type {import('../lib/png.mjs').DecodedPng} */ (picture.image));
+        // sprite's black outline with it, which is the same black. Pokémon
+        // Showdown's are shared on condition they are not edited, so they go
+        // in exactly as they are, empty margin and all.
+        const trimmed = source === 'showdown'
+          ? picture.image
+          : picture.ownAlpha
+            ? trimOpaque(picture.image)
+            : trimKeyed(/** @type {import('../lib/png.mjs').DecodedPng} */ (picture.image));
         if (!trimmed) return;
         await writeOut(
           join(assetDir, 'trainers', 'portraits', `${id}.png`),

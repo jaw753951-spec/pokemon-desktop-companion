@@ -34,6 +34,7 @@
       "output": "dist",
       "buildResources": "dev/build"
     },
+    "afterPack": "dev/tools/after-pack.cjs",
     "files": [
       "app/**/*",
       "package.json"

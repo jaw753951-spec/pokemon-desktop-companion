@@ -6,12 +6,11 @@
  * met along the way rather than something that appeared on top of the player.
  * The runner owns the props and their timing; the field scene owns the walk.
  */
-import { FIELD_HEIGHT, FIELD_WIDTH, FIRST_RUN_LEADER_STATS, leaderLevels, leaderOdds } from '../../shared/constants.mjs';
+import { FIELD_WIDTH, FIRST_RUN_LEADER_STATS, leaderLevels, leaderOdds } from '../../shared/constants.mjs';
 import { loadImage, loadSprite, Sprite } from '../core/assets.mjs';
 import { artOf, gameData, itemOf, speciesOf } from '../core/data.mjs';
 import { name as localized, t } from '../core/i18n.mjs';
 import { BALL_TIERS } from '../../shared/ball-tiers.mjs';
-import { TAG_TYPES } from '../../shared/area-tags.mjs';
 import { alreadyOwned, priceOf } from '../engine/shop.mjs';
 import { capRoster, evolveToLevel, giveTrainerItems, LEADER_PARTY_CAP, rollTrainer, rollWildPokemon, wildLevelDrop } from '../engine/encounter.mjs';
 import { createPokemon, levelOf } from '../engine/pokemon.mjs';
@@ -24,6 +23,7 @@ import {
   COMPANION_X,
   drawWalker,
   groundY,
+  idleBob,
   nearOverpass,
   POKEMON_SCALE,
   ROOF_COVER,
@@ -329,24 +329,27 @@ export function createEventRunner({ session, onBattle }) {
     },
 
     /**
-     * @param {CanvasRenderingContext2D} context
-     * @param {number} offset
+     * The event standing on the road — a tree, a ball, a building, a trainer,
+     * a wild Pokémon — for the field to draw ({@link drawProp}), or null.
      */
-    render(context, offset, actorHeight = 24) {
-      if (!active) return;
-      const screenX = COMPANION_X + (active.worldX - offset);
+    get standing() {
+      return active?.prop ? active : null;
+    },
 
-      if (active.prop && screenX < FIELD_WIDTH + 64) {
-        drawProp(context, active, screenX);
-      }
-      if (active.phase === 'show' && active.carried) {
-        drawCarried(context, active.carried, actorHeight);
-      }
-      if (active.flash > 0) {
-        context.fillStyle = `rgba(255, 255, 255, ${Math.min(0.55, active.flash)})`;
-        context.fillRect(0, 0, FIELD_WIDTH, FIELD_HEIGHT);
-        active.flash -= 0.02;
-      }
+    /** What the companion is holding up over its head, if anything. */
+    get carried() {
+      return active?.phase === 'show' && active.carried?.sprite ? active.carried : null;
+    },
+
+    /**
+     * How bright the white over the road is this frame, and fade it a step:
+     * called once a frame the road is drawn.
+     */
+    takeFlash() {
+      if (!active || !(active.flash > 0)) return 0;
+      const flash = Math.min(0.55, active.flash);
+      active.flash -= 0.02;
+      return flash;
     },
 
     /** Abandon whatever is running, e.g. when the area changes underneath it. */
@@ -1121,9 +1124,13 @@ export function shouldSummonLeader(session) {
 }
 
 /**
- * A leader whose badge the player does not already hold, preferring one whose
- * type suits the area's terrain — a Rock leader on a mountain path rather than
- * at the seaside.
+ * A leader whose badge the player does not already hold, any of them alike.
+ *
+ * They used to be drawn from the types the area's terrain suited — a Rock
+ * leader on a mountain path — which had the Grass and Water leaders turning up
+ * run after run and some Psychic and Dragon leaders hardly ever: one in fifty
+ * runs met Avery at all. Every leader now has the same chance, about one run
+ * in ten.
  *
  * @param {import('../engine/session.mjs').Session} session
  */
@@ -1131,10 +1138,7 @@ export function pickLeader(session) {
   const held = new Set(session.badges);
   const available = (gameData().leaders ?? []).filter((leader) => !held.has(leader.type));
   if (available.length === 0) return null;
-
-  const suited = new Set((session.area?.tags ?? []).flatMap((tag) => TAG_TYPES[tag] ?? []));
-  const local = available.filter((leader) => suited.has(leader.type));
-  return session.rng.pick(local.length ? local : available);
+  return session.rng.pick(available);
 }
 
 /**
@@ -1203,11 +1207,41 @@ function pickTypeRoster(session, type, count, ceiling = Infinity) {
 const totalStats = (species) => Object.values(species.stats).reduce((sum, value) => sum + Number(value), 0);
 
 /**
+ * Everything that decides how an event's prop looks this frame, as one string:
+ * the same string, the same picture. The field draws the prop on a layer of
+ * its own and only paints it again when this changes — a tree as it sways, a
+ * door as it opens — rather than sixty times a second.
+ *
+ * It follows {@link drawProp} branch for branch, and has to: anything that
+ * moves the picture and is left out of here freezes on screen.
+ *
+ * @param {any} state
+ * @returns {string}
+ */
+export function propLook(state) {
+  const prop = state?.prop;
+  if (!prop?.sprite) return 'none';
+  if (prop.kind === 'berry-tree') return `tree|${prop.frame}|${Math.floor(lookClock(state) / BERRY_SWAY_MS)}`;
+  if (prop.kind === 'ball') {
+    if (prop.frame === 'closed') return 'ball|closed';
+    const since = (state.elapsed ?? 0) - (prop.openedAt ?? 0);
+    // Every frame of the fade, and then nothing.
+    return since >= BALL_FADE_MS ? 'ball|gone' : `ball|${since}`;
+  }
+  if (prop.kind === 'center' || prop.kind === 'gym') {
+    const frame = prop.closingFrom === null ? prop.frame : closingDoorFrame((state.elapsed ?? 0) - prop.closingFrom);
+    return `${prop.kind}|${frame}|${prop.door ? 'door' : ''}`;
+  }
+  if (prop.kind === 'pokemon') return `pokemon|${idleBob(performance.now())}`;
+  return `trainer|${prop.sprite.frameAt(lookClock(state))}|${prop.drop ?? 0}`;
+}
+
+/**
  * @param {CanvasRenderingContext2D} context
  * @param {any} state
  * @param {number} screenX
  */
-function drawProp(context, state, screenX) {
+export function drawProp(context, state, screenX) {
   const prop = state.prop;
   if (!prop?.sprite) return;
 
@@ -1406,7 +1440,7 @@ export function drawBall(context, prop, screenX, sinceOpened = 0) {
  * The item held up over the companion's head after a gather, clear of whatever
  * height that species happens to be.
  */
-function drawCarried(context, carried, actorHeight) {
+export function drawCarried(context, carried, actorHeight) {
   if (!carried.sprite) return;
   carried.sprite.draw(context, COMPANION_X, groundY() - actorHeight - 4, { scale: carried.scale ?? 1 });
 }

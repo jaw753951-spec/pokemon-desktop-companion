@@ -137,3 +137,100 @@ export function drawWeather(context, weather, elapsed) {
   }
   context.restore();
 }
+
+/**
+ * The sky an area's weather is drawn with, or null for a clear one.
+ *
+ * @param {string|null|undefined} weather
+ */
+export function skyOf(weather) {
+  return (weather && SKIES[/** @type {keyof typeof SKIES} */ (weather)]) || null;
+}
+
+/** How tall a tile of the road's weather is, in field pixels. */
+const TILE_HEIGHT = 160;
+/** How wide one may be: no narrower than the view, so it never repeats across it. */
+const TILE_WIDTH = { min: FIELD_WIDTH, max: 330 };
+
+/**
+ * The tile the road's weather repeats on, and how far it slides each time
+ * round.
+ *
+ * On the road the weather is not drawn mark by mark any more: one tile of it
+ * is drawn once, laid over the view as a repeating picture, and slid along by
+ * the compositor, which costs the page nothing a frame. For the slide to loop
+ * without a jump it has to end exactly one repeat of the tile away from where
+ * it started — `across` tiles sideways and `down` tiles down — in the
+ * direction the sky blows. So the tile's width is chosen to make that so: the
+ * rain's slant is a seventh of its fall, so a rain tile is a seventh as wide
+ * per tile fallen as the slant is long.
+ *
+ * @param {{speed: {x: number, y: number}}} sky
+ * @returns {{width: number, height: number, across: number, down: number}}
+ */
+export function weatherTile(sky) {
+  const height = TILE_HEIGHT;
+  const slant = Math.abs(sky.speed.x) / Math.max(1, sky.speed.y);
+  if (slant === 0) return { width: TILE_WIDTH.min, height, across: 0, down: 1 };
+  let best = null;
+  for (let across = 1; across <= 12; across++) {
+    for (let down = 1; down <= 12; down++) {
+      const width = (slant * down * height) / across;
+      if (width < TILE_WIDTH.min || width > TILE_WIDTH.max) continue;
+      if (!best || across + down < best.across + best.down) best = { width: Math.round(width), height, across, down };
+    }
+  }
+  return best ?? { width: TILE_WIDTH.min, height, across: 0, down: 1 };
+}
+
+/**
+ * Draw one tile of a sky's marks, wrapped at its edges so it repeats without a
+ * seam — the same marks {@link drawWeather} draws, placed by the same noise.
+ *
+ * @param {CanvasRenderingContext2D} context in field pixels
+ * @param {{speed: {x: number, y: number}, length: number, colour: string, marks: number}} sky
+ * @param {{width: number, height: number}} tile
+ * @param {number} seed which of the sky's layers this is, so two are not alike
+ * @param {number} count how many marks to put on it
+ */
+export function drawWeatherTile(context, sky, tile, seed, count) {
+  context.save();
+  context.strokeStyle = sky.colour;
+  context.fillStyle = sky.colour;
+  context.lineWidth = 1;
+  const speed = Math.hypot(sky.speed.x, sky.speed.y) || 1;
+  for (let index = 0; index < count; index++) {
+    const x = Math.round(noise(index, seed * 7 + 1) * tile.width);
+    const y = Math.round(noise(index, seed * 7 + 2) * tile.height);
+    const length = sky.length * (1 + (noise(index, seed * 7 + 3) - 0.5) * 2 * SPEED_JITTER);
+    const dx = Math.round((sky.speed.x / speed) * length);
+    const dy = Math.round((sky.speed.y / speed) * length);
+    // Drawn again a tile over wherever it runs off an edge.
+    for (const shiftX of [-tile.width, 0, tile.width]) {
+      for (const shiftY of [-tile.height, 0, tile.height]) {
+        if (sky.length === 0) {
+          context.fillRect(x + shiftX, y + shiftY, 1, 1);
+          continue;
+        }
+        context.beginPath();
+        context.moveTo(x + shiftX, y + shiftY);
+        context.lineTo(x + shiftX + dx, y + shiftY + dy);
+        context.stroke();
+      }
+    }
+  }
+  context.restore();
+}
+
+/**
+ * How many marks a tile carries for the sky to look as thick as it does drawn
+ * mark by mark, which spreads its pool over a band a little larger than the
+ * view.
+ *
+ * @param {{marks: number}} sky
+ * @param {{width: number, height: number}} tile
+ */
+export function marksPerTile(sky, tile) {
+  const band = (FIELD_WIDTH + 80) * (FIELD_HEIGHT + 40);
+  return Math.round((sky.marks * tile.width * tile.height) / band);
+}

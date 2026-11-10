@@ -338,7 +338,10 @@
    * @param {boolean} on
    */
   function smooth(on) {
-    document.getElementById('scene').style.imageRendering = on ? 'auto' : '';
+    // The road's own layers under the canvas as well (`render/fieldlayers.mjs`).
+    for (const node of document.querySelectorAll('#stage canvas, #stage .field-sky-marks')) {
+      /** @type {HTMLElement} */ (node).style.imageRendering = on ? 'auto' : '';
+    }
   }
 
   /**
@@ -403,6 +406,8 @@
    * panels and message box are left out — the words say what they would.
    */
   let upright = false;
+  /** Whether the upright cut's lines are drawn over the picture. */
+  let captions = true;
   const FRAME = { width: 960, height: 540 };
   const PHONE = { width: 540, height: 960 };
   /** The landscape frame to the phone's, for a picture that fills its height: eight screen pixels a game pixel. */
@@ -596,7 +601,8 @@
     const height = Math.ceil(canvas.height / scale);
     context.fillStyle = '#000';
     context.fillRect(0, 0, canvas.width, canvas.height);
-    context.drawImage(app().canvas, x, y, width, height, 0, 0, width * scale, height * scale);
+    // The whole picture, the road's layers under the canvas included.
+    context.drawImage(app().snapshot(), x, y, width, height, 0, 0, width * scale, height * scale);
   }
 
   /**
@@ -1290,10 +1296,11 @@
     BAR,
 
     /** Boot a fresh run with Charmander on Route 101, and take the clock. */
-    async setup({ wallpaper, icon, upright: lying = false }) {
+    async setup({ wallpaper, icon, upright: lying = false, captions: lines = true }) {
       wallpaperUrl = wallpaper;
       window.__trailerIcon = icon;
       upright = lying;
+      captions = lines;
       for (let i = 0; i < 200 && !app()?.scene; i++) await settle(50);
       document.getElementById('notice-screen')?.click();
       await settle(400);
@@ -1356,7 +1363,7 @@
       await shot.before?.call(shot, frame, counts[index]);
       if (upright) {
         aim(shot.pan?.call(shot, frame, counts[index]) ?? 0.5, shot.tilt?.call(shot, frame, counts[index]) ?? 0.5);
-        drawCaption(shot.says?.call(shot, frame) ?? null);
+        drawCaption(captions ? (shot.says?.call(shot, frame) ?? null) : null);
       }
       drawTransition(index, frame);
       const before = app().scene?.offset;

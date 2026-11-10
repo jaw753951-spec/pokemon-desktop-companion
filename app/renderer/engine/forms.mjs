@@ -88,7 +88,7 @@ export const HELD_FORMES = new Map([
 ]);
 
 /** The types in the games' own order, which is the order the plates are numbered in. */
-const TYPE_ORDER = TYPES_WITH_PLATES.map(([, type]) => type);
+export const TYPE_ORDER = TYPES_WITH_PLATES.map(([, type]) => type);
 
 /**
  * The sets a Pokémon collects a type at a time — Arceus's plates, Genesect's

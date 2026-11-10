@@ -2711,6 +2711,10 @@ export class Battle {
       // line that says so carries where, so the screen can take the sprite
       // away with it.
       const hides = SEMI_INVULNERABLE[moveName] ?? null;
+      // Named first, as the games do — "Bulbasaur used Solar Beam!" and then
+      // what it does about it — rather than only the gathering, which left a
+      // player to guess what was coming.
+      log.push({ kind: 'move', side: attacker.side, data: { move: moveName, charging: true } });
       if (charge) this.say(attacker, charge.key, hides ? { hide: hides } : {});
       else log.push({ kind: 'charging', side: attacker.side, data: { move: moveName } });
       if (charge?.stat) this.applyStage(attacker, charge.stat, 1, log, { source: 'self' });
@@ -5960,29 +5964,49 @@ export function moveCondition(policy, slug) {
 }
 
 /**
- * The condition a move is used under second, looked at only once no move's
- * first has come round. A move starts with none, which reads as `never`.
+ * What a move's second condition asks besides: whatever its first says, the
+ * move is only used while this holds too. A move starts with none, `none`.
+ *
+ * `never` and `always` are not seconds — one would take the move out
+ * however the first is set, the other asks for nothing — and a stored one of
+ * either reads as `none`.
  *
  * @param {{second?: Record<string, string>}} policy
  * @param {string} slug
  * @returns {string}
  */
 export function secondCondition(policy, slug) {
-  return policy.second?.[slug] || 'never';
+  const second = policy.second?.[slug];
+  return !second || second === 'never' || second === 'always' ? 'none' : second;
+}
+
+/**
+ * Whether a move's second condition lets it be used this turn.
+ *
+ * @param {Battle} battle
+ * @param {Combatant} attacker
+ * @param {Combatant} defender
+ * @param {string} slug
+ */
+function secondAllows(battle, attacker, defender, slug) {
+  const second = secondCondition(battle.policy, slug);
+  return second === 'none' || conditionHolds(second, battle, attacker, defender, slug);
 }
 
 /**
  * Choose a move from the player's auto-battle policy.
  *
- * Each move has two conditions, a first and a second, and the first are all
- * gone through before any second. Within each rank, a condition that names a
- * moment — a third of health left, every other turn, a foe nearly beaten —
- * comes before `always`: the first move in slot order whose moment has come
- * is used; with none, of the moves allowed always at that rank the
- * hardest-hitting attack is used, or with no attack among them the first in
- * slot order. So: first moments, first always, second moments, second
- * always. `never` in both takes a move out of the fight. Anything none of
- * this decides falls through to the strongest attack that can land.
+ * Each move has two conditions. The first says when it is used: a moment — the
+ * start of a battle, a third of health left, a foe nearly beaten — or
+ * `always`, or `never`. The second says what else has to be so for it to be
+ * used then: health at half or more, a foe that hits physically. A move whose
+ * second does not hold is not used this turn, whatever its first says.
+ *
+ * Of the moves left, the first in slot order whose moment has come is used;
+ * with none, the hardest-hitting attack among those allowed always, or with no
+ * attack among them the first in slot order. Anything none of this decides
+ * falls through to the strongest attack that can land — of the moves whose
+ * second holds, while there are any.
  *
  * @param {Battle} battle
  * @param {Combatant} attacker
@@ -6002,22 +6026,21 @@ export function choosePolicyMove(battle, attacker, defender, usable) {
     // unwon, is never reached for by the policy.
     if (neverAutomatic(slot.move)) continue;
     if (!worthReachingFor(battle, move, categoryOf(move), attacker, defender)) continue;
-    candidates.push({ move: slot.move, first: moveCondition(policy, slot.move), second: secondCondition(policy, slot.move) });
+    // What its second asks has to be so, or it is not used this turn at all.
+    if (!secondAllows(battle, attacker, defender, slot.move)) continue;
+    candidates.push({ move: slot.move, first: moveCondition(policy, slot.move) });
   }
 
-  // Rank by rank: a moment that has come, in slot order — which is the
-  // player's to set — and then the hardest-hitting of the moves allowed always
-  // at that rank, before anything at the next.
-  for (const rank of /** @type {const} */ (['first', 'second'])) {
-    const triggered = candidates.find((entry) =>
-      entry[rank] !== 'always' && conditionHolds(entry[rank], battle, attacker, defender, entry.move));
-    if (triggered) return triggered.move;
+  // A moment that has come, in slot order — which is the player's to set —
+  // and then the hardest-hitting of the moves allowed always.
+  const triggered = candidates.find((entry) =>
+    entry.first !== 'always' && conditionHolds(entry.first, battle, attacker, defender, entry.move));
+  if (triggered) return triggered.move;
 
-    const pool = candidates.filter((entry) => entry[rank] === 'always').map((entry) => entry.move);
-    if (pool.length) {
-      const attacks = usable.filter((slot) => pool.includes(slot.move) && categoryOf(moveOf(slot.move)) === 'damage');
-      return bestDamageMove(battle, attacker, defender, attacks) ?? pool[0];
-    }
+  const pool = candidates.filter((entry) => entry.first === 'always').map((entry) => entry.move);
+  if (pool.length) {
+    const attacks = usable.filter((slot) => pool.includes(slot.move) && categoryOf(moveOf(slot.move)) === 'damage');
+    return bestDamageMove(battle, attacker, defender, attacks) ?? pool[0];
   }
 
   // Nothing the policy allows applies this turn. Rather than stand there
@@ -6027,12 +6050,21 @@ export function choosePolicyMove(battle, attacker, defender, usable) {
   // anything else is left, even a move that will fail: an Azelf with a Future
   // Sight on its way and its Rest not needed Exploded the next turn, every
   // battle, and lost every one with foes still to come.
-  const worth = movesWorthUsing(battle, attacker, defender, usable);
+  //
+  // A move held back by its second stays held back here too, while anything
+  // else can be used: a "only against a physical attacker" is not overruled
+  // by there being nothing else due. Only a turn with nothing else at all
+  // reaches for one.
+  const allowed = (/** @type {typeof usable} */ list) => list.filter((slot) => secondAllows(battle, attacker, defender, slot.move));
   const spared = (/** @type {typeof usable} */ list) => list.filter((slot) => !costsItsUser(slot.move));
   // Last of all, before the Explosion, a move already passed over as bound to
   // fail: a Rest at full health loses a turn, not the battle.
   const all = battle.movesOf(attacker).filter((slot) => slot.pp > 0 && moveOf(slot.move));
-  const fallback = [spared(worth), spared(usable), spared(all)].find((list) => list.length) ?? worth;
+  const worth = movesWorthUsing(battle, attacker, defender, usable);
+  const fallback = [
+    spared(allowed(worth)), spared(allowed(usable)), spared(allowed(all)),
+    spared(worth), spared(usable), spared(all),
+  ].find((list) => list.length) ?? worth;
   return bestDamageMove(battle, attacker, defender, fallback) ?? battle.rng.pick(fallback).move;
 }
 
@@ -6202,8 +6234,17 @@ function conditionHolds(condition, battle, attacker, defender, slug) {
       return Object.values(defender.stages).some((stage) => stage < 0);
     case 'hpFull':
       return health() >= 1;
+    // Hanging on by one hit point — a Sturdy, a Focus Sash, an Endure.
+    case 'hpOne':
+      return attacker.pokemon.hp === 1;
+    case 'hpAboveTwoThirds':
+      return health() > 2 / 3;
     case 'hpAboveHalf':
       return health() > 1 / 2;
+    case 'hpAboveThird':
+      return health() > 1 / 3;
+    case 'hpAboveQuarter':
+      return health() > 1 / 4;
     case 'hpTwoThirds':
       return health() <= 2 / 3;
     // `lowHp` is what half health was called before the fractions were named.
@@ -6216,8 +6257,16 @@ function conditionHolds(condition, battle, attacker, defender, slug) {
       return health() <= 1 / 4;
     case 'foeHpFull':
       return foeHealth() >= 1;
+    case 'foeHpOne':
+      return defender.pokemon.hp === 1;
+    case 'foeHpAboveTwoThirds':
+      return foeHealth() > 2 / 3;
     case 'foeHpAboveHalf':
       return foeHealth() > 1 / 2;
+    case 'foeHpAboveThird':
+      return foeHealth() > 1 / 3;
+    case 'foeHpAboveQuarter':
+      return foeHealth() > 1 / 4;
     case 'foeHpTwoThirds':
       return foeHealth() <= 2 / 3;
     case 'foeHpHalf':

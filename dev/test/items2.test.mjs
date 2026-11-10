@@ -23,6 +23,7 @@ import {
   LEARNABLE_MACHINE_SHARE,
   learnsMachine,
   pickFind,
+  restoreHeldItem,
   stockWeight,
   useItem,
 } from '../../app/renderer/engine/items.mjs';
@@ -69,6 +70,36 @@ function bag(contents, pokemon) {
     },
   });
 }
+
+test('a gem hits harder once with its own type, is used up, and is handed back after the battle', options, () => {
+  /** How much of the foe the first hit takes, holding a given item. */
+  const firstHit = (/** @type {string|null} */ held) => {
+    const player = make('snorlax', 50, ['body-slam']);
+    player.ability = 'no-ability';
+    player.heldItem = held;
+    const foe = make('blissey', 50, ['splash']);
+    const battle = new Battle({ rng: new Rng(3), player, foes: [foe], policy: defaultAutoBattle() });
+    const log = battle.takeTurn();
+    return { lost: maxHp(foe) - foe.hp, player, log };
+  };
+  assert.ok(canHold('normal-gem'), 'it can be held');
+
+  const plain = firstHit(null);
+  const gem = firstHit('normal-gem');
+  const ratio = gem.lost / plain.lost;
+  assert.ok(ratio > 1.2 && ratio < 1.4, `a Normal Gem hits about 1.3 times as hard: ${ratio}`);
+  assert.equal(gem.player.heldItem, null, 'and is used up');
+  assert.ok(gem.log.some((entry) => entry.kind === 'heldFired' && entry.data?.item === 'normal-gem'));
+
+  // Another type's gem does nothing for a Normal move, and stays.
+  const fire = firstHit('fire-gem');
+  assert.equal(fire.lost, plain.lost);
+  assert.equal(fire.player.heldItem, 'fire-gem');
+
+  // The battle over, it is the Pokémon's again.
+  assert.equal(restoreHeldItem(gem.player, 'normal-gem'), true);
+  assert.equal(gem.player.heldItem, 'normal-gem');
+});
 
 test('each ball earns its bonus only where it should', options, () => {
   const magikarp = make('magikarp', 5);

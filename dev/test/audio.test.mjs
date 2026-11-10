@@ -148,8 +148,12 @@ test("the music silenced under a cue keeps its place, its notes still queued on 
   await audio.playJingle('victory');
   voiced.length = 0;
   tick(0.6);
-  assert.ok(voiced.some((entry) => entry.output === audio.songGain), 'the song goes on under the cue');
-  assert.ok(voiced.every((entry) => entry.output === audio.songGain || entry.output === audio.musicGain));
+  // The song's notes go through a gain of its own, which feeds the songs'
+  // channel: the one a recording of it crosses over from.
+  const song = audio.current?.live;
+  assert.ok(song, 'the song has a gain of its own');
+  assert.ok(voiced.some((entry) => entry.output === song), 'the song goes on under the cue');
+  assert.ok(voiced.every((entry) => entry.output === song || entry.output === audio.musicGain));
 });
 
 test('a track asked for during a cue is the one that comes back', async () => {
@@ -539,4 +543,127 @@ test('a quiet cry with a sharp crack in it is not turned up past full scale', as
   audio.buffers.set('cries/3.ogg', Promise.resolve(crack));
   await audio.playCry(3);
   assert.ok(trims[0].gain.value <= 2 + 1e-9, `turned up ${trims[0].gain.value} times`);
+});
+
+const { tapeOffset } = await import('../../app/renderer/core/audio.mjs');
+
+test("a moment of a playthrough is found in the song's recording: once through, then round its loop", () => {
+  const song = { duration: 10, loop: 2 };
+  // The first time through is the recording's first ten seconds.
+  assert.equal(tapeOffset(song, 3), 3);
+  // After that it goes round the loop's second time, from 10 to 18.
+  assert.equal(tapeOffset(song, 10), 10);
+  assert.equal(tapeOffset(song, 11.5), 11.5);
+  assert.equal(tapeOffset(song, 18), 10);
+  assert.equal(tapeOffset(song, 19.5), 11.5);
+  // A song with no loop marked goes round the whole of itself.
+  assert.equal(tapeOffset({ duration: 4 }, 5), 5);
+  assert.equal(tapeOffset({ duration: 4 }, 9), 5);
+  assert.equal(tapeOffset(song, -0.05), 0);
+});
+
+/**
+ * Watch the recording an engine plays: the buffer source it makes, where it
+ * starts it, and whether it is stopped.
+ */
+const watchTape = (audio) => {
+  audio.start();
+  const made = [];
+  audio.context.createBufferSource = () => {
+    const source = { ...node(), started: null, stopped: null };
+    source.start = (when, offset) => (source.started = { when, offset });
+    source.stop = (when) => (source.stopped = when);
+    made.push(source);
+    return source;
+  };
+  return made;
+};
+
+test('a recording takes over from the live notes, from where the song has got to, and they stop', async () => {
+  const audio = new AudioEngine();
+  const made = watchTape(audio);
+  const started = now;
+  await audio.playMusic('looped');
+  const playing = audio.current;
+  // Its recording is in: the next tick hands over.
+  playing.recorded = /** @type {any} */ ({ duration: 18 });
+  const queued = timers.size;
+  tick(0.12);
+  assert.ok(playing.tape, 'the recording is playing');
+  const tape = /** @type {any} */ (playing.tape.source);
+  assert.ok(made.includes(tape));
+  const { when, offset } = tape.started;
+  assert.ok(when > now && when <= playing.queuedTo, 'on a moment already queued live but not yet heard');
+  assert.ok(Math.abs(offset - (when - (started + 0.1))) < 1e-9, 'from the same place in the song');
+  assert.equal(tape.loopStart, 10);
+  assert.equal(tape.loopEnd, 18);
+  assert.equal(timers.size, queued - 1, 'no more live notes are queued');
+
+  // Asked for again, it goes on as it is.
+  await audio.playMusic('looped');
+  assert.equal(audio.current, playing);
+
+  // Silenced under a cue like the live music is.
+  const ducked = [];
+  /** @type {any} */ (audio.tapeGain).gain.setTargetAtTime = (/** @type {number} */ value) => ducked.push(value);
+  await audio.playJingle('victory');
+  assert.deepEqual(ducked, [0]);
+  audio.stopJingle();
+
+  // And stopped with the music.
+  audio.stopMusic();
+  assert.ok(tape.stopped !== null, 'the recording stops');
+  assert.equal(audio.current, null);
+});
+
+test('songs are recorded once, the last few kept, and nothing is recorded while nothing can be heard', async () => {
+  let recordings = 0;
+  globalThis.OfflineAudioContext = /** @type {any} */ (function OfflineStub(channels, length, rate) {
+    const context = new globalThis.AudioContext();
+    return {
+      ...context,
+      currentTime: 0,
+      sampleRate: rate,
+      suspend: () => new Promise(() => {}),
+      resume: async () => {},
+      startRendering: async () => {
+        recordings++;
+        return { length, sampleRate: rate, numberOfChannels: channels };
+      },
+    };
+  });
+  try {
+    const audio = new AudioEngine();
+    await audio.playMusic('song-1');
+    await settle();
+    assert.equal(recordings, 1);
+    assert.ok(audio.current?.recorded, 'its recording is ready to take over');
+
+    for (const name of ['song-2', 'song-3', 'song-4']) {
+      await audio.playMusic(name);
+      await settle();
+    }
+    assert.equal(recordings, 4);
+    assert.deepEqual([...audio.tapes.keys()], ['song-2', 'song-3', 'song-4']);
+
+    // One kept is not recorded again.
+    await audio.playMusic('song-3');
+    await settle();
+    assert.equal(recordings, 4);
+    assert.ok(audio.current?.recorded);
+    assert.deepEqual([...audio.tapes.keys()], ['song-2', 'song-4', 'song-3']);
+
+    // With every slider down nothing is recorded — until one comes up.
+    audio.setVolumes({ masterVolume: 0 });
+    await audio.playMusic('song-5');
+    await settle();
+    assert.equal(recordings, 4);
+    audio.setVolumes({ masterVolume: 1 });
+    await settle();
+    assert.equal(recordings, 5);
+    assert.ok(audio.current?.recorded);
+    audio.stopMusic();
+  } finally {
+    delete globalThis.OfflineAudioContext;
+  }
 });

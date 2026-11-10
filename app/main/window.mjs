@@ -7,7 +7,7 @@
  * of desktop pets like Ruety's Retirement. The renderer always draws at a
  * fixed 480x270 and is scaled to fit, so the pixel art stays exact.
  */
-import { BrowserWindow, screen } from 'electron';
+import { BrowserWindow, powerMonitor, screen } from 'electron';
 import { join } from 'node:path';
 
 import { RENDERER_DIR } from './paths.mjs';
@@ -83,6 +83,7 @@ export function createWindow(settings) {
   // point of a desktop companion; without it the window hides behind games.
   current.setAlwaysOnTop(true, 'screen-saver');
   current.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  keepOnTop(current);
 
   // The window is only ever moved, never minimized, maximized or put full
   // screen. The options above take those away from the window's own controls,
@@ -102,6 +103,48 @@ export function createWindow(settings) {
   });
 
   return current;
+}
+
+/** How often the companion takes the top back, in milliseconds. */
+const ON_TOP_EVERY_MS = 1500;
+
+/**
+ * Keep the companion above everything, not only above the windows that were
+ * open when it was put there.
+ *
+ * Being always on top is a band, not a place: every window in it — the
+ * taskbar, another desktop pet, a video player pinned on top — is stacked
+ * among the others, and whichever was clicked last goes over the rest. On
+ * Windows the companion never took the top back, so a click on the taskbar or
+ * on another pinned window left it underneath until it was clicked itself.
+ * Asking again puts it back at the head of the band without taking the focus,
+ * so it is asked whenever it loses the focus, whenever the displays change,
+ * on waking, and every so often for the windows that rise without taking the
+ * focus from it.
+ *
+ * @param {BrowserWindow} window
+ */
+function keepOnTop(window) {
+  const raise = () => {
+    if (window.isDestroyed() || !window.isVisible()) return;
+    window.setAlwaysOnTop(true, 'screen-saver');
+  };
+  const timer = setInterval(raise, ON_TOP_EVERY_MS);
+  window.on('blur', raise);
+  window.on('show', raise);
+  screen.on('display-added', raise);
+  screen.on('display-removed', raise);
+  screen.on('display-metrics-changed', raise);
+  powerMonitor.on('resume', raise);
+  powerMonitor.on('unlock-screen', raise);
+  window.on('closed', () => {
+    clearInterval(timer);
+    screen.off('display-added', raise);
+    screen.off('display-removed', raise);
+    screen.off('display-metrics-changed', raise);
+    powerMonitor.off('resume', raise);
+    powerMonitor.off('unlock-screen', raise);
+  });
 }
 
 /** @returns {BrowserWindow|null} */

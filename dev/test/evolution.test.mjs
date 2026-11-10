@@ -59,6 +59,30 @@ function fakeSession(bag, active) {
   });
 }
 
+test('a Rare Candy at level 100 sets off an evolution stopped there, and is no use otherwise', options, () => {
+  // Stopped at the top level, there is no next level to be asked again at.
+  const charmander = make('charmander', 100);
+  stopEvolution(charmander);
+  assert.equal(offeredEvolution(charmander), null);
+  const bag = { 'rare-candy': 2 };
+  const session = fakeSession(bag, charmander);
+  const before = charmander.experience;
+  const result = useItem(session, 'rare-candy');
+  assert.equal(result.used, true);
+  assert.equal(result.evolution?.to, id('charmeleon'));
+  assert.equal(result.evolution?.stoppable, true, 'and it can be stopped again');
+  assert.equal(bag['rare-candy'], 1, 'the candy is spent');
+  assert.equal(charmander.experience, before, 'no level given');
+
+  // One with nothing to evolve into keeps its candy.
+  const charizard = make('charizard', 100);
+  const kept = { 'rare-candy': 1 };
+  const refused = useItem(fakeSession(kept, charizard), 'rare-candy');
+  assert.equal(refused.used, false);
+  assert.equal(refused.evolution, undefined);
+  assert.equal(kept['rare-candy'], 1);
+});
+
 test('a regional variety is a Pokémon of its own, under its species number', options, () => {
   const galar = speciesOf(id('zigzagoon-galar'));
   assert.equal(galar.dex, 263);

@@ -66,6 +66,23 @@ test('a Fly says where its user went, and the move that comes down brings it bac
     .find((entry) => entry.kind === 'move')?.data?.reveal, undefined);
 });
 
+test('a two-turn move is named on the turn it charges, before it charges, and again when it lands', options, () => {
+  const VENUSAUR = 3;
+  const battle = fight(fixed(VENUSAUR, 60, ['solar-beam']), punchbag());
+  const charge = battle.takeTurn().filter((entry) => entry.side === 'player');
+  const named = charge.findIndex((entry) => entry.kind === 'move');
+  const gathered = charge.findIndex((entry) => entry.data?.key === 'move.charge.solar');
+  assert.ok(named >= 0, '"Venusaur used Solar Beam!" on the charge turn');
+  assert.equal(charge[named].data?.move, 'solar-beam');
+  assert.equal(charge[named].data?.charging, true, 'marked as the charge, so nothing is thrown yet');
+  assert.ok(gathered > named, 'and then what it does about it');
+  assert.ok(!charge.some((entry) => entry.kind === 'damage'));
+  const strike = battle.takeTurn().filter((entry) => entry.side === 'player');
+  const used = strike.find((entry) => entry.kind === 'move');
+  assert.equal(used?.data?.move, 'solar-beam');
+  assert.equal(used?.data?.charging, undefined);
+});
+
 test('a move bound to fail is passed over, and taken up again once it would work', options, () => {
   const GENGAR = 94;
   const GOLURK = 623;

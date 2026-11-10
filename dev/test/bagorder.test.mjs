@@ -25,15 +25,20 @@ test('machines are listed by kind and number, not as text', withData, () => {
   assert.ok(at('tm229') < at('hm01') && at('hm08') < at(firstTr ?? ''), 'TMs, then HMs, then TRs');
 });
 
-test('the misc pocket puts anyone’s items first, one Pokémon’s together, evolution last', withData, () => {
+test('the misc pocket: anyone’s items, one Pokémon’s, evolution, Gems, then the type sets', withData, () => {
   const order = listed('misc');
   const at = (slug) => order.indexOf(slug);
-  // Anyone's, then one Pokémon's, then evolving only.
   assert.ok(at('leftovers') < at('light-ball'));
   assert.ok(at('light-ball') < at('thunder-stone'));
-  assert.ok(at('linking-cord') > at('leftovers'), 'the Linking Cord goes with the evolution items');
+  assert.ok(at('thunder-stone') < at('normal-gem'));
+  assert.ok(at('fairy-gem') < at('flame-plate'));
+  assert.ok(at('linking-cord') > at('light-ball') && at('linking-cord') < at('normal-gem'), 'the Linking Cord goes with the evolution items');
   // A King's Rock is held for its flinch, and stays among the held items.
   assert.ok(at('kings-rock') < at('light-ball'));
+  // The Gems together, Normal first and then the type order.
+  const gems = ['normal', 'fire', 'water', 'electric', 'grass', 'ice', 'fighting', 'poison', 'ground', 'flying', 'psychic', 'bug',
+    'rock', 'ghost', 'dragon', 'dark', 'steel', 'fairy'].map((type) => `${type}-gem`);
+  assert.deepEqual(order.slice(at('normal-gem'), at('normal-gem') + gems.length), gems);
   // Items for one Pokémon sit side by side.
   const together = (slugs) => {
     const places = slugs.map(at).sort((a, b) => a - b);
@@ -52,8 +57,10 @@ test('plates, drives and memories close the misc pocket, each set together in ty
   const memories = ['fire', 'water', 'electric', 'grass', 'ice', 'fighting', 'poison', 'ground', 'flying', 'psychic', 'bug', 'rock',
     'ghost', 'dragon', 'dark', 'steel', 'fairy'].map((type) => `${type}-memory`);
   const sets = [...plates, ...drives, ...memories];
-  // Arceus's, then Genesect's, then Silvally's, by the Pokédex — the last of the pocket.
+  // Arceus's, then Genesect's, then Silvally's, by the Pokédex — the last of
+  // the pocket, straight after the Gems.
   assert.deepEqual(order.slice(-sets.length), sets);
+  assert.equal(order.indexOf('fairy-gem'), order.length - sets.length - 1);
 });
 
 test('medicine, berries and balls go kind by kind, weakest first', withData, () => {

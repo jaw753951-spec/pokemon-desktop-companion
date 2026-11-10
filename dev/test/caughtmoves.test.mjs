@@ -71,3 +71,24 @@ test('a catch back at level 5 knows what its line knows by then, not what the mo
   // A species that evolves from nothing keeps its own level-1 moves.
   assert.ok(caught('snubbull').length > 0);
 });
+
+test('a catch from before level 5 was given its own moves is given them when the save loads', options, async () => {
+  const { refreshCaughtMoves, FRESH_CATCH_MOVES_SINCE, levelOf } = await import('../../app/renderer/engine/pokemon.mjs');
+  const old = createPokemon(new Rng(1), /** @type {number} */ (speciesIdBySlug('granbull')), 60, {});
+  resetToLevel(old, CAUGHT_LEVEL);
+  const fresh = old.moves.map((slot) => slot.move);
+  // What the old rule gave it: the reminder's Outrage among them.
+  old.moves = ['outrage', 'tackle', 'scary-face', 'tail-whip'].map((move) => ({ move, pp: 5 }));
+  old.caughtAt = FRESH_CATCH_MOVES_SINCE - 1000;
+  assert.equal(refreshCaughtMoves(old), true);
+  assert.deepEqual(old.moves.map((slot) => slot.move), fresh);
+  assert.equal(levelOf(old), CAUGHT_LEVEL);
+  // A second load leaves it as it is.
+  assert.equal(refreshCaughtMoves(old), false);
+
+  // One raised since keeps what it has, and so does one caught since.
+  const raised = { ...old, moves: [{ move: 'outrage', pp: 5 }], experience: old.experience + 1 };
+  assert.equal(refreshCaughtMoves(raised), false);
+  const recent = { ...old, moves: [{ move: 'outrage', pp: 5 }], caughtAt: FRESH_CATCH_MOVES_SINCE + 1000 };
+  assert.equal(refreshCaughtMoves(recent), false);
+});

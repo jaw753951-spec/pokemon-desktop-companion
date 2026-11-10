@@ -34,8 +34,8 @@ export const SHOWDOWN = 'https://raw.githubusercontent.com/smogon/pokemon-showdo
 /**
  * Portraits of named characters the league needs and Emerald never drew.
  *
- * Fire Red is the same generation and the same hand, so its Elite Four sit
- * beside Hoenn's without a seam. Will and Karen were never drawn on a Game Boy
+ * Fire Red is the same generation and the same hand, so its Elite Four and
+ * champion sit beside Hoenn's without a seam. Will and Karen were never drawn on a Game Boy
  * Advance at all; Crystal's four-colour sprites stood in for them once, a red
  * and a pink silhouette beside everyone else's full colour, so HeartGold and
  * SoulSilver's take their place with Johto's leaders (below).
@@ -59,13 +59,16 @@ export const SHOWDOWN = 'https://raw.githubusercontent.com/smogon/pokemon-showdo
  * Avery and Klara, who are not there and were drawn nowhere else, come from
  * Pokémon Showdown's trainer sprites (`showdown`, through a mirror of its
  * sprite folder) — Brumirage's, shared on condition of credit and no edits,
- * so the build only trims their empty margin.
+ * so the build uses them exactly as they are, empty margin included.
  *
  * @type {Record<string, {source: 'firered'|'platinum'|'smogon'|'pokerogue'|'showdown', path: string}>}
  */
 export const NAMED_PORTRAITS = {
   bruno: { source: 'firered', path: 'graphics/trainers/front_pics/elite_four_bruno_front_pic.png' },
   lance: { source: 'firered', path: 'graphics/trainers/front_pics/elite_four_lance_front_pic.png' },
+  lorelei: { source: 'firered', path: 'graphics/trainers/front_pics/elite_four_lorelei_front_pic.png' },
+  agatha: { source: 'firered', path: 'graphics/trainers/front_pics/elite_four_agatha_front_pic.png' },
+  blue: { source: 'firered', path: 'graphics/trainers/front_pics/champion_rival_front_pic.png' },
   koga: { source: 'firered', path: 'graphics/trainers/front_pics/leader_koga_front_pic.png' },
   // Kanto's gym leaders, the same hand again: each is drawn for the person
   // whose name it goes under, and nobody else.

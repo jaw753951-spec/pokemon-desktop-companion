@@ -1,6 +1,96 @@
 {
-  "_comment": "포켓몬 리그. 뱃지 8개를 모으면 도전할 수 있고, 리그에 들어설 때마다 이 중 한 묶음이 통째로 뽑힌다 — 사천왕 넷과 그 뒤의 챔피언은 한 게임의 사람들이라 따로 섞지 않는다. party 는 원작 게임의 실제 파티(석영리그=HGSS, 호연=에메랄드, 신오=플라티나, 하나=B2W2, 칼로스=XY, 알로라=US/UM, 팔데아=SV, 블루베리=제로의 비보)이며 레벨만 도전자에 맞춰 조정된다. type 은 로스터가 비었을 때의 파티 구성 기준. portrait 은 도트가 있는 사람에게만 있다 — 호연·석영·신오·하나는 원작 도트, 칼로스·알로라는 스모곤 커뮤니티가 블랙·화이트 화풍으로 그린 팬 도트(dev/tools/sources.mjs 의 NAMED_PORTRAITS). 카르네와 팔데아·블루베리는 팬 게임 PokéRogue 의 도트다. alternates 는 eliteFour 에서 한 명만 대신 나올 사람들 — 도전이 시작될 때 이 중 하나가 골라진다(알로라는 US/UM 기준 할라와 멀레인이 같은 자리를 번갈아 맡는다). 가라르는 사천왕이 없어 리그가 없다.",
+  "_comment": "포켓몬 리그. 뱃지 8개를 모으면 도전할 수 있고, 리그에 들어설 때마다 이 중 한 묶음이 통째로 뽑힌다 — 사천왕 넷과 그 뒤의 챔피언은 한 게임의 사람들이라 따로 섞지 않는다. party 는 원작 게임의 실제 파티(관동리그=파이어레드·리프그린 첫 도전, 석영리그=HGSS, 호연=에메랄드, 신오=플라티나, 하나=B2W2, 칼로스=XY, 알로라=US/UM, 팔데아=SV, 블루베리=제로의 비보)이며 레벨만 도전자에 맞춰 조정된다. type 은 로스터가 비었을 때의 파티 구성 기준. portrait 은 도트가 있는 사람에게만 있다 — 관동·호연·석영·신오·하나는 원작 도트, 칼로스·알로라는 스모곤 커뮤니티가 블랙·화이트 화풍으로 그린 팬 도트(dev/tools/sources.mjs 의 NAMED_PORTRAITS). 카르네와 팔데아·블루베리는 팬 게임 PokéRogue 의 도트다. alternates 는 eliteFour 에서 한 명만 대신 나올 사람들 — 도전이 시작될 때 이 중 하나가 골라진다(알로라는 US/UM 기준 할라와 멀레인이 같은 자리를 번갈아 맡는다). 가라르는 사천왕이 없어 리그가 없다. 관동리그 챔피언 그린은 라이벌이 고른 스타팅에 따라 파티가 셋으로 갈리는데, 그중 거북왕을 데려오는 파티를 쓴다.",
   "leagues": [
+    {
+      "region": "kanto",
+      "name": {
+        "ko": "관동리그",
+        "en": "Kanto League"
+      },
+      "eliteFour": [
+        {
+          "id": "kanto-lorelei",
+          "name": {
+            "ko": "칸나",
+            "en": "Lorelei"
+          },
+          "type": "ice",
+          "portrait": "lorelei",
+          "party": [
+            87,
+            91,
+            80,
+            124,
+            131
+          ]
+        },
+        {
+          "id": "kanto-bruno",
+          "name": {
+            "ko": "시바",
+            "en": "Bruno"
+          },
+          "type": "fighting",
+          "portrait": "bruno",
+          "party": [
+            95,
+            107,
+            106,
+            95,
+            68
+          ]
+        },
+        {
+          "id": "kanto-agatha",
+          "name": {
+            "ko": "국화",
+            "en": "Agatha"
+          },
+          "type": "ghost",
+          "portrait": "agatha",
+          "party": [
+            94,
+            42,
+            93,
+            24,
+            94
+          ]
+        },
+        {
+          "id": "kanto-lance",
+          "name": {
+            "ko": "목호",
+            "en": "Lance"
+          },
+          "type": "dragon",
+          "portrait": "lance",
+          "party": [
+            130,
+            148,
+            148,
+            142,
+            149
+          ]
+        }
+      ],
+      "champion": {
+        "id": "kanto-blue",
+        "name": {
+          "ko": "그린",
+          "en": "Blue"
+        },
+        "type": null,
+        "portrait": "blue",
+        "party": [
+          18,
+          65,
+          112,
+          59,
+          103,
+          9
+        ]
+      }
+    },
     {
       "region": "johto",
       "name": {
@@ -91,7 +181,6 @@
         ]
       },
       "regions": [
-        "kanto",
         "johto"
       ]
     },

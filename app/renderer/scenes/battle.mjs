@@ -784,7 +784,8 @@ export function battleScene({ session, foes, trainer = null, leader = false, pre
           move: move ? localized(move.name, entry.data?.move) : t('battle.struggle'),
         }));
         if (entry.data?.reveal) battlerFor(entry.side)?.comeBack();
-        battlerFor(entry.side)?.setPose('attack');
+        // Named on the turn it charges too, but nothing is thrown yet.
+        if (!entry.data?.charging) battlerFor(entry.side)?.setPose('attack');
         break;
       }
 

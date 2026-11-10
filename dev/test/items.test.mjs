@@ -249,11 +249,13 @@ test('only what this game will never have is dropped', withData, () => {
   // it copies is.
   // Nothing stays fainted here, so nothing brings a Pokémon back.
   for (const slug of ['revive', 'max-revive', 'casteliacone', 'fresh-water', 'sacred-ash', 'mighty-candy-xl',
-    'dynamax-candy', 'sea-incense', 'blank-plate', 'fire-gem', 'enigma-berry', 'figy-berry', 'aguav-berry']) {
+    'dynamax-candy', 'sea-incense', 'blank-plate', 'enigma-berry', 'figy-berry', 'aguav-berry']) {
     assert.equal(items[slug], undefined, `${slug} should have been dropped`);
   }
+  // The Gems are kept: a battle hands its gem back, so one is a harder first
+  // hit every battle, which no Charcoal is.
   for (const slug of ['full-heal', 'super-potion', 'mystic-water', 'silk-scarf', 'sitrus-berry',
-    'silver-razz-berry', 'golden-razz-berry', 'exp-candy-s']) {
+    'silver-razz-berry', 'golden-razz-berry', 'exp-candy-s', 'normal-gem', 'fire-gem', 'fairy-gem']) {
     assert.ok(items[slug], `${slug} should still be carried`);
   }
 

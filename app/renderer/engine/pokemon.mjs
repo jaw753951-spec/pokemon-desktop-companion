@@ -365,6 +365,36 @@ export function resetToLevel(pokemon, level) {
 }
 
 /**
+ * When a catch began being given only what its line knows by level 5 (see
+ * {@link resetToLevel}). Before then it kept the moves an evolved species lists
+ * at level 1 for the move reminder, or an attack from far above its level.
+ */
+export const FRESH_CATCH_MOVES_SINCE = Date.parse('2026-11-04T04:33:04Z');
+
+/**
+ * Give a catch from before {@link FRESH_CATCH_MOVES_SINCE}, still at the level
+ * it was caught at, the moves a catch is given now.
+ *
+ * Only one that has not been raised at all — its experience exactly where a
+ * catch's starts — is touched: anything it has done since is its own.
+ *
+ * @param {Pokemon} pokemon
+ * @returns {boolean} whether its moves were changed
+ */
+export function refreshCaughtMoves(pokemon) {
+  if (!pokemon || !Number.isFinite(pokemon.caughtAt) || pokemon.caughtAt >= FRESH_CATCH_MOVES_SINCE) return false;
+  const species = speciesOf(pokemon.speciesId);
+  if (!species || pokemon.experience !== experienceForLevel(species.growthRate, CAUGHT_LEVEL)) return false;
+  const fresh = defaultMoves(pokemon, { fresh: true });
+  const known = (pokemon.moves ?? []).map((slot) => slot.move);
+  if (!fresh.length || (fresh.length === known.length && fresh.every((move, index) => move === known[index]))) return false;
+  pokemon.moves = fresh.map((move) => ({ move, pp: moveOf(move)?.pp ?? 5 }));
+  delete pokemon.learned;
+  noteLearnedMoves(pokemon);
+  return true;
+}
+
+/**
  * The four most recent level-up moves available at the Pokémon's level, which
  * is what the games give a freshly encountered Pokémon — with the guarantee
  * that at least one of them hits.
