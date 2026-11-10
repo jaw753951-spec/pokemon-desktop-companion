@@ -381,8 +381,10 @@ const RETIRED_ITEMS = {
   // so a Sacred Ash is a Max Revive; the Let's Go candies are vitamins in
   // other sizes (the mochi and the feathers, which the games still sell
   // beside the vitamins, stay); the incenses are breeding items whose held
-  // effect another item already has; a Gem is a one-shot type booster; the
-  // Blank Plate is a Silk Scarf that changes no Arceus. The five confusion
+  // effect another item already has; the Blank Plate is a Silk Scarf that
+  // changes no Arceus. (The Gems were here too, as one-shot type boosters, and
+  // came back: a battle hands its gem back afterwards, so one here is a
+  // harder first hit every battle — not what a Charcoal does.) The five confusion
   // berries are one berry five times over, told apart only by which natures
   // they confuse.
   ...Object.fromEntries(
@@ -396,8 +398,6 @@ const RETIRED_ITEMS = {
       'sea-incense', 'wave-incense', 'rock-incense', 'rose-incense', 'odd-incense', 'lax-incense', 'full-incense',
       'pure-incense',
       'blank-plate',
-      ...['normal', 'fire', 'water', 'electric', 'grass', 'ice', 'fighting', 'poison', 'ground', 'flying', 'psychic',
-        'bug', 'rock', 'ghost', 'dragon', 'dark', 'steel', 'fairy'].map((type) => `${type}-gem`),
       'enigma-berry', 'figy-berry', 'wiki-berry', 'mago-berry', 'aguav-berry', 'iapapa-berry',
     ].map((slug) => [slug, 'the same as another item']),
   ),

@@ -123,6 +123,57 @@ canvas {
   inset: 0;
 }
 
+/* The road's layers, under the canvas: moved by the compositor, painted only
+   when what is on them changes (see `render/fieldlayers.mjs`). */
+.field-layers {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.field-layers > *,
+.field-sky > *,
+.field-sky-drift > * {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.field-strip,
+.field-painted,
+.field-sky-marks {
+  will-change: transform;
+}
+
+.field-flash,
+.field-sky,
+.field-sky-wash,
+.field-sky-drift {
+  inset: 0;
+}
+
+.field-flash {
+  background: #fff;
+  opacity: 0;
+}
+
+.field-sky-marks {
+  background-repeat: repeat;
+  image-rendering: pixelated;
+}
+
+.field-shut {
+  width: 100%;
+  height: 0;
+  background: #05070c;
+}
+
+.field-layers > .field-shut-bottom {
+  top: auto;
+  bottom: 0;
+}
+
 /* A screen fills the stage; only one is mounted at a time. */
 .screen {
   position: absolute;
@@ -268,9 +319,8 @@ canvas {
 /* ------------------------------------------------------------------- title */
 
 #title-screen {
-  justify-content: center;
+  justify-content: flex-start;
   align-items: center;
-  gap: 10px;
 }
 
 #title-screen .backdrop {
@@ -294,15 +344,70 @@ canvas {
   background: linear-gradient(180deg, rgba(16, 21, 32, 0.15), rgba(16, 21, 32, 0.72));
 }
 
+/* The name over the place, in the top part of the screen; the buttons stand
+   at the foot of it. Three lines — POKÉMON, DESKTOP, COMPANION — with the
+   game's icon behind DESKTOP, under the letters, and DESKTOP in the
+   yellow-on-blue the trailer's captions use. */
 #title-screen .logo {
   position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 24px;
   padding: 0 14px;
-  font-size: 21px;
   font-weight: 800;
-  letter-spacing: 0.04em;
+  line-height: 1;
   color: #fff;
   text-align: center;
   text-shadow: 0 2px 0 var(--frame), 0 0 12px rgba(0, 0, 0, 0.6);
+}
+
+#title-screen .logo .word {
+  position: relative;
+  display: inline-flex;
+  justify-content: center;
+}
+
+#title-screen .logo .text {
+  position: relative;
+}
+
+#title-screen .logo .w0,
+#title-screen .logo .w2 {
+  font-size: 16px;
+  letter-spacing: 0.18em;
+}
+
+#title-screen .logo .w0 .text,
+#title-screen .logo .w2 .text {
+  -webkit-text-stroke: 3px #0e2350;
+  paint-order: stroke fill;
+}
+
+#title-screen .logo .w1 {
+  margin: 5px 0 6px;
+  font-size: 34px;
+  letter-spacing: 0.06em;
+}
+
+#title-screen .logo .w1 .text {
+  color: #ffcb05;
+  -webkit-text-stroke: 4px #2a5ab0;
+  paint-order: stroke fill;
+  text-shadow: 0 4px 0 #0e2350, 0 0 14px rgba(0, 0, 0, 0.6);
+}
+
+#title-screen .logo .mark {
+  position: absolute;
+  z-index: -1;
+  left: 50%;
+  top: 50%;
+  width: 112px;
+  height: 112px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  filter: drop-shadow(0 2px 0 var(--frame)) drop-shadow(0 0 8px rgba(0, 0, 0, 0.45));
 }
 
 /* The build's version, small in the bottom-left corner. */
@@ -322,6 +427,8 @@ canvas {
   flex-direction: column;
   gap: 6px;
   width: 168px;
+  margin-top: auto;
+  margin-bottom: 20px;
 }
 
 /* -------------------------------------------------------------------- slots */
@@ -1242,6 +1349,14 @@ canvas {
 
 .credits-url {
   user-select: text;
+}
+
+/* What a credit is for and whose, over the rows that say where it is from. */
+.credits-entry {
+  margin: 6px 0 0;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--ink);
 }
 
 .walker-portrait {
@@ -2244,6 +2359,8 @@ canvas {
   font-size: 9px;
   line-height: 1.4;
   color: var(--ink-soft);
+  /* One rule to a line. */
+  white-space: pre-line;
 }
 
 .cond-dot {
@@ -2467,12 +2584,22 @@ canvas {
   color: var(--ink-soft);
 }
 
+/* The box's champion crown, on the entry's top-left corner. */
 .dex-champion {
   position: absolute;
   left: 1px;
-  top: 0;
-  font-size: 8px;
-  color: var(--accent);
+  top: 1px;
+  display: block;
+  /* The rim goes on the holder, as on the box's: the crown is a mask. */
+  filter: drop-shadow(1px 0 0 #5a4000) drop-shadow(-1px 0 0 #5a4000) drop-shadow(0 1px 0 #5a4000)
+    drop-shadow(0 -1px 0 #5a4000);
+  pointer-events: none;
+}
+
+.dex-champion .badge-art {
+  display: block;
+  width: 10px;
+  height: 10px;
 }
 
 .dex-detail {
@@ -2513,11 +2640,19 @@ canvas {
 }
 
 .dex-champion-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   padding: 1px 6px;
   border-radius: 7px;
   background: var(--accent);
   color: #fff;
   font-size: 8px;
+}
+
+.dex-champion-mark .badge-art {
+  width: 9px;
+  height: 9px;
 }
 
 .dex-facts {
@@ -2550,13 +2685,20 @@ canvas {
 .league-screen {
   align-items: center;
   justify-content: center;
-  gap: 18px;
+  gap: 8px;
+}
+
+/* The portrait's place: its height is the tallest a portrait is drawn (see
+   `PORTRAIT_HEIGHT` in `scenes/league.mjs`), and each stands on its floor. */
+.league-figure {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  height: 172px;
 }
 
 .league-portrait {
-  width: 84px;
-  height: 84px;
-  object-fit: contain;
+  image-rendering: pixelated;
 }
 
 /* Somebody nobody drew: a figure to stand where they stand, with no face. */

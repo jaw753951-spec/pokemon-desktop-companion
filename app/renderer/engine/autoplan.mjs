@@ -1,6 +1,7 @@
 /**
- * The auto-battle screen's one-press setup: a first and a second condition
- * for each of the companion's moves, and an order for them.
+ * The auto-battle screen's one-press setup: a condition for each of the
+ * companion's moves — when it is used — and an order for them. The second
+ * condition, what else has to hold, is the player's own and left unset.
  *
  * Everything here is read from the moves and the Pokémon that knows them —
  * its stats, its other moves, its ability — never from a foe or a battle, and
@@ -11,20 +12,20 @@
  * - Attacks are left to the hardest-hit rule ("Default"). The ones that cost
  *   something to use — a turn recharging, two turns charging, a sharp fall
  *   in its own stat — are kept to finish a foe when there is another attack
- *   to do the ordinary work. A weak priority attack is kept for a finish, or
- *   for a last swing at low health. An attack that is stronger under some
- *   condition — a Hex on a foe with a status, a Facade with its own, a Brine
- *   on a foe at half — is used the moment that condition holds, and is an
- *   ordinary attack otherwise.
+ *   to do the ordinary work. A weak priority attack is kept for a finish. An
+ *   attack that is stronger under some condition — a Hex on a foe with a
+ *   status, a Facade with its own, a Brine on a foe at half — is used the
+ *   moment that condition holds, while there is another attack for the rest
+ *   of the time, and is an ordinary attack when there is not.
  * - A heal waits for half health; a fast, frail Pokémon, which gets its heal
  *   in before the next hit, holds out to a third.
  * - Sleep goes on a foe still healthy; an unreliable one is tried once per
  *   foe, on the first turn nothing else needs. Paralysis is for a foe that is faster, a burn for a foe that hits
  *   physically, and the slow conditions — poison, Leech Seed — are for a
  *   Pokémon bulky enough to wait for them to work.
- * - A boost that feeds its own attacks is used once a battle, and again after
- *   its stats have been lowered. One that only toughens it is used only when
- *   something in its moves pays off on that — a Body Press, a Stored Power.
+ * - A boost that feeds its own attacks is used once a battle. One that only
+ *   toughens it is used only when something in its moves pays off on that —
+ *   a Body Press, a Stored Power.
  *   Speed is raised when the foe is faster.
  * - Weather and terrain are set when the field is clear, and only when they
  *   power its attacks or its ability. A screen goes up against the kind of
@@ -56,26 +57,29 @@ const CHARGING = new Set([
   'solar-beam', 'solar-blade', 'razor-wind', 'skull-bash', 'sky-attack', 'freeze-shock', 'ice-burn', 'meteor-beam', 'electro-shot',
 ]);
 
-/** Attacks with a moment of their own: when they are at their best, and what they are otherwise. */
+/**
+ * Attacks with a moment of their own: when they are at their best, and
+ * whether they are an ordinary attack otherwise, when they are the only one.
+ */
 const MOMENT_ATTACKS = {
-  hex: ['foeStatus', 'always'],
-  venoshock: ['foeStatus', 'always'],
-  'infernal-parade': ['foeStatus', 'always'],
-  'barb-barrage': ['foeStatus', 'always'],
-  'bitter-malice': ['foeStatus', 'always'],
-  facade: ['selfStatus', 'always'],
-  brine: ['foeHpHalf', 'always'],
-  'stored-power': ['rankUp', 'always'],
-  'power-trip': ['rankUp', 'always'],
+  hex: ['foeStatus', true],
+  venoshock: ['foeStatus', true],
+  'infernal-parade': ['foeStatus', true],
+  'barb-barrage': ['foeStatus', true],
+  'bitter-malice': ['foeStatus', true],
+  facade: ['selfStatus', true],
+  brine: ['foeHpHalf', true],
+  'stored-power': ['rankUp', true],
+  'power-trip': ['rankUp', true],
   // Fail outright unless the foe is asleep — the battle passes them over
   // otherwise — and are worth nothing else.
-  'dream-eater': ['foeAsleep', 'never'],
+  'dream-eater': ['foeAsleep', false],
   // Only works while its user sleeps.
-  snore: ['selfStatus', 'never'],
+  snore: ['selfStatus', false],
   // Twice the power with nothing held.
-  acrobatics: ['noItem', 'always'],
+  acrobatics: ['noItem', true],
   // Twice the power on a sleeping foe.
-  'wake-up-slap': ['foeAsleep', 'always'],
+  'wake-up-slap': ['foeAsleep', true],
 };
 
 /** Moves that only matter with something to cure. */
@@ -187,7 +191,11 @@ export function suggestPolicy(pokemon) {
  */
 export function applyPlan(pokemon, policy, plan) {
   policy.moves = { ...(policy.moves ?? {}), ...plan.moves };
-  policy.second = { ...(policy.second ?? {}), ...plan.second };
+  policy.second = { ...(policy.second ?? {}) };
+  for (const [slug, second] of Object.entries(plan.second)) {
+    if (second === 'none') delete policy.second[slug];
+    else policy.second[slug] = second;
+  }
   const bySlug = new Map(pokemon.moves.map((slot) => [slot.move, slot]));
   const ordered = plan.order.map((slug) => bySlug.get(slug)).filter((slot) => slot !== undefined);
   // Anything the plan did not name (a move the data does not know) stays at the end.
@@ -212,8 +220,8 @@ export function optimizeMoves(pokemon, policy) {
  * @typedef {{rank: number, first: string, second: string}} Plan
  */
 
-/** @param {number} rank @param {string} first @param {string} [second] @returns {Plan} */
-const use = (rank, first, second = 'never') => ({ rank, first, second });
+/** @param {number} rank @param {string} first @returns {Plan} */
+const use = (rank, first) => ({ rank, first, second: 'none' });
 const OFF = use(RANK.off, 'never');
 
 /**
@@ -273,11 +281,12 @@ function planAttack(slug, move, profile) {
   // An Explosion is the last thing it does.
   if (move.rules?.selfdestruct) return use(RANK.finisher, 'hpQuarter');
   // A Flail or a Reversal is only strong at the bottom of its health.
+  // The only attack it has is used as one, its moment or not.
   if (slug === 'flail' || slug === 'reversal') {
-    return use(RANK.moment, 'hpQuarter', otherAttacks(slug, profile).length ? 'never' : 'always');
+    return otherAttacks(slug, profile).length ? use(RANK.moment, 'hpQuarter') : use(RANK.attack, 'always');
   }
   const moment = MOMENT_ATTACKS[/** @type {keyof typeof MOMENT_ATTACKS} */ (slug)];
-  if (moment) return use(RANK.moment, moment[0], moment[1]);
+  if (moment) return moment[1] && !otherAttacks(slug, profile).length ? use(RANK.attack, 'always') : use(RANK.moment, String(moment[0]));
   // A Last Resort fails until everything else has been used.
   if (slug === 'last-resort') return otherAttacks(slug, profile, 1).length ? OFF : use(RANK.attack, 'always');
 
@@ -294,9 +303,9 @@ function planAttack(slug, move, profile) {
   // level 100 can finish a level 70 with it every turn, and did, twice.
   if ((move.rules?.mindBlownRecoil || slug === 'chloroblast') && others) return OFF;
 
-  // A weak priority attack is a finisher, or a last swing before going down;
-  // a strong one is just a strong attack that goes first.
-  if ((move.priority ?? 0) > 0 && (move.power ?? 0) < 70) return use(RANK.finisher, 'canFinish', 'hpQuarter');
+  // A weak priority attack is a finisher; a strong one is just a strong
+  // attack that goes first.
+  if ((move.priority ?? 0) > 0 && (move.power ?? 0) < 70) return use(RANK.finisher, 'canFinish');
   return use(RANK.attack, 'always');
 }
 
@@ -384,13 +393,9 @@ function planStats(slug, move, profile) {
       sum + (change.change > 0 && ((change.stat === 'atk' && profile.fed.has('physical')) || (change.stat === 'spa' && profile.fed.has('special'))) ? change.change : 0), 0);
     const speed = own.find((change) => change.stat === 'spe' && change.change > 0)?.change ?? 0;
     const guards = own.filter((change) => (change.stat === 'def' || change.stat === 'spd') && change.change > 0);
-    // A Shell Smash lowers its own guards as it goes: "again once lowered"
-    // would call it every turn after the first, until its PP ran out.
-    const again = own.some((change) => change.change < 0) ? 'never' : 'rankDown';
-
     // A boost into its attacks, and with it Speed or a guard, or two stages
-    // at once: once a battle, and again once something has taken it away.
-    if (feeding >= 2 || (feeding >= 1 && (speed > 0 || guards.length > 0))) return use(RANK.boost, 'oncePerBattle', again);
+    // at once: once a battle.
+    if (feeding >= 2 || (feeding >= 1 && (speed > 0 || guards.length > 0))) return use(RANK.boost, 'oncePerBattle');
     // One stage of attack and nothing else is a turn a short fight rarely
     // repays, unless it is sturdy enough to make the time.
     if (feeding === 1) return profile.bulky ? use(RANK.boost, 'oncePerBattle') : OFF;
@@ -400,7 +405,7 @@ function planStats(slug, move, profile) {
     const paysOff = (guards.some((change) => change.stat === 'def') && profile.slugs.has('body-press')) ||
       profile.slugs.has('stored-power') || profile.slugs.has('power-trip') ||
       (slug === 'defense-curl' && (profile.slugs.has('rollout') || profile.slugs.has('ice-ball')));
-    if (guards.length && paysOff) return use(RANK.boost, 'oncePerBattle', 'rankDown');
+    if (guards.length && paysOff) return use(RANK.boost, 'oncePerBattle');
     // Evasion, accuracy, a guard with nothing to show for it.
     return OFF;
   }

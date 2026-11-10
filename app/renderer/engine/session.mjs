@@ -13,7 +13,7 @@ import { Rng } from '../core/rng.mjs';
 import { pocketOrder } from './bagorder.mjs';
 import { EventScheduler } from './events.mjs';
 import { optimizeMoves } from './autoplan.mjs';
-import { ensureAttack, fullyHeal, shinyOddsFor } from './pokemon.mjs';
+import { ensureAttack, fullyHeal, refreshCaughtMoves, shinyOddsFor } from './pokemon.mjs';
 import { settledEffort } from './stats.mjs';
 import { settleForme } from './forms.mjs';
 import { oneAtATime, STARTING_MONEY } from './shop.mjs';
@@ -48,6 +48,9 @@ export class Session {
     // them. Every Pokémon the save carries is given something that hits, on
     // the way in, rather than finding out mid-battle.
     for (const pokemon of [this.active, ...this.box]) {
+      // A catch from before a catch was given level 5's moves, still in the
+      // box as it was caught, is given them now.
+      if (pokemon && pokemon !== this.active) refreshCaughtMoves(pokemon);
       if (pokemon) ensureAttack(pokemon);
       // And in the shape it stands in: a battle forme a save caught mid-way
       // (a Zen Mode, a Primal Kyogre) is let go of, and a held or chosen one
@@ -536,13 +539,22 @@ export function defaultAutoBattle() {
      */
     moves: {},
     /**
-     * When each move may be used second, by the move: looked at only once no
-     * move's first condition has come round. A move without one has none.
+     * What else has to hold for each move to be used, by the move, whatever
+     * its first says. A move without one asks nothing more.
      * @type {Record<string, string>}
      */
     second: {},
+    /**
+     * Which meaning `second` has: 2, what else has to hold. A policy without
+     * it was saved when the second was a fallback, looked at once no move's
+     * first had come round.
+     */
+    version: AUTO_BATTLE_VERSION,
   };
 }
+
+/** The auto-battle policy's shape now: the second is what else has to hold. */
+export const AUTO_BATTLE_VERSION = 2;
 
 /**
  * How the bag is used without being opened.
@@ -663,7 +675,15 @@ export function normalizeAutoBattle(policy) {
     return out;
   };
 
-  return { conditions, moves: byMove(policy.moves), second: byMove(policy.second) };
+  // A second saved when it meant "when nothing first is due" would now hold a
+  // move back instead, so seconds from then are let go; and `never` or
+  // `always` there asks nothing.
+  const second = (policy.version ?? 1) >= AUTO_BATTLE_VERSION ? byMove(policy.second) : {};
+  for (const [slug, condition] of Object.entries(second)) {
+    if (condition === 'never' || condition === 'always') delete second[slug];
+  }
+
+  return { conditions, moves: byMove(policy.moves), second, version: AUTO_BATTLE_VERSION };
 }
 
 /**

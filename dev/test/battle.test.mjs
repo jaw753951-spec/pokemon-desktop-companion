@@ -286,14 +286,13 @@ test('every two or three turns counts from the turn the move was last used', opt
   assert.deepEqual(picks, ['flamethrower', 'ember', 'slash', 'ember', 'flamethrower', 'ember', 'slash', 'ember']);
 });
 
-test('a move used on the first turn goes every two turns from there', options, () => {
+test('every two turns is the second, the fourth, the sixth', options, () => {
   const player = makeFixed(CHARIZARD, 50, ['tackle', 'growl']);
   const battle = new Battle({
     rng: new Rng(2),
     player,
     foes: [makeFixed(VENUSAUR, 90, ['growl'])],
-    // The Tackle at the second rank, so the Growl's second is reached.
-    policy: { ...defaultAutoBattle(), moves: { growl: 'oncePerBattle', tackle: 'never' }, second: { growl: 'everyTwoTurns', tackle: 'always' } },
+    policy: { ...defaultAutoBattle(), moves: { growl: 'everyTwoTurns', tackle: 'always' } },
   });
 
   // Played out, so the battle itself records which turn each move went on.
@@ -302,7 +301,7 @@ test('a move used on the first turn goes every two turns from there', options, (
     const log = battle.takeTurn();
     picks.push(log.find((entry) => entry.kind === 'move' && entry.side === 'player')?.data?.move);
   }
-  assert.deepEqual(picks, ['growl', 'tackle', 'growl', 'tackle', 'growl']);
+  assert.deepEqual(picks, ['tackle', 'growl', 'tackle', 'growl', 'tackle']);
 });
 
 test('a move whose effect is already in place is passed over, whatever its condition', options, () => {
@@ -367,6 +366,32 @@ test('the finer conditions: once a battle, the foe just out, speed, the kind of 
   healthy.player.pokemon.hp = Math.floor(healthy.player.maxHp / 2);
   assert.equal(pick(healthy), 'tackle', 'half is not above half');
 
+  // One hit point left, either side.
+  const hanging = setUp('hpOne');
+  assert.equal(pick(hanging), 'tackle');
+  hanging.player.pokemon.hp = 1;
+  assert.equal(pick(hanging), 'growl');
+  const foeHanging = setUp('foeHpOne');
+  /** @type {any} */ (foeHanging.foe).pokemon.hp = 1;
+  assert.equal(pick(foeHanging), 'growl');
+  /** @type {any} */ (foeHanging.foe).pokemon.hp = 2;
+  assert.equal(pick(foeHanging), 'tackle');
+
+  // Each "at or below" has its "above": exactly at the line is below it.
+  for (const [above, share] of /** @type {const} */ ([['hpAboveTwoThirds', 2 / 3], ['hpAboveThird', 1 / 3], ['hpAboveQuarter', 1 / 4]])) {
+    const mine = setUp(above);
+    mine.player.pokemon.hp = Math.floor(mine.player.maxHp * share) + 1;
+    assert.equal(pick(mine), 'growl', `${above} just above the line`);
+    mine.player.pokemon.hp = Math.floor(mine.player.maxHp * share);
+    assert.equal(pick(mine), 'tackle', `${above} at the line`);
+    const foes = setUp(above.replace('hp', 'foeHp'));
+    const foe = /** @type {any} */ (foes.foe);
+    foe.pokemon.hp = Math.floor(foe.maxHp * share) + 1;
+    assert.equal(pick(foes), 'growl', `foe ${above} just above the line`);
+    foe.pokemon.hp = Math.floor(foe.maxHp * share);
+    assert.equal(pick(foes), 'tackle', `foe ${above} at the line`);
+  }
+
   const full = setUp('foeHpFull');
   assert.equal(pick(full), 'growl');
   full.foe.pokemon.hp -= 1;
@@ -421,7 +446,7 @@ test('a move can wait for the foe to be weak to it', options, () => {
   assert.equal(pick(25), 'slash', 'Fire on a Pikachu: neutral is not super effective');
 });
 
-test('first moments, then the firsts allowed always, then second moments, then the seconds allowed always', options, () => {
+test('a move is used when its first says, and only while its second holds as well', options, () => {
   const player = makeFixed(CHARIZARD, 50, ['flamethrower', 'ember', 'recover', 'swift']);
   const foe = makeFixed(VENUSAUR, 50, ['tackle']);
   const battle = new Battle({
@@ -430,28 +455,73 @@ test('first moments, then the firsts allowed always, then second moments, then t
     foes: [foe],
     policy: {
       ...defaultAutoBattle(),
-      // Ember waits for the foe at a quarter, or failing that every other turn;
-      // Recover for half health only; Swift only at the second rank.
-      moves: { flamethrower: 'always', ember: 'foeHpQuarter', recover: 'hpHalf', swift: 'never' },
-      second: { ember: 'everyTwoTurns', swift: 'always' },
+      // Flamethrower only while above half health; Recover at half health,
+      // but only while the foe is still above half its own.
+      moves: { flamethrower: 'always', ember: 'foeHpQuarter', recover: 'hpHalf', swift: 'always' },
+      second: { flamethrower: 'hpAboveHalf', recover: 'foeHpAboveHalf' },
     },
   });
   const pick = () => choosePolicyMove(battle, battle.player, /** @type {any} */ (battle.foe), player.moves);
 
-  assert.equal(secondCondition(battle.policy, 'flamethrower'), 'never', 'a move starts with no second');
+  assert.equal(secondCondition(battle.policy, 'swift'), 'none', 'a move starts with nothing more asked');
   battle.player.turnsTaken = 1;
-  assert.equal(pick(), 'flamethrower', 'a first allowed always comes before a second that is due');
+  assert.equal(pick(), 'flamethrower', 'the hardest hit allowed always, its second holding');
   player.hp = Math.floor(maxHp(player) / 2);
-  assert.equal(pick(), 'recover', 'a first whose moment has come comes before one allowed always');
+  assert.equal(pick(), 'recover', 'a moment that has come, its second holding');
+  foe.hp = Math.floor(maxHp(foe) / 2);
+  assert.equal(pick(), 'swift', 'the heal held back by its second, and the Flamethrower by its own');
   foe.hp = Math.floor(maxHp(foe) / 4);
-  assert.equal(pick(), 'ember', 'and the earlier slot wins among firsts');
+  assert.equal(pick(), 'ember', 'a moment with nothing more asked');
 
-  player.hp = maxHp(player);
+  // Held back even with nothing else due: a Flamethrower kept for health above
+  // half is not used at half, though the Swift beside it is switched off.
   foe.hp = maxHp(foe);
-  battle.policy.moves.flamethrower = 'never';
-  assert.equal(pick(), 'ember', 'with no first left, a second that is due');
-  battle.policy.second.ember = 'never';
-  assert.equal(pick(), 'swift', 'and with none due, the seconds allowed always');
+  battle.policy.moves = { flamethrower: 'always', swift: 'never' };
+  battle.policy.second = { flamethrower: 'hpAboveHalf' };
+  const pair = [player.moves[0], player.moves[3]];
+  assert.equal(choosePolicyMove(battle, battle.player, /** @type {any} */ (battle.foe), pair), 'swift');
+  // A stored never or always as a second asks for nothing.
+  battle.policy.second = { flamethrower: 'never' };
+  assert.equal(secondCondition(battle.policy, 'flamethrower'), 'none');
+});
+
+test('the two examples it was made for: a boost at the start only while healthy, an attack only on a physical foe', options, () => {
+  // "At the start of a battle", "my health above half": the boost goes up on
+  // the first turn of a battle begun healthy, and not in one begun hurt.
+  const boosted = (/** @type {number} */ share) => {
+    const player = makeFixed(CHARIZARD, 50, ['swords-dance', 'slash']);
+    player.hp = Math.floor(maxHp(player) * share);
+    const battle = new Battle({
+      rng: new Rng(2),
+      player,
+      foes: [makeFixed(VENUSAUR, 50, ['tackle'])],
+      policy: { ...defaultAutoBattle(), moves: { 'swords-dance': 'oncePerBattle', slash: 'always' }, second: { 'swords-dance': 'hpAboveHalf' } },
+    });
+    return choosePolicyMove(battle, battle.player, /** @type {any} */ (battle.foe), player.moves);
+  };
+  assert.equal(boosted(1), 'swords-dance');
+  assert.equal(boosted(0.4), 'slash', 'begun hurt: no boost');
+
+  // "Default", "the foe hits physically": the strongest attack, but not on a
+  // foe that hits specially, where the next one down is used.
+  const attack = (/** @type {number} */ foeSpecies) => {
+    const player = makeFixed(CHARIZARD, 50, ['flamethrower', 'slash']);
+    const battle = new Battle({
+      rng: new Rng(2),
+      player,
+      foes: [makeFixed(foeSpecies, 50, ['tackle'])],
+      policy: { ...defaultAutoBattle(), moves: { flamethrower: 'always', slash: 'always' }, second: { flamethrower: 'foePhysical' } },
+    });
+    return { pick: choosePolicyMove(battle, battle.player, /** @type {any} */ (battle.foe), player.moves), physical: battle.stat(/** @type {any} */ (battle.foe), 'atk') >= battle.stat(/** @type {any} */ (battle.foe), 'spa') };
+  };
+  const MACHAMP = 68;
+  const ALAKAZAM = 65;
+  const strong = attack(MACHAMP);
+  assert.ok(strong.physical);
+  assert.equal(strong.pick, 'flamethrower', 'a physical foe: the strongest');
+  const special = attack(ALAKAZAM);
+  assert.ok(!special.physical);
+  assert.equal(special.pick, 'slash', 'a special foe: held back, however strong');
 });
 
 test('what is allowed always comes down to the hardest hit the other side can take', options, () => {
@@ -645,9 +715,15 @@ test('a stored policy from either older shape becomes conditions', options, () =
   assert.equal(unordered.mode, undefined);
   assert.equal(unordered.order, undefined);
   // Each move's own two conditions are kept; a policy from before has none.
-  const kept = normalizeAutoBattle({ moves: { ember: 'foeHpHalf', bad: 3 }, second: { ember: 'everyThreeTurns', bad: null } });
+  const kept = normalizeAutoBattle({ version: 2, moves: { ember: 'foeHpHalf', bad: 3 }, second: { ember: 'everyThreeTurns', bad: null, tackle: 'never' } });
   assert.deepEqual(kept.moves, { ember: 'foeHpHalf' });
   assert.deepEqual(kept.second, { ember: 'everyThreeTurns' });
+  assert.equal(kept.version, 2);
+  // A second saved when it was a fallback would now hold a move back: let go.
+  const fallback = normalizeAutoBattle({ moves: { ember: 'foeHpHalf' }, second: { ember: 'everyThreeTurns' } });
+  assert.deepEqual(fallback.moves, { ember: 'foeHpHalf' });
+  assert.deepEqual(fallback.second, {});
+  assert.equal(fallback.version, 2);
   assert.deepEqual(normalizeAutoBattle({ mode: 'repeatAll', conditions: {} }).moves, {});
   assert.deepEqual(normalizeAutoBattle({ mode: 'repeatAll', conditions: {} }).second, {});
 });
@@ -1263,9 +1339,7 @@ test('a move that missed is used again, at once or so many turns on, and a hit s
     foes: [makeFixed(VENUSAUR, 50, ['tackle'])],
     policy: {
       ...defaultAutoBattle(),
-      // All at the second rank, where the retries are.
-      moves: { flamethrower: 'never', 'fire-blast': 'never', swift: 'never' },
-      second: { flamethrower: 'always', 'fire-blast': 'missedRetry', swift: 'missedTwoTurns' },
+      moves: { flamethrower: 'always', 'fire-blast': 'missedRetry', swift: 'missedTwoTurns' },
     },
   });
   const me = battle.player;
@@ -1340,6 +1414,7 @@ test('a miss in a real battle is noted, and a hit clears it', options, () => {
 test('the conditions taken out are read as the nearest ones left', () => {
   const policy = normalizeAutoBattle({
     conditions: { stat: 'firstTurn' },
+    version: 2,
     moves: { thunder: 'accuracyShaky', swift: 'accuracyDown', ember: 'longBattle', growl: 'firstTurn' },
     second: { thunder: 'missedThreeTurns', growl: 'everyFourTurns' },
   });
@@ -1350,6 +1425,7 @@ test('the conditions taken out are read as the nearest ones left', () => {
 
   // The five taken off the picker later.
   const later = normalizeAutoBattle({
+    version: 2,
     moves: { 'fake-out': 'foeEntered', swift: 'untilHit', growl: 'bossBattle', 'solar-beam': 'sunny' },
     second: { thunder: 'rainy' },
   });
@@ -1357,7 +1433,7 @@ test('the conditions taken out are read as the nearest ones left', () => {
   assert.deepEqual(later.second, { thunder: 'hasField' });
 
   // And "in danger", at either rank.
-  const danger = normalizeAutoBattle({ moves: { 'quick-attack': 'inDanger' }, second: { tackle: 'inDanger' } });
+  const danger = normalizeAutoBattle({ version: 2, moves: { 'quick-attack': 'inDanger' }, second: { tackle: 'inDanger' } });
   assert.equal(danger.moves['quick-attack'], 'slower');
   assert.equal(danger.second.tackle, 'slower');
 });

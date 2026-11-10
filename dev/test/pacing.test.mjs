@@ -17,7 +17,8 @@ import { Battle } from '../../app/renderer/engine/battle.mjs';
 import { rollTrainer } from '../../app/renderer/engine/encounter.mjs';
 import { BADGE_LEVELS, BADGES_FOR_LEAGUE, COMEBACK, FIRST_RUN_LEADER_STATS, LEADER_REST_AFTER_LOSS, leaderLevels, leaderOdds } from '../../app/shared/constants.mjs';
 import { levelOf } from '../../app/renderer/engine/pokemon.mjs';
-import { leaderParty, shouldSummonLeader } from '../../app/renderer/scenes/fieldevents.mjs';
+import { leaderParty, pickLeader, shouldSummonLeader } from '../../app/renderer/scenes/fieldevents.mjs';
+import { gameData } from '../../app/renderer/core/data.mjs';
 import { LEAGUE_LEVELS, leagueLevel } from '../../app/renderer/scenes/league.mjs';
 
 const ready = await useRealGameData();
@@ -82,6 +83,32 @@ test('a leader\'s team is the same whoever challenges it', options, () => {
     assert.deepEqual(leaderParty(session, leader).map(levelOf), leaderLevels(0, 2), `against a level ${level}`);
     session.badges = ['rock', 'water', 'electric'];
     assert.deepEqual(leaderParty(session, leader).map(levelOf), leaderLevels(3, 2), `the fourth badge, against a level ${level}`);
+  }
+});
+
+test('every leader whose badge is still to win is as likely as the next, wherever the road is', options, () => {
+  const data = gameData();
+  const saved = data.leaders;
+  data.leaders = [
+    { id: 'rock-a', type: 'rock' }, { id: 'rock-b', type: 'rock' },
+    { id: 'psychic-a', type: 'psychic' }, { id: 'water-a', type: 'water' },
+  ];
+  try {
+    // On a mountain path, which used to call the Rock leaders and no one else.
+    const session = /** @type {any} */ ({ rng: new Rng(5), badges: ['water'], area: { tags: ['mountain', 'cave'] } });
+    const counts = /** @type {Record<string, number>} */ ({});
+    for (let draw = 0; draw < 3000; draw++) {
+      const leader = pickLeader(session);
+      counts[leader.id] = (counts[leader.id] ?? 0) + 1;
+    }
+    assert.equal(counts['water-a'], undefined, 'a badge already held is not offered again');
+    for (const id of ['rock-a', 'rock-b', 'psychic-a']) {
+      assert.ok(counts[id] > 850 && counts[id] < 1150, `${id}: ${counts[id]} of 3000`);
+    }
+    session.badges = ['water', 'rock', 'psychic'];
+    assert.equal(pickLeader(session), null, 'and with every badge, no one');
+  } finally {
+    data.leaders = saved;
   }
 });
 

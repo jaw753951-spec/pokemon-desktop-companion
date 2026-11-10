@@ -44,6 +44,8 @@ export async function listSlots() {
               badges: (save.party?.active?.badges ?? save.progress?.badges)?.length ?? 0,
               playtime: save.progress?.playtime ?? 0,
               savedAt: save.savedAt ?? null,
+              // Where the run was left, which the title screen shows behind it.
+              areaId: save.progress?.areaId ?? null,
               champion: Boolean(save.party?.active?.champion ?? save.progress?.champion),
             },
           }

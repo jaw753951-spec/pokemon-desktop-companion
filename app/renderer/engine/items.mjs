@@ -155,6 +155,18 @@ export function useItem(session, slug, choice = {}) {
     return { used: true, ok: true, message: t('items.lured', { item: label }) };
   }
 
+  // A Rare Candy given to a Pokémon already at the top level has no level to
+  // give, but still sets off an evolution it is waiting on, as from Sword and
+  // Shield on — the one way back to an evolution stopped at level 100, which
+  // otherwise has no next level to be asked again at.
+  if (item.use?.level && levelOf(pokemon) >= MAX_LEVEL) {
+    const evolution = pendingEvolution(pokemon, evolutionContext(session));
+    if (evolution) {
+      session.removeItem(slug);
+      return { used: true, ok: true, message: t('items.used', { name: label }), evolution: { to: evolution.to, stoppable: true } };
+    }
+  }
+
   // Anything with an effect of its own — a potion, an Ether, a vitamin, a
   // Rare Candy — does it here, whichever pocket it sits in.
   if (item.use) {
@@ -248,15 +260,25 @@ export function levelledUp(session, pokemon, before, maxBefore = maxHp(pokemon))
     }
   }
 
-  const evolution = offeredEvolution(pokemon, {
+  const evolution = offeredEvolution(pokemon, evolutionContext(session));
+
+  noteLearnedMoves(pokemon, session.machines);
+  return { lines, evolution: evolution ? { to: evolution.to, stoppable: true } : null };
+}
+
+/**
+ * Where the companion is, as far as an evolution cares: the hour, its box,
+ * the rain, the place.
+ *
+ * @param {import('./session.mjs').Session} session
+ */
+function evolutionContext(session) {
+  return {
     timeOfDay: timeOfDay(),
     box: session.box,
     raining: weatherForArea(session.area) === 'rain',
     areaTags: session.area?.tags ?? [],
-  });
-
-  noteLearnedMoves(pokemon, session.machines);
-  return { lines, evolution: evolution ? { to: evolution.to, stoppable: true } : null };
+  };
 }
 
 /**

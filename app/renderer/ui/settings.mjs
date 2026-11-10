@@ -242,7 +242,32 @@ function languageRows(app, rebuild) {
 }
 
 /**
- * Who drew the art the game borrows.
+ * Where the game's data comes from, besides the pictures: one row each, what
+ * it is and whose, and where to find it.
+ *
+ * @type {Array<{key: string, source: string, urls: string[]}>}
+ */
+const DATA_CREDITS = [
+  { key: 'pokeapi', source: 'PokeAPI', urls: ['https://github.com/PokeAPI/api-data'] },
+  { key: 'cries', source: 'PokeAPI Cries', urls: ['https://github.com/PokeAPI/cries'] },
+  { key: 'pret', source: 'pret (pokeemerald · pokefirered · pokeplatinum)', urls: ['https://github.com/pret'] },
+  { key: 'smogonTrainers', source: 'Smogon sprites', urls: ['https://github.com/smogon/sprites'] },
+  { key: 'showdown', source: 'Pokémon Showdown', urls: ['https://github.com/smogon/pokemon-showdown'] },
+  {
+    key: 'icons',
+    source: 'PokeAPI Sprites · PokéSprite · Bulbagarden Archives',
+    urls: ['https://github.com/PokeAPI/sprites', 'https://github.com/msikma/pokesprite', 'https://archives.bulbagarden.net'],
+  },
+  {
+    key: 'text',
+    source: 'sv-text · pogo_assets',
+    urls: ['https://github.com/Pokemon-Project-com/sv-text', 'https://github.com/PokeMiners/pogo_assets'],
+  },
+];
+
+/**
+ * Who made what the game borrows, a row to a fact — what, whose, where from,
+ * under what licence — as credits are set out, rather than in sentences.
  *
  * The Pokémon are Pokémon Black and White's own sprites up to Genesect and the
  * Smogon community's past it, which are shared on the condition that they are
@@ -253,12 +278,17 @@ function languageRows(app, rebuild) {
 function creditRows() {
   const { sprites, custom, trainers } = gameData().credits ?? {};
   if (!sprites && !custom) return [el('p.meta', { text: t('credits.none') })];
+  /** @param {string} label @param {string} value */
+  const row = (label, value) => el('p.meta', { text: `${t(label)}: ${value}` });
+  /** @param {string} url */
+  const link = (url) => el('p.meta.credits-url', { text: `${t('credits.source')}: ${url}` });
   return [
     ...(sprites
       ? [
           el('div.section-title', { text: t('credits.sprites') }),
-          el('p.meta', { text: t('credits.spritesNote', { source: sprites.source, license: sprites.license }) }),
-          el('p.meta.credits-url', { text: sprites.url }),
+          el('p.credits-entry', { text: t('credits.official', { source: sprites.source }) }),
+          el('p.meta', { text: sprites.license }),
+          link(sprites.url),
         ]
       : []),
     // Past Genesect the sprites are the Smogon community's, drawn in the same
@@ -266,24 +296,37 @@ function creditRows() {
     ...(custom
       ? [
           el('div.section-title', { text: t('credits.custom') }),
-          el('p.meta', { text: t('credits.customNote', { source: custom.source }) }),
-          el('p.meta.credits-url', { text: custom.url }),
-          el('p.credits-names', { text: custom.artists.join(', ') }),
+          el('p.credits-entry', { text: custom.source }),
+          link(custom.url),
+          el('p.credits-names', { text: `${t('credits.artists')}: ${custom.artists.join(', ')}` }),
         ]
       : []),
     // The leaders and the league's people the games never drew in pixels:
-    // one entry for each place their pictures come from, saying whose and
-    // for whom.
+    // one entry for each place their pictures come from.
     ...(Array.isArray(trainers) && trainers.length
       ? [
           el('div.section-title', { text: t('credits.trainers') }),
           ...trainers.flatMap((entry) => [
-            el('p.meta', { text: t(`credits.trainers.${entry.key}`, { source: entry.source, license: entry.license, artist: entry.artist ?? '' }) }),
-            el('p.meta.credits-url', { text: entry.url }),
-            ...(entry.licenseUrl ? [el('p.meta.credits-url', { text: entry.licenseUrl })] : []),
+            el('p.credits-entry', { text: t(`credits.trainers.${entry.key}`, { source: entry.source }) }),
+            ...(entry.artist ? [row('credits.artists', entry.artist)] : []),
+            link(entry.url),
+            ...(entry.licenseUrl
+              ? [
+                  row('credits.license', entry.license),
+                  el('p.meta.credits-url', { text: entry.licenseUrl }),
+                  el('p.meta', { text: t(`credits.trainers.${entry.key}.changed`) }),
+                ]
+              : []),
           ]),
         ]
       : []),
+    // Everything else the game is made from: the data, the cries, the maps and
+    // music, the icons and the official Korean text.
+    el('div.section-title', { text: t('credits.data') }),
+    ...DATA_CREDITS.flatMap((entry) => [
+      el('p.credits-entry', { text: `${t(`credits.data.${entry.key}`)}: ${entry.source}` }),
+      ...entry.urls.map(link),
+    ]),
   ];
 }
 

@@ -180,18 +180,18 @@ export function createHud(handlers) {
       const max = maxHp(pokemon);
       const progress = experienceProgress(pokemon);
 
-      nameLabel.textContent = pokemon.nickname || localized(species.name, species.slug);
-      levelLabel.textContent = t('slot.level', { level: levelOf(pokemon) });
+      show(nameLabel, 'text', pokemon.nickname || localized(species.name, species.slug));
+      show(levelLabel, 'text', t('slot.level', { level: levelOf(pokemon) }));
       if ((pokemon.status ?? null) !== shownStatus) {
         shownStatus = pokemon.status ?? null;
         setChildren(statusSlot, [statusMark(shownStatus, t(`status.${shownStatus}.short`))]);
       }
-      hpText.textContent = `${Math.max(0, Math.round(pokemon.hp))}/${max}`;
+      show(hpText, 'text', `${Math.max(0, Math.round(pokemon.hp))}/${max}`);
 
       const ratio = max > 0 ? Math.max(0, pokemon.hp) / max : 0;
-      hpFill.style.width = `${ratio * 100}%`;
-      hpFill.style.background = ratio > 0.5 ? '#63bb5b' : ratio > 0.2 ? '#f3d23b' : '#d8443c';
-      expFill.style.width = `${progress.ratio * 100}%`;
+      show(hpFill, 'width', `${ratio * 100}%`);
+      show(hpFill, 'background', ratio > 0.5 ? '#63bb5b' : ratio > 0.2 ? '#f3d23b' : '#d8443c');
+      show(expFill, 'width', `${progress.ratio * 100}%`);
 
       const badges = pokemon.badges ?? [];
       const nextBadgeKey = `${badges.join(',')}|${Boolean(pokemon.champion)}`;
@@ -205,10 +205,10 @@ export function createHud(handlers) {
         ]);
         badgeCase.title = t('slot.badges', { count: badges.length });
       }
-      moneyLabel.textContent = t('money.label', { amount: formatMoney(session.money) });
+      show(moneyLabel, 'text', t('money.label', { amount: formatMoney(session.money) }));
 
-      areaLabel.textContent = localized(session.area?.name, session.area?.id ?? '');
-      leagueButton.hidden = !leagueOpen(session);
+      show(areaLabel, 'text', localized(session.area?.name, session.area?.id ?? ''));
+      show(leagueButton, 'hidden', !leagueOpen(session));
     },
 
     /**
@@ -251,6 +251,30 @@ export function createHud(handlers) {
       ]);
     },
   };
+}
+
+/** What each of the windows' nodes was last given. */
+const shown = new WeakMap();
+
+/**
+ * Give a node a text, a `hidden` or a style, unless it already has it.
+ *
+ * The windows are refreshed every frame from the session, and writing a
+ * label's text again — even the same text — has the page lay out and paint it
+ * again: sixty times a second, for numbers that change a few times a minute.
+ *
+ * @param {HTMLElement} node
+ * @param {'text'|'hidden'|'width'|'background'} what
+ * @param {string|boolean} value
+ */
+function show(node, what, value) {
+  let given = shown.get(node);
+  if (!given) shown.set(node, (given = {}));
+  if (given[what] === value) return;
+  given[what] = value;
+  if (what === 'text') node.textContent = /** @type {string} */ (value);
+  else if (what === 'hidden') node.hidden = /** @type {boolean} */ (value);
+  else node.style[what] = /** @type {string} */ (value);
 }
 
 const barTrack = () => ({

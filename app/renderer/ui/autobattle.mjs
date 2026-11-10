@@ -1,14 +1,15 @@
 /**
  * Auto-battle settings.
  *
- * Each move the companion has is used under two conditions of its own, a
- * first and a second. One that names a moment is used the moment it holds,
- * before anything else: every move's first ahead of any move's second, and
- * within each, the first in the order the moves sit in their slots. When no
- * moment has come, the moves allowed always are left, and the hardest hit
- * among them is used. So the screen is the moves in their order, each with its
- * two conditions beside it, where a press on a move picks it up and a press
- * on another puts it there.
+ * Each move the companion has is used under two conditions of its own. The
+ * first says when: a moment — the start of a battle, a third of health left —
+ * used the moment it comes, the first in the order the moves sit in their
+ * slots; or `always`, the moves among which the hardest hit is used when no
+ * moment has come; or `never`. The second says what else has to hold for the
+ * move to be used then — health at half or more, a foe that hits physically —
+ * and a move whose second does not hold is not used. So the screen is the
+ * moves in their order, each with its two conditions beside it, where a press
+ * on a move picks it up and a press on another puts it there.
  *
  * Everything here edits the policy the battle engine reads, and the moves'
  * own order, so the effect of a change is immediate.
@@ -29,6 +30,11 @@ import { typeChip } from './typechip.mjs';
  * rank and health ones come in pairs — the companion's own, and the foe's.
  * Twenty-odd conditions in one list was a scroll through a keyhole, so the
  * picker shows one group at a time beside the names of the others.
+ *
+ * The picker lays a group out two to a row, so the health groups are written
+ * that way: "above" on the left and "at or below" on the right, the same
+ * fraction on each row — and full health beside one hit point left. `null`
+ * leaves a cell empty.
  */
 const CONDITION_GROUPS = [
   { key: 'basic', conditions: ['never', 'always'] },
@@ -38,16 +44,41 @@ const CONDITION_GROUPS = [
   { key: 'battle', conditions: ['foePhysical', 'foeSpecial', 'trainerBattle', 'wildBattle', 'lastFoe', 'foeLevelHigher', 'foeLevelLower'] },
   { key: 'status', conditions: ['noStatus', 'foeStatus', 'foeAsleep', 'selfStatus', 'noItem', 'noField', 'hasField'] },
   { key: 'rank', conditions: ['rankUp', 'rankDown', 'foeRankUp', 'foeRankDown'] },
-  { key: 'hp', conditions: ['hpFull', 'hpAboveHalf', 'hpTwoThirds', 'hpHalf', 'hpThird', 'hpQuarter'] },
-  { key: 'foeHp', conditions: ['foeHpFull', 'foeHpAboveHalf', 'foeHpTwoThirds', 'foeHpHalf', 'foeHpThird', 'foeHpQuarter'] },
+  {
+    key: 'hp',
+    conditions: [
+      'hpFull', 'hpOne',
+      'hpAboveTwoThirds', 'hpTwoThirds',
+      'hpAboveHalf', 'hpHalf',
+      'hpAboveThird', 'hpThird',
+      'hpAboveQuarter', 'hpQuarter',
+    ],
+  },
+  {
+    key: 'foeHp',
+    conditions: [
+      'foeHpFull', 'foeHpOne',
+      'foeHpAboveTwoThirds', 'foeHpTwoThirds',
+      'foeHpAboveHalf', 'foeHpHalf',
+      'foeHpAboveThird', 'foeHpThird',
+      'foeHpAboveQuarter', 'foeHpQuarter',
+    ],
+  },
 ];
+
+/**
+ * The groups the second is chosen from: the same, but for the first of them,
+ * where "nothing more" stands in for `never` and `always` — neither of which
+ * says anything about what else has to hold.
+ */
+const SECOND_GROUPS = [{ key: 'basic', conditions: ['none'] }, ...CONDITION_GROUPS.slice(1)];
 
 /**
  * The group a condition belongs to, which also colours its chip.
  * @param {string} condition
  */
 function groupOf(condition) {
-  return CONDITION_GROUPS.find((group) => group.conditions.includes(condition)) ?? CONDITION_GROUPS[0];
+  return [...CONDITION_GROUPS, ...SECOND_GROUPS].find((group) => group.conditions.includes(condition)) ?? CONDITION_GROUPS[0];
 }
 
 /**
@@ -175,16 +206,18 @@ function moveRow(app, session, state, index, rebuild) {
    * @param {Record<string, string>} stored
    * @param {string} condition
    * @param {string} label
+   * @param {typeof CONDITION_GROUPS} groups what it is chosen from
    */
-  const conditionChip = (stored, condition, label) =>
+  const conditionChip = (stored, condition, label, groups) =>
     el(`button.chip.auto-condition${condition === 'never' ? '.off' : ''}`, {
       type: 'button',
-      title: `${label} ${t('auto.condition')}: ${t(`auto.condition.${condition}`)}`,
+      title: `${label}: ${t(`auto.condition.${condition}`)}`,
       onClick: async () => {
         app.audio.blip('select');
-        const chosen = await chooseCondition(app, `${localized(move?.name, slug)} · ${label}`, condition);
+        const chosen = await chooseCondition(app, `${localized(move?.name, slug)} · ${label}`, condition, groups);
         if (chosen === null) return;
-        stored[slug] = chosen;
+        if (chosen === 'none') delete stored[slug];
+        else stored[slug] = chosen;
         rebuild();
       },
     }, [
@@ -194,8 +227,8 @@ function moveRow(app, session, state, index, rebuild) {
 
   return el('div.auto-move-row', {}, [
     handle,
-    conditionChip(policy.moves, moveCondition(policy, slug), t('auto.first')),
-    conditionChip(policy.second, secondCondition(policy, slug), t('auto.second')),
+    conditionChip(policy.moves, moveCondition(policy, slug), t('auto.first'), CONDITION_GROUPS),
+    conditionChip(policy.second, secondCondition(policy, slug), t('auto.second'), SECOND_GROUPS),
   ]);
 }
 
@@ -206,21 +239,22 @@ function moveRow(app, session, state, index, rebuild) {
  * @param {import('../core/app.mjs').App} app
  * @param {string} title
  * @param {string} current
+ * @param {typeof CONDITION_GROUPS} [groups] what it is chosen from
  * @returns {Promise<string|null>} null when cancelled
  */
-export function chooseCondition(app, title, current) {
+export function chooseCondition(app, title, current, groups = CONDITION_GROUPS) {
   return new Promise((resolve) => {
     mountModal(app, (dismiss) => {
       const finish = (/** @type {string|null} */ value) => {
         dismiss();
         resolve(value);
       };
-      let open = groupOf(current);
+      let open = groups.find((group) => group.conditions.includes(current)) ?? groups[0];
 
       const tabs = el('div.cond-groups');
       const options = el('div.cond-options');
       const draw = () => {
-        setChildren(tabs, CONDITION_GROUPS.map((group) =>
+        setChildren(tabs, groups.map((group) =>
           el(`button.cond-group${group === open ? '.open' : ''}`, {
             type: 'button',
             onClick: () => {
@@ -234,7 +268,7 @@ export function chooseCondition(app, title, current) {
             el('span', { text: t(`auto.group.${group.key}`) }),
             group.conditions.includes(current) ? el('i.cond-here', { 'aria-hidden': 'true' }) : null,
           ])));
-        setChildren(options, open.conditions.map((condition) =>
+        setChildren(options, open.conditions.map((condition) => condition === null ? el('span.cond-gap', { 'aria-hidden': 'true' }) :
           el(`button.cond-option${condition === current ? '.current' : ''}`, {
             type: 'button',
             onClick: () => {

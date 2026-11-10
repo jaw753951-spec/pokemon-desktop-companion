@@ -18,6 +18,13 @@ import { setLanguage } from './i18n.mjs';
  * @property {(app: App) => void} [unmount]
  * @property {(deltaMs: number, app: App) => void} [update]
  * @property {(context: CanvasRenderingContext2D, app: App) => void} [render]
+ *   draw on the shared canvas, every frame the scene is in sight
+ * @property {(app: App) => void} [present] bring the scene's own layers up
+ *   to the frame, every frame it is in sight, without drawing on the canvas
+ * @property {(shown: boolean) => void} [setShown] whether the scene is in
+ *   sight at all, told every frame
+ * @property {(context: CanvasRenderingContext2D) => void} [snapshot] draw the
+ *   scene's own layers onto a canvas the size of the view (see `App.snapshot`)
  * @property {boolean} [keepBelow] draw the scene beneath this one as well
  * @property {boolean} [keepBelowRunning] let the scene beneath this one go on
  *   updating: a menu opened over the road should not stop the walk
@@ -48,6 +55,10 @@ export class App {
 
     this.lastFrame = 0;
     this.toastTimer = 0;
+    /** Whether anything was drawn on the canvas last frame, so it needs clearing. */
+    this.canvasUsed = true;
+    /** @type {HTMLCanvasElement|null} */
+    this.snapshotCanvas = null;
 
     // A message goes at the first press anywhere, so it never stands over the
     // button the player wants next. A press on the message itself only clears
@@ -122,17 +133,58 @@ export class App {
       this.stack[index]?.scene.update?.(deltaMs, this);
     }
 
-    const context = this.context;
-    context.clearRect(0, 0, VIEW_WIDTH, VIEW_HEIGHT);
     const firstVisible = this.firstRenderIndex();
+    for (let index = 0; index < this.stack.length; index++) {
+      this.stack[index].scene.setShown?.(index >= firstVisible);
+    }
     for (let index = firstVisible; index < this.stack.length; index++) {
-      this.stack[index].scene.render?.(context, this);
+      this.stack[index].scene.present?.(this);
+    }
+
+    // The canvas is only cleared and drawn on while something draws on it.
+    // The road keeps layers of its own under it, so a canvas left clear over
+    // the road is left alone rather than cleared again every frame — which
+    // counts as a change, and has the whole window put together again.
+    let drawing = false;
+    for (let index = firstVisible; index < this.stack.length; index++) {
+      if (this.stack[index].scene.render) drawing = true;
+    }
+    if (drawing || this.canvasUsed) {
+      const context = this.context;
+      context.clearRect(0, 0, VIEW_WIDTH, VIEW_HEIGHT);
+      for (let index = firstVisible; index < this.stack.length; index++) {
+        this.stack[index].scene.render?.(context, this);
+      }
+      this.canvasUsed = drawing;
     }
 
     if (this.toastTimer > 0) {
       this.toastTimer -= deltaMs;
       if (this.toastTimer <= 0) this.toastNode.hidden = true;
     }
+  }
+
+  /**
+   * The picture as it stands, on one canvas the size of the view: the layers
+   * a scene keeps under the canvas, and the canvas over them. For the tools
+   * that read pixels off the game rather than photographing the window.
+   *
+   * @returns {HTMLCanvasElement}
+   */
+  snapshot() {
+    if (!this.snapshotCanvas) {
+      this.snapshotCanvas = document.createElement('canvas');
+      this.snapshotCanvas.width = VIEW_WIDTH;
+      this.snapshotCanvas.height = VIEW_HEIGHT;
+    }
+    const context = /** @type {CanvasRenderingContext2D} */ (this.snapshotCanvas.getContext('2d'));
+    context.clearRect(0, 0, VIEW_WIDTH, VIEW_HEIGHT);
+    const firstVisible = this.firstRenderIndex();
+    for (let index = firstVisible; index < this.stack.length; index++) {
+      this.stack[index].scene.snapshot?.(context);
+    }
+    context.drawImage(this.canvas, 0, 0);
+    return this.snapshotCanvas;
   }
 
   /**
