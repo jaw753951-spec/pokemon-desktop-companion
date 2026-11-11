@@ -262,8 +262,8 @@ test('Victini is turned round to face left, as every other picture does', option
   const { crop, mirrorX, opaqueBounds } = await import('../tools/lib/image.mjs');
   const { MIRRORED } = await import('../tools/build/art.mjs');
   assert.ok(MIRRORED.has(494));
-  // Chien-Pao's community sprite looks the same way, and is turned round too.
-  assert.ok(MIRRORED.has(1002));
+  // Mandibuzz, Corvisquire and Chien-Pao look the same way, and are turned round too.
+  for (const id of [630, 822, 1002]) assert.ok(MIRRORED.has(id));
 
   // The picture shipped is the cartridge's, cut to what is drawn and mirrored.
   const root = new URL('../../', import.meta.url);
