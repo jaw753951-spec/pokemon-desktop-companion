@@ -2698,11 +2698,15 @@ canvas {
 }
 
 /* The figure and the buttons under it sit above the middle, so the buttons are
-   clear of the bottom edge. Only drawn higher: the plate keeps its place, and
-   stays in front of the tallest portraits' heads. */
-.league-figure,
-.league-actions {
+   clear of the bottom edge. Only drawn higher: the plate stays in front of the
+   tallest portraits' heads. The plate and the buttons are each drawn a little
+   further in still, so neither is pressed against its edge of the screen. */
+.league-figure {
   transform: translateY(-30px);
+}
+
+.league-actions {
+  transform: translateY(-38px);
 }
 
 .league-portrait {
@@ -2718,6 +2722,7 @@ canvas {
    frame's colour, and their name on paper under it. */
 .league-caption {
   position: relative;
+  top: 8px;
   z-index: 1;
   display: flex;
   flex-direction: column;

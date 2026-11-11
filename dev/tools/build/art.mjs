@@ -45,9 +45,10 @@ export const LAST_OFFICIAL = 649;
  * turned round here, so every screen has every Pokémon facing left: the box
  * and the Pokédex, which show the picture as it is, and the road and the
  * battles, which mirror it from left. Every sprite was looked over for these:
- * Black and White drew Victini turned to its right, and no other.
+ * Black and White drew Victini and Mandibuzz with their heads turned to their
+ * right, and the community's Corvisquire and Chien-Pao look the same way.
  */
-export const MIRRORED = new Set([494]);
+export const MIRRORED = new Set([494, 630, 822, 1002]);
 
 /**
  * The spriters PokeAPI credits for the Black and White style sprites past
