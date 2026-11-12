@@ -24,8 +24,9 @@
  * `btl_std` messages); see the `move.*` keys in the language sheets.
  */
 import { itemOf, moveOf, speciesOf, typeEffectiveness } from '../core/data.mjs';
-import { TERRAIN, WEATHER } from './field.mjs';
+import { snowing, TERRAIN, TERRAIN_TYPES, WEATHER } from './field.mjs';
 import { friendshipOf, levelOf, setMove } from './pokemon.mjs';
+import { STATUS_AILMENTS } from './volatile.mjs';
 
 /** @param {any} combatant */
 const hpShare = (combatant) => combatant.pokemon.hp / Math.max(1, combatant.maxHp);
@@ -108,6 +109,9 @@ export const PARTNER_ONLY = new Set([
   'coaching', 'dragon-cheer', 'spotlight', 'hold-hands', 'baton-pass', 'shed-tail', 'healing-wish',
   'lunar-dance', 'revival-blessing', 'assist', 'magnetic-flux', 'gear-up',
 ]);
+
+/** The Pokémon a Telekinesis cannot lift, as the games name them. */
+const TELEKINESIS_PROOF = new Set(['diglett', 'dugtrio', 'diglett-alola', 'dugtrio-alola', 'sandygast', 'palossand']);
 
 /** What a Mimic or a Sketch cannot copy. */
 const UNCOPYABLE_MOVES = new Set(['mimic', 'sketch', 'transform', 'struggle', 'metronome', 'chatter', 'sleep-talk']);
@@ -217,12 +221,22 @@ const POWER = {
   rollout: (battle, user) => rolloutPower(user),
   'ice-ball': (battle, user) => rolloutPower(user),
   'spit-up': (battle, user) => 100 * (user.volatile.stockpile ?? 0),
-  'beat-up': (battle, user) => Math.floor((speciesOf(user.pokemon.speciesId)?.stats.atk ?? 50) / 10) + 5,
+  'beat-up': (battle, user) => beatUpPower(user.pokemon),
   'last-respects': (battle, user, target, move) => move.power,
   fling: (battle, user) => itemOf(user.pokemon.heldItem ?? '')?.flingPower ?? 0,
   'natural-gift': (battle, user) => itemOf(user.pokemon.heldItem ?? '')?.naturalGift?.power ?? 0,
   present: (battle, user) => user.marks.present ?? 40,
 };
+
+/**
+ * What one member of the party puts into a Beat Up: a tenth of its species'
+ * Attack and five on top, as the games have had it since Black and White.
+ *
+ * @param {{speciesId: number}} pokemon
+ */
+export function beatUpPower(pokemon) {
+  return Math.floor((speciesOf(pokemon.speciesId)?.stats.atk ?? 50) / 10) + 5;
+}
 
 /** @param {any} user */
 function reversalPower(user) {
@@ -241,8 +255,7 @@ const positiveStages = (combatant) =>
   Object.values(combatant.stages).reduce((sum, stage) => sum + Math.max(0, stage), 0);
 
 /** @param {string|null} weather */
-const weakensSolar = (weather) =>
-  weather === WEATHER.RAIN || weather === WEATHER.SANDSTORM || weather === WEATHER.HAIL || weather === WEATHER.SNOW;
+const weakensSolar = (weather) => weather === WEATHER.RAIN || weather === WEATHER.SANDSTORM || snowing(weather);
 
 /**
  * The item a Knock Off can take: anything but what a Pokémon's shape depends
@@ -275,7 +288,7 @@ export function variableType(battle, user, move) {
     return { sun: 'fire', rain: 'water', sandstorm: 'rock', hail: 'ice', snow: 'ice' }[weather ?? ''] ?? null;
   }
   if (slug === 'terrain-pulse' && battle.grounded(user)) {
-    return { electric: 'electric', grassy: 'grass', misty: 'fairy', psychic: 'psychic' }[battle.field.terrain ?? ''] ?? null;
+    return TERRAIN_TYPES[battle.field.terrain ?? ''] ?? null;
   }
   if (slug === 'natural-gift') return itemOf(user.pokemon.heldItem ?? '')?.naturalGift?.type ?? null;
   if (slug === 'revelation-dance') return battle.typesOf(user)[0] ?? null;
@@ -357,7 +370,7 @@ export function failsBeforeUse(battle, user, target, move, slug) {
     case 'steel-roller':
       return !battle.field.terrain;
     case 'aurora-veil':
-      return battle.weatherFor(user) !== WEATHER.SNOW && battle.weatherFor(user) !== WEATHER.HAIL;
+      return !snowing(battle.weatherFor(user));
     case 'poltergeist':
     case 'natural-gift':
     case 'fling':
@@ -380,8 +393,12 @@ export function failsBeforeUse(battle, user, target, move, slug) {
     case 'metal-burst':
     case 'comeuppance':
       return !fixedDamage(battle, user, target, move);
-    case 'last-resort':
-      return true;
+    // Every other move it knows, used at least once since it came out — and
+    // at least one other move to have used.
+    case 'last-resort': {
+      const others = battle.movesOf(user).filter((slot) => slot.move !== 'last-resort');
+      return others.length === 0 || others.some((slot) => !(slot.move in (user.usedOn ?? {})));
+    }
     default:
       return false;
   }
@@ -510,8 +527,7 @@ export const STATUS_MOVES = {
   'psycho-shift': ({ battle, user, target, log }) => {
     const status = user.pokemon.status;
     if (!status || target.pokemon.status) return false;
-    const ailment = { brn: 'burn', psn: 'poison', par: 'paralysis', slp: 'sleep', frz: 'freeze' }[status];
-    if (!battle.inflictAilment(user, target, ailment, log, { toxic: user.pokemon.toxic })) return false;
+    if (!battle.inflictAilment(user, target, STATUS_AILMENTS[status], log, { toxic: user.pokemon.toxic })) return false;
     battle.cureStatus(user, log);
     return true;
   },
@@ -711,6 +727,17 @@ export const STATUS_MOVES = {
     battle.say(user, 'move.magnetRise');
     return true;
   },
+  // Three turns in the air: nothing from the ground reaches the target, and
+  // nothing aimed at it misses. Not something rooted, brought down or too
+  // heavy to lift, and not while Gravity holds everything down.
+  telekinesis: ({ battle, target }) => {
+    const volatile = target.volatile;
+    if (battle.field.gravity > 0 || volatile.telekinesis > 0 || volatile.ingrain || volatile.smackedDown) return false;
+    if (TELEKINESIS_PROOF.has(speciesOf(target.pokemon.speciesId)?.slug ?? '')) return false;
+    volatile.telekinesis = 3;
+    battle.say(target, 'move.telekinesis');
+    return true;
+  },
   octolock: ({ battle, target }) => {
     if (target.volatile.octolock) return false;
     target.volatile.octolock = true;
@@ -795,6 +822,20 @@ export const STATUS_MOVES = {
   'worry-seed': ({ battle, target, log }) => {
     if (!giveAbility(battle, target, 'insomnia', log)) return false;
     if (target.pokemon.status === 'slp') battle.cureStatus(target, log);
+    return true;
+  },
+  // Five turns without healing, and five without the use of what it holds.
+  'heal-block': ({ battle, target }) => {
+    if (target.volatile.healBlock > 0) return false;
+    target.volatile.healBlock = 5;
+    battle.say(target, 'move.healBlock');
+    return true;
+  },
+  embargo: ({ battle, target }) => {
+    if (target.volatile.embargo > 0) return false;
+    target.volatile.embargo = 5;
+    battle.say(target, 'move.embargo');
+    battle.syncSuppression();
     return true;
   },
   'gastro-acid': ({ battle, target }) => {
@@ -1220,16 +1261,11 @@ export const AFTER_HIT = {
     if (!battle.secondaryAllowed(user, target, move) || !battle.rng.chance(0.5 * battle.secondaryOdds(user))) return;
     battle.inflictAilment(user, target, battle.rng.pick(['poison', 'paralysis', 'sleep']), log);
   },
-  bind: ({ battle, user, target, move }) => battle.bindTarget(user, target, move),
-  wrap: ({ battle, user, target, move }) => battle.bindTarget(user, target, move),
-  'fire-spin': ({ battle, user, target, move }) => battle.bindTarget(user, target, move),
-  clamp: ({ battle, user, target, move }) => battle.bindTarget(user, target, move),
-  whirlpool: ({ battle, user, target, move }) => battle.bindTarget(user, target, move),
-  'sand-tomb': ({ battle, user, target, move }) => battle.bindTarget(user, target, move),
-  'magma-storm': ({ battle, user, target, move }) => battle.bindTarget(user, target, move),
-  infestation: ({ battle, user, target, move }) => battle.bindTarget(user, target, move),
-  'snap-trap': ({ battle, user, target, move }) => battle.bindTarget(user, target, move),
-  'thunder-cage': ({ battle, user, target, move }) => battle.bindTarget(user, target, move),
+  // The moves that wrap their target up for a few turns.
+  ...Object.fromEntries(
+    ['bind', 'wrap', 'fire-spin', 'clamp', 'whirlpool', 'sand-tomb', 'magma-storm', 'infestation', 'snap-trap', 'thunder-cage']
+      .map((slug) => [slug, ({ battle, user, target, move }) => battle.bindTarget(user, target, move)]),
+  ),
   'dragon-tail': ({ battle, user, target, log }) => battle.forceOut(user, target, log),
   'circle-throw': ({ battle, user, target, log }) => battle.forceOut(user, target, log),
   'u-turn': ({ battle, user, log }) => battle.pivot(user, log),
@@ -1250,11 +1286,22 @@ export const AFTER_HIT = {
   },
 };
 
+/**
+ * The side effects above that the games count as a move's secondary effect:
+ * a Sheer Force trades them away, and a Shield Dust, a Covert Cloak or a
+ * substitute keeps them off (see `Battle.secondaryAllowed`). A Tri Attack and
+ * a Dire Claw ask for themselves, having odds to roll as well.
+ */
+export const SECONDARY_AFTER_HIT = new Set([
+  'spirit-shackle', 'anchor-shot', 'sparkling-aria', 'eerie-spell', 'salt-cure', 'psychic-noise', 'throat-chop',
+]);
+
 /** @param {any} battle @param {any} target */
 function grounded(battle, target) {
   if (target.volatile.smackedDown || battle.grounded(target)) return;
   target.volatile.smackedDown = true;
   target.volatile.magnetRise = 0;
+  target.volatile.telekinesis = 0;
   battle.say(target, 'move.smackDown');
 }
 

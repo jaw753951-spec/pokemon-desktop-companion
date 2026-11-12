@@ -200,56 +200,6 @@ export function inFieldSpace(context, draw) {
 }
 
 /**
- * @param {CanvasRenderingContext2D} context
- * @param {HTMLImageElement|null} background
- * @param {number} offset world scroll, in field pixels
- */
-export function drawBackground(context, background, offset) {
-  context.fillStyle = '#101520';
-  context.fillRect(0, 0, FIELD_WIDTH, FIELD_HEIGHT);
-  if (!background) return;
-
-  const width = background.naturalWidth;
-  const height = background.naturalHeight;
-  // Anchored to the bottom, so the ground line stays put when a short map
-  // contributes fewer rows than the field has.
-  const top = FIELD_HEIGHT - height;
-
-  // Modulo can be negative for a negative offset; normalise so the first tile
-  // always starts at or before the left edge.
-  let start = -(((offset % width) + width) % width);
-
-  while (start < FIELD_WIDTH) {
-    const x = Math.round(start);
-    context.drawImage(background, x, top, width, height);
-    // A map shorter than the field leaves a gap overhead; its own top row
-    // fills it, so the terrain carries on instead of ending at a hard edge.
-    if (top > 0) context.drawImage(background, 0, 0, width, 1, x, 0, width, top);
-    start += width;
-  }
-}
-
-/**
- * Draw what the map puts over the people on it — a bridge overhead — tiled
- * exactly as the background under it is.
- *
- * @param {CanvasRenderingContext2D} context
- * @param {HTMLImageElement|null} overlay
- * @param {number} offset
- */
-export function drawOverlay(context, overlay, offset) {
-  if (!overlay) return;
-  const width = overlay.naturalWidth;
-  const height = overlay.naturalHeight;
-  const top = FIELD_HEIGHT - height;
-  let start = -(((offset % width) + width) % width);
-  while (start < FIELD_WIDTH) {
-    context.drawImage(overlay, Math.round(start), top, width, height);
-    start += width;
-  }
-}
-
-/**
  * How far either side of a bridge an event is kept away, in field pixels.
  *
  * A trainer half under the deck, or a Pokémon Center with a bridge through

@@ -49,6 +49,7 @@ import { battleScene } from './battle.mjs';
 import { captureScene } from './capture.mjs';
 import { createEventRunner, drawCarried, drawProp, eventGround, propLook } from './fieldevents.mjs';
 import { leagueScene } from './league.mjs';
+import { shutter } from '../ui/shutter.mjs';
 import { inventoryScene } from '../ui/inventory.mjs';
 import { shopScene } from '../ui/shop.mjs';
 import { pokedexScene } from '../ui/pokedex.mjs';
@@ -491,19 +492,29 @@ export function fieldScene(session) {
           );
         },
         onLeague: () => {
+          // One press: the road stops where it is, and the button does
+          // nothing more while the shutter is on its way down.
+          if (paused) return;
           app.audio.blip('confirm');
           paused = true;
-          showActor = false;
-          app.push(
-            leagueScene({
-              session,
-              onLeave: () => closeMenu(app),
-              onCrowned: () => {
-                // Champion or not, the run carries on with everything intact.
-                closeMenu(app);
-              },
-            }),
-          );
+          // The dark closes over the road and opens on the League's hall, as
+          // it does on the way into a battle. Only here, on the way in: the
+          // rounds and the bag inside come and go as they did.
+          shutter({
+            onShut: () => {
+              showActor = false;
+              app.push(
+                leagueScene({
+                  session,
+                  onLeave: () => closeMenu(app),
+                  onCrowned: () => {
+                    // Champion or not, the run carries on with everything intact.
+                    closeMenu(app);
+                  },
+                }),
+              );
+            },
+          });
         },
         onTraySelect: (index) => openTrayMenu(app, index),
       });

@@ -89,18 +89,35 @@ test("and a foe's Explosion that takes the companion with it is won", options, (
   assert.equal(battle.outcome, 'won');
 });
 
-test("a foe's Destiny Bond takes the companion down after it, which wins", options, () => {
-  // The foe is the faster by far, so its bond is up before the blow lands.
-  const battle = new Battle({
+test('the other side never uses a Destiny Bond, wild or trained', options, () => {
+  for (const trainerBattle of [false, true]) {
+    for (let seed = 1; seed <= 20; seed++) {
+      const battle = new Battle({
+        rng: new Rng(seed),
+        player: fixed(CHARIZARD, 50, ['splash']),
+        foes: [fixed(BLASTOISE, 50, ['destiny-bond', 'tackle'])],
+        policy: defaultAutoBattle(),
+        trainerBattle,
+      });
+      for (let turn = 0; turn < 6; turn++) assert.equal(battle.chooseMove(battle.foe, battle.player), 'tackle');
+    }
+  }
+  // Knowing nothing else, it struggles rather than use it.
+  const only = new Battle({
     rng: new Rng(3),
-    player: fixed(CHARIZARD, 5, ['tackle']),
-    foes: [fixed(BLASTOISE, 100, ['destiny-bond'], 1)],
+    player: fixed(CHARIZARD, 50, ['splash']),
+    foes: [fixed(BLASTOISE, 50, ['destiny-bond'])],
     policy: defaultAutoBattle(),
   });
-  const log = fight(battle);
-  assert.ok(log.some((entry) => entry.kind === 'move' && entry.data?.move === 'destiny-bond'));
-  assert.equal(battle.player.pokemon.hp, 0, 'the bond took the companion with it');
-  assert.equal(battle.outcome, 'won');
+  assert.equal(only.chooseMove(only.foe, only.player), 'struggle');
+  // The companion's own is its player's to choose.
+  const mine = new Battle({
+    rng: new Rng(3),
+    player: fixed(CHARIZARD, 50, ['destiny-bond']),
+    foes: [fixed(BLASTOISE, 50, ['splash'])],
+    policy: defaultAutoBattle(),
+  });
+  assert.equal(mine.chooseMove(mine.player, mine.foe), 'destiny-bond');
 });
 
 test('recoil is a share of the health the hit took, not of everything it rolled', options, () => {

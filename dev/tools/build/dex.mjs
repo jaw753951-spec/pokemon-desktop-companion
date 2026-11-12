@@ -609,6 +609,9 @@ async function attachShowdown(moves, log) {
     // A move that cannot miss is `true` there and 0 in PokeAPI's newest
     // entries; 0 read as a percentage is a move that never lands.
     if (effect.accuracy === null || move.accuracy === 0) move.accuracy = effect.accuracy ?? null;
+    // PP as the newest games count it: PokeAPI still gives a Take Heart the
+    // ten it had in Legends: Arceus, where Scarlet and Violet give it fifteen.
+    if (effect.pp) move.pp = effect.pp;
 
     // Who each stage lands on is Showdown's to say; PokeAPI only lists them.
     if (effect.stats.length) {
@@ -638,6 +641,7 @@ async function attachShowdown(moves, log) {
     if (!meta.flinchChance && effect.secondary.flinchChance) meta.flinchChance = effect.secondary.flinchChance;
     if (effect.secondary.toxic) meta.toxic = true;
     if (effect.multiAccuracy) meta.multiAccuracy = true;
+    meta.secondary = effect.hasSecondary;
     move.meta = meta;
     if (JSON.stringify(meta) !== before) filled++;
 

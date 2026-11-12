@@ -263,8 +263,8 @@ test('a classification is what an ability and an item key off', options, () => {
   const shielded = fixed(GEODUDE, 50);
   shielded.ability = 'bulletproof';
   const battle = fight(fixed(PIKACHU, 50, ['shadow-ball']), shielded);
-  assert.equal(battle.movePrevented(battle.player, /** @type {any} */ (battle.foe), moveOf('shadow-ball')), true);
-  assert.equal(battle.movePrevented(battle.player, /** @type {any} */ (battle.foe), moveOf('flamethrower')), false);
+  assert.equal(battle.preventedBy(battle.player, /** @type {any} */ (battle.foe), moveOf('shadow-ball')), 'ability');
+  assert.equal(battle.preventedBy(battle.player, /** @type {any} */ (battle.foe), moveOf('flamethrower')), null);
 });
 
 test('a two-turn move charges, and a recharging one costs the turn after', options, () => {
