@@ -118,12 +118,17 @@ export function showdownEffect(sd) {
 
   return {
     accuracy: sd.accuracy === true ? null : sd.accuracy,
+    pp: Number.isInteger(sd.pp) && sd.pp > 0 ? sd.pp : null,
     stats,
     statChance,
     secondary,
     minHits: hits?.[0] ?? null,
     maxHits: hits?.[1] ?? null,
     multiAccuracy: Boolean(sd.multiaccuracy),
+    // Whether the games count the move as having a secondary effect — what a
+    // Sheer Force trades away and is paid for. A Stone Axe says so with an
+    // empty record, its hazard being laid by a rule of its own.
+    hasSecondary: sd.category !== 'Status' && Boolean(sd.secondary || sd.secondaries?.length),
     drain: fraction(sd.drain) || -fraction(sd.recoil),
     healing: fraction(sd.heal),
     critRate: sd.willCrit ? 6 : sd.critRatio ? sd.critRatio - 1 : 0,

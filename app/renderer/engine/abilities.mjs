@@ -10,9 +10,9 @@
  * what cannot come from there is the behaviour, because an ability's effect
  * text is prose written for a person ("Has a 30% chance of paralyzing
  * attacking Pokémon on contact") and there is no grammar to parse it by. So
- * each one is written here, in the shape of the moment it acts in, and an
- * ability not in the table is one the engine has not learned yet — which the
- * Pokémon screen says out loud rather than leaving a player to wonder.
+ * each one is written here, in the shape of the moment it acts in. Every
+ * ability in the data has an entry — the tests hold it to that — and the
+ * Pokémon screen shows each one's official description and nothing else.
  *
  * Every hook is optional and every one is handed the same `ctx`:
  *
@@ -24,10 +24,10 @@
  *   write the line about it, because an ability that acts silently reads as a
  *   bug from the other side of the screen.
  */
-import { moveHasFlag as hasFlag, speciesOf } from '../core/data.mjs';
+import { moveHasFlag as hasFlag } from '../core/data.mjs';
 import { formeAbility } from './forms.mjs';
 import { clearStatus } from './pokemon.mjs';
-import { WEATHER, TERRAIN } from './field.mjs';
+import { snowing, WEATHER, TERRAIN } from './field.mjs';
 
 /** A quarter of maximum HP, which is what most absorbing abilities pay. */
 const ABSORB_HEAL = 1 / 4;
@@ -98,7 +98,7 @@ export const ABILITIES = {
   reckless: { power: (ctx, move) => ((move.meta?.drain ?? 0) < 0 || move.rules?.hasCrashDamage ? 1.2 : 1) },
   // Half again on top of the half again a matching type already gives, which
   // comes to four thirds of the ordinary bonus.
-  adaptability: { power: (ctx, move) => (stab(ctx.self, move) ? 4 / 3 : 1) },
+  adaptability: { power: (ctx, move) => (ctx.typesOf(ctx.self).includes(move.type) ? 4 / 3 : 1) },
   analytic: { power: (ctx) => (ctx.movingLast ? 1.3 : 1) },
   neuroforce: { power: (ctx, move, effectiveness) => (effectiveness > 1 ? 1.25 : 1) },
   'tinted-lens': { power: (ctx, move, effectiveness) => (effectiveness > 0 && effectiveness < 1 ? 2 : 1) },
@@ -193,7 +193,7 @@ export const ABILITIES = {
   'poison-point': { contact: (ctx) => ctx.inflict(ctx.foe, 'psn', 0.3) },
   'effect-spore': {
     contact: (ctx) => {
-      if (!ctx.rng.chance(0.3)) return;
+      if (ctx.powderProof(ctx.foe) || !ctx.rng.chance(0.3)) return;
       ctx.inflict(ctx.foe, ctx.rng.pick(['par', 'psn', 'slp']), 1);
     },
   },
@@ -262,7 +262,11 @@ export const ABILITIES = {
   // ---- Weather and terrain the holder brings with it.
 
   drought: { start: (ctx) => ctx.setWeather(WEATHER.SUN) },
-  'orichalcum-pulse': { start: (ctx) => ctx.setWeather(WEATHER.SUN) },
+  // The sun it calls up is the sun it feeds on: a third more Attack under it.
+  'orichalcum-pulse': {
+    start: (ctx) => ctx.setWeather(WEATHER.SUN),
+    stat: (ctx, stat) => (ctx.weather === WEATHER.SUN && stat === 'atk' ? 4 / 3 : 1),
+  },
   drizzle: { start: (ctx) => ctx.setWeather(WEATHER.RAIN) },
   'sand-stream': { start: (ctx) => ctx.setWeather(WEATHER.SANDSTORM), weatherImmune: true },
   'snow-warning': { start: (ctx) => ctx.setWeather(WEATHER.SNOW) },
@@ -349,7 +353,11 @@ export const ABILITIES = {
   // the rest of the battle.
   disguise: { busted: true },
   'electric-surge': { start: (ctx) => ctx.setTerrain(TERRAIN.ELECTRIC) },
-  'hadron-engine': { start: (ctx) => ctx.setTerrain(TERRAIN.ELECTRIC) },
+  // And the same for a Miraidon's Sp. Atk on the terrain it lays.
+  'hadron-engine': {
+    start: (ctx) => ctx.setTerrain(TERRAIN.ELECTRIC),
+    stat: (ctx, stat) => (ctx.terrain === TERRAIN.ELECTRIC && stat === 'spa' ? 4 / 3 : 1),
+  },
   'grassy-surge': { start: (ctx) => ctx.setTerrain(TERRAIN.GRASSY) },
   'misty-surge': { start: (ctx) => ctx.setTerrain(TERRAIN.MISTY) },
   'psychic-surge': { start: (ctx) => ctx.setTerrain(TERRAIN.PSYCHIC) },
@@ -365,7 +373,7 @@ export const ABILITIES = {
     // It reads which wall is lower and raises the offence that goes through it.
     start: (ctx) => {
       const stats = ctx.statsOf(ctx.foe);
-      ctx.raise(ctx.self, stats.def <= stats.spd ? 'atk' : 'spa', 1);
+      ctx.raise(ctx.self, stats.def < stats.spd ? 'atk' : 'spa', 1);
     },
   },
   // It copies the ability in front of it for the rest of the battle — never
@@ -389,7 +397,10 @@ export const ABILITIES = {
   illuminate: { ignoresEvasion: true, statDrop: (ctx, stat) => stat === 'acc' },
   'sand-veil': { evasion: (ctx) => (ctx.weather === WEATHER.SANDSTORM ? 0.8 : 1), weatherImmune: true },
   'snow-cloak': { evasion: (ctx) => (snowing(ctx.weather) ? 0.8 : 1), weatherImmune: true },
-  'wonder-skin': { evasion: (ctx, move) => (move.damageClass === 'status' ? 0.5 : 1) },
+  // A status move lands half the time at best, rather than half as often.
+  'wonder-skin': {
+    evasion: (ctx, move) => (move.damageClass === 'status' && (move.accuracy ?? 0) > 50 ? 50 / move.accuracy : 1),
+  },
 
   'super-luck': { crit: () => ({ stages: 1 }) },
   'battle-armor': { crit: () => ({ immune: true }) },
@@ -487,7 +498,15 @@ export const ABILITIES = {
       ctx.raise(ctx.self, best, 1);
     },
   },
-  'supreme-overlord': { onKnockOut: (ctx) => { ctx.raise(ctx.self, 'atk', 1); ctx.raise(ctx.self, 'spa', 1); } },
+  // A tenth more on every move for each of its side that went down before
+  // it came out, five at the most, counted once as it comes out.
+  'supreme-overlord': {
+    start: (ctx) => {
+      ctx.self.marks.fallen = Math.min(5, ctx.fallen());
+      if (ctx.self.marks.fallen > 0) ctx.say('ability.supremeOverlord');
+    },
+    power: (ctx) => 1 + 0.1 * (ctx.self.marks.fallen ?? 0),
+  },
 
   // ---- Being a different type from the one on the card.
 
@@ -526,13 +545,18 @@ export const ABILITIES = {
 
   // ---- Answering a hit with something that was not there before.
 
-  'poison-touch': { contact: (ctx) => ctx.inflict(ctx.foe, 'psn', 0.3) },
+  // What its holder touches, not what touches its holder (see `answerHit`).
+  'poison-touch': { touch: (ctx) => ctx.inflict(ctx.foe, 'psn', 0.3) },
   'cursed-body': { hit: (ctx) => ctx.disable(ctx.foe, 0.3) },
   'perish-body': { contact: (ctx) => ctx.perish() },
   'toxic-debris': {
     hit: (ctx, move) => { if (move.damageClass === 'physical') ctx.layHazard('toxicSpikes'); },
   },
-  'toxic-chain': { onHitDealt: (ctx) => ctx.inflict(ctx.foe, 'psn', 0.3) },
+  // The bad poison, on any hit — which a Shield Dust or a Covert Cloak
+  // refuses as it would a side effect.
+  'toxic-chain': {
+    onHitDealt: (ctx, move) => { if (ctx.reaches(move)) ctx.inflict(ctx.foe, 'psn', 0.3, { toxic: true }); },
+  },
   'liquid-ooze': { drainHurts: true },
   'innards-out': { faint: (ctx) => ctx.damageFlat(ctx.foe, ctx.lastDamage) },
   damp: { dampens: true },
@@ -584,7 +608,7 @@ export const ABILITIES = {
   'cheek-pouch': { onBerry: (ctx) => ctx.heal(ctx.self, 1 / 3) },
   // Half the time, and every time under the sun.
   harvest: { regrowsBerry: 0.5, regrowsInSun: true },
-  'cud-chew': { regrowsBerry: 1 },
+  'cud-chew': { chewsCud: true },
 
   // ---- The four that weigh on everything but their holder.
 
@@ -630,9 +654,8 @@ export const ABILITIES = {
 
   // ---- The ones that only ever act on a partner, redirect a move between
   // several targets, or wait on a Terastallization — none of which a one-on-
-  // one battle without Tera has. They are here so the Pokémon screen can say
-  // why they never do anything, rather than that the engine has not learned
-  // them.
+  // one battle without Tera has. They are here so that an ability missing
+  // from this table always means one nobody has written yet.
   plus: { inert: true },
   minus: { inert: true },
   healer: { inert: true },
@@ -650,6 +673,12 @@ export const ABILITIES = {
   commander: { inert: true },
   costar: { inert: true },
   hospitality: { inert: true },
+  // A disguise as the last of a party, a change on being called back, and a
+  // shell and a field that wait on the Terastal forme.
+  illusion: { inert: true },
+  'zero-to-hero': { inert: true },
+  'tera-shell': { inert: true },
+  'teraform-zero': { inert: true },
 };
 
 /**
@@ -763,21 +792,23 @@ const crossedHalf = (combatant, damage) =>
   combatant.pokemon.hp * 2 <= combatant.maxHp &&
   (combatant.pokemon.hp + (damage ?? 0)) * 2 > combatant.maxHp;
 
-const snowing = (weather) => weather === WEATHER.HAIL || weather === WEATHER.SNOW;
-
-/** @param {any} combatant @param {any} move */
-const stab = (combatant, move) => speciesOf(combatant.pokemon.speciesId)?.types.includes(move.type);
-
 /** Whether a move carries a secondary effect for Sheer Force to trade away. */
 export function hasSecondary(move) {
   const meta = move?.meta;
-  if (!meta) return false;
+  if (!meta || move.damageClass === 'status') return false;
+  // The move table says so outright (see `attachShowdown` in the dex build):
+  // a Salt Cure has one though nothing below would show it, and a Close
+  // Combat's drops are its price, not a side effect.
+  if (typeof meta.secondary === 'boolean') return meta.secondary;
   return (
-    (meta.ailmentChance ?? 0) > 0 ||
+    ((meta.ailmentChance ?? 0) > 0 && SECONDARY_AILMENTS.has(meta.ailment)) ||
     (meta.flinchChance ?? 0) > 0 ||
-    ((meta.statChance ?? 0) > 0 && (move.statChanges?.length ?? 0) > 0)
+    ((meta.statChance ?? 0) > 0 && (move.statChanges ?? []).some((change) => change.secondary !== false))
   );
 }
+
+/** The conditions a move can carry as a side effect, as the move data names them. */
+const SECONDARY_AILMENTS = new Set(['burn', 'freeze', 'paralysis', 'poison', 'sleep', 'confusion']);
 
 /** The four pinch abilities, which differ only in the type they lift. */
 function pinch(ctx, move, type) {

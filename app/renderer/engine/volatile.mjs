@@ -31,6 +31,17 @@ export const VOLATILE = {
 };
 
 /** How long confusion lasts, as the games roll it. */
+/**
+ * The conditions that go into the save, by the code the save writes them
+ * under, as the move data names them — so an ability can ask for a paralysis
+ * in the same words a move does.
+ * @type {Record<string, string>}
+ */
+export const STATUS_AILMENTS = { brn: 'burn', psn: 'poison', par: 'paralysis', slp: 'sleep', frz: 'freeze' };
+
+/** And the other way round. @type {Record<string, string>} */
+export const AILMENT_STATUSES = Object.fromEntries(Object.entries(STATUS_AILMENTS).map(([status, ailment]) => [ailment, status]));
+
 export const CONFUSION_TURNS = /** @type {[number, number]} */ ([2, 5]);
 
 /**

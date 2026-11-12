@@ -128,7 +128,7 @@ test('a Gorilla Tactics sticks to its first move', options, () => {
 test('a Harvest always regrows under the sun', options, () => {
   const exeggutor = make('exeggutor', 50, ['splash'], 'harvest');
   const battle = fight(exeggutor, make('chansey', 50, ['splash']), { weather: WEATHER.SUN });
-  battle.player.marks.ateBerry = 'sitrus-berry';
+  battle.player.marks.freshBerry = { slug: 'sitrus-berry', turn: 0 };
   battle.regrowBerry(battle.player, []);
   assert.equal(exeggutor.heldItem, 'sitrus-berry');
 });

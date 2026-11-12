@@ -932,6 +932,8 @@ export function battleScene({ session, foes, trainer = null, leader = false, pre
       case 'volatileBlocked':
         say(t(`volatile.${entry.data?.state}.blocked`, {
           name: nameOf(entry.side === 'player' ? player : foe),
+          // A Taunt names the move it stopped.
+          move: entry.data?.move ? localized(moveOf(entry.data.move)?.name, entry.data.move) : '',
         }));
         break;
 

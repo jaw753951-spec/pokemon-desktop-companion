@@ -31,6 +31,9 @@ export const WEATHER = {
   SNOW: 'snow',
 };
 
+/** Snow or hail: the same sky to everything that only asks whether it is snowing. @param {string|null} weather */
+export const snowing = (weather) => weather === WEATHER.HAIL || weather === WEATHER.SNOW;
+
 /** And the terrain they can lay under it. */
 export const TERRAIN = {
   ELECTRIC: 'electric',
@@ -38,6 +41,13 @@ export const TERRAIN = {
   MISTY: 'misty',
   PSYCHIC: 'psychic',
 };
+
+/**
+ * The type each terrain stands for: what a Mimicry and a Camouflage become
+ * on it, and what a Terrain Pulse turns into.
+ * @type {Record<string, string>}
+ */
+export const TERRAIN_TYPES = { electric: 'electric', grassy: 'grass', misty: 'fairy', psychic: 'psychic' };
 
 /** How long a field effect lasts when nothing extends it. */
 export const FIELD_TURNS = 5;
@@ -102,6 +112,9 @@ export const SUN_HEALS = new Set(['synthesis', 'moonlight', 'morning-sun']);
 
 /** Moves that never miss in rain, and fall to half accuracy in sunshine. */
 const STORM_MOVES = new Set(['thunder', 'hurricane']);
+
+/** The three storms of Hisui, which the rain guides as well but the sun does not spoil. */
+const RAIN_GUIDED = new Set(['bleakwind-storm', 'wildbolt-storm', 'sandsear-storm']);
 
 /** And the one that never misses in hail or snow. */
 const SNOW_MOVES = new Set(['blizzard']);
@@ -222,11 +235,6 @@ export class Field {
     if ((this.hazards[side][hazard] ?? 0) >= limit) return false;
     this.hazards[side][hazard] = (this.hazards[side][hazard] ?? 0) + 1;
     return true;
-  }
-
-  /** @param {'player'|'foe'} side */
-  clearHazards(side) {
-    this.hazards[side] = freshHazards();
   }
 
   /**
@@ -383,11 +391,12 @@ export function terrainDamage(terrain, moveType, attackerGrounded, defenderGroun
  * @returns {number|'always'} an accuracy multiplier, or that it cannot miss
  */
 export function weatherAccuracy(weather, moveName) {
+  if (RAIN_GUIDED.has(moveName) && weather === WEATHER.RAIN) return 'always';
   if (STORM_MOVES.has(moveName)) {
     if (weather === WEATHER.RAIN) return 'always';
     if (weather === WEATHER.SUN) return 0.5;
   }
-  if (SNOW_MOVES.has(moveName) && (weather === WEATHER.HAIL || weather === WEATHER.SNOW)) return 'always';
+  if (SNOW_MOVES.has(moveName) && snowing(weather)) return 'always';
   return 1;
 }
 
@@ -400,6 +409,8 @@ export function weatherAccuracy(weather, moveName) {
  * @returns {number} a percentage
  */
 export function weatherHealing(weather, moveName, listed) {
+  // A Shore Up is worth two thirds in a sandstorm, and its half otherwise.
+  if (moveName === 'shore-up') return weather === WEATHER.SANDSTORM ? 200 / 3 : listed;
   if (!SUN_HEALS.has(moveName)) return listed;
   if (weather === WEATHER.SUN) return 200 / 3;
   if (weather) return 25;
@@ -464,10 +475,11 @@ const freshHazards = () => ({ spikes: 0, toxicSpikes: 0, stealthRock: 0, stickyW
  * @param {Record<string, number>} hazards
  * @param {{types: string[], grounded: boolean}} arriving
  * @param {(attacking: string, defending: string[]) => number} effectiveness
- * @returns {{damage: number, status: string|null, stat: string|null, absorbs: boolean}}
+ * @returns {{damage: number, status: string|null, toxic: boolean, stat: string|null, absorbs: boolean}} `toxic` when two
+ *   layers make the poison the bad kind
  */
 export function hazardToll(hazards, arriving, effectiveness) {
-  const toll = { damage: 0, status: /** @type {string|null} */ (null), stat: /** @type {string|null} */ (null), absorbs: false };
+  const toll = { damage: 0, status: /** @type {string|null} */ (null), toxic: false, stat: /** @type {string|null} */ (null), absorbs: false };
 
   if (hazards.stealthRock > 0) {
     toll.damage += ROCK_DAMAGE * effectiveness('rock', arriving.types);
@@ -479,7 +491,10 @@ export function hazardToll(hazards, arriving, effectiveness) {
 
   if (hazards.toxicSpikes > 0) {
     if (arriving.types.includes('poison')) toll.absorbs = true;
-    else if (!arriving.types.includes('steel')) toll.status = 'psn';
+    else if (!arriving.types.includes('steel')) {
+      toll.status = 'psn';
+      toll.toxic = hazards.toxicSpikes >= 2;
+    }
   }
   return toll;
 }
