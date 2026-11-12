@@ -41,7 +41,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # What changed, from the description of the pull request the release was
-      # merged by. GitHub's generated notes listed only that pull request's
+      # merged by — or, for a release made straight from main, from the body of
+      # the commit the tag is on. GitHub's generated notes listed only that pull request's
       # title, and closed on a link comparing this tag with the last one —
       # which goes nowhere once the old releases and their tags are cleared
       # away. The description is what says what the release is.
@@ -71,6 +72,21 @@ jobs:
                 | awk 'NF { while (blank > 0 && seen) { print ""; blank-- } blank = 0; seen = 1; print; next } { blank++ }'
               echo
               echo "Full list of changes: $(jq -r '.html_url' <<<"$pr")"
+            else
+              # Released straight from main, with no pull request behind it:
+              # the release's own commit says what changed, under its title.
+              # The title, the version bump and the co-author line go, as the
+              # pull request's boilerplate does above. A commit that says
+              # nothing more than its title leaves the section out.
+              body=$(gh api 'repos/${{ github.repository }}/commits/${{ github.sha }}' --jq '.commit.message' 2>/dev/null \
+                | tr -d '\r' | tail -n +2 \
+                | grep -v -E '^- Version [0-9.]+\.?$|^Co-Authored-By:|Generated with \[Claude Code\]' \
+                | awk 'NF { while (blank > 0 && seen) { print ""; blank-- } blank = 0; seen = 1; print; next } { blank++ }') || body=''
+              if [ -n "$body" ]; then
+                echo "## What's new in $version"
+                echo
+                echo "$body"
+              fi
             fi
             echo 'NOTES_END'
           } >> "$GITHUB_OUTPUT"
