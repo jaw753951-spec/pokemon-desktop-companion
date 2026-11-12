@@ -276,18 +276,38 @@ export function fieldScene(session) {
         // A gym leader is fought in their gym, everyone else where they stand.
         backdrop: setup.leader ? 'leader' : backdropForArea(session.area),
         music: setup.leader ? gameData().bgm.cues.battleLeader : undefined,
+        // A leader's win is met with the badge's cue, once the fight is over.
+        fanfare: setup.leader ? null : victoryCue(setup),
         onFinish: (result) => {
           app.pop();
           paused = false;
           showActor = true;
-          // Before the fanfares: the audio engine holds this as the track to
-          // come back to once a cue has finished, so the area's music is what
-          // returns rather than the battle theme.
+          // The audio engine holds this as the track to come back to once a
+          // cue has finished — the win's, which is already playing, or the
+          // badge's below — so the area's music is what returns rather than
+          // the battle theme.
           resumeMusic(app);
           finishBattle(app, setup, result);
         },
       }),
     );
+  }
+
+  /**
+   * The cue a win over a trainer or a wild Pokémon is met with, which the
+   * battle plays as the companion's win pose starts.
+   *
+   * @param {{trainer: any|null}} setup
+   */
+  function victoryCue(setup) {
+    const cues = gameData().bgm.cues;
+    // A trainer's theme up to where its loop begins, faded as the loop comes
+    // in. A wild win is just the five-note run up that opens its theme, left
+    // to ring: it comes round too often to hold the road's music off for the
+    // rest.
+    return setup.trainer
+      ? { name: cues.victoryTrainer ?? null, options: { intro: true } }
+      : { name: cues.victoryWild ?? null, options: { notes: 5 } };
   }
 
   /**
@@ -346,14 +366,10 @@ export function fieldScene(session) {
       app.toast(t('badge.obtained', { name: badgeLabel(setup.leader) }));
     } else if (setup.trainer) {
       session.trainerWins++;
-      app.audio.playJingle(gameData().bgm.cues.victoryTrainer ?? null, { intro: true });
     } else {
       // Only wild Pokémon can be caught, so only they reach the tray — and
       // only when the companion was the one left standing.
       for (const pokemon of result.defeated) session.addToTray(pokemon);
-      // Just the five-note run up that opens it, left to ring: a wild win
-      // comes round too often to hold the road's music off for the rest.
-      app.audio.playJingle(gameData().bgm.cues.victoryWild ?? null, { notes: 5 });
     }
 
     // Won on the way down — the last of the foe's taken with it on a recoil —

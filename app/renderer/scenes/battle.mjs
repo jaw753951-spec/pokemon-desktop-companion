@@ -153,14 +153,17 @@ const PLAYER_SPOT = { x: Math.round(FIELD_WIDTH * 0.26), y: MESSAGE_TOP - 3 };
  *   presented?: boolean,
  *   backdrop?: string|null,
  *   music?: string|null,
+ *   fanfare?: {name: string|null, options?: {seconds?: number, intro?: boolean, notes?: number}}|null,
  *   weather?: string|null,
  *   onFinish: (result: {outcome: 'won'|'lost'|'fled', defeated: import('../engine/pokemon.mjs').Pokemon[]}) => void,
  * }} options `presented` stands the trainer on the field before their first
  *   ball, as a gym leader is — a gym leader always, and the League's rounds,
- *   whose people are met the same way
+ *   whose people are met the same way; `fanfare` is the cue a win is met with,
+ *   played as the companion's win pose starts rather than once the fight has
+ *   handed back, so the two are one moment
  * @returns {import('../core/app.mjs').Scene}
  */
-export function battleScene({ session, foes, trainer = null, leader = false, presented = leader, backdrop = null, music = null, weather = undefined, onFinish }) {
+export function battleScene({ session, foes, trainer = null, leader = false, presented = leader, backdrop = null, music = null, fanfare = null, weather = undefined, onFinish }) {
   const battle = new Battle({
     rng: session.rng,
     player: session.active,
@@ -1288,6 +1291,11 @@ export function battleScene({ session, foes, trainer = null, leader = false, pre
           if (trainer) say(t(leader ? 'battle.wonLeader' : 'battle.wonTrainer', { trainer: localized(trainer.name, '') }));
           // A companion that went down last has won lying down.
           if (player.hp > 0) playerBattler?.setPose('win');
+          // The win's cue with the hop it is for. It used to wait for the
+          // fight to hand back, and was heard over the road a beat after the
+          // hop had finished. The battle's theme goes quiet under it, and
+          // whatever the caller puts on next starts once it is over.
+          if (fanfare?.name) app.audio.playJingle(fanfare.name, fanfare.options);
         } else if (battle.outcome === 'fled' || battle.outcome === 'escaped') {
           // Nobody was beaten: the line that sent it away has already been
           // said, and the battle simply ends — the wild one gone from its

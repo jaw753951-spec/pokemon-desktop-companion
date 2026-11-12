@@ -170,6 +170,8 @@
    */
   let scripted = null;
   let turnTaken = false;
+  /** Whether the turns the engine fights for itself are written to the console, for choosing a take. */
+  let turnLog = false;
   async function scriptTurns() {
     const { Battle } = await load('./engine/battle.mjs');
     if (Battle.prototype.__trailer) return;
@@ -180,7 +182,11 @@
       // the turn after it would open with whatever the engine has queued up,
       // an Intimidate or the like, before the cut.
       if (this.__scripted) return [];
-      if (!scripted) return take.call(this);
+      if (!scripted) {
+        const entries = take.call(this);
+        if (turnLog) console.log('turn: ' + entries.map((entry) => entry.kind + (entry.side ? ':' + entry.side : '') + (entry.data?.move ? '(' + entry.data.move + ')' : '')).join(' '));
+        return entries;
+      }
       const script = scripted;
       scripted = null;
       this.__scripted = true;
@@ -602,7 +608,12 @@
     context.fillStyle = '#000';
     context.fillRect(0, 0, canvas.width, canvas.height);
     // The whole picture, the road's layers under the canvas included.
-    context.drawImage(app().snapshot(), x, y, width, height, 0, 0, width * scale, height * scale);
+    const picture = app().snapshot();
+    context.drawImage(picture, x, y, width, height, 0, 0, width * scale, height * scale);
+    // A panel that looks past the picture's bottom edge has its last row
+    // carried on down, rather than black under it.
+    const rows = picture.height - y;
+    if (rows < height) context.drawImage(picture, x, picture.height - 1, width, 1, 0, rows * scale, width * scale, canvas.height - rows * scale);
   }
 
   /**
@@ -627,7 +638,8 @@
     if (!kind) return;
     settlePanels();
     if (kind === 'split') {
-      panels.canvases.forEach((canvas, row) => fill(canvas, SPLIT.scale, SPLIT.crops[row].x, SPLIT.crops[row].y));
+      const crops = shot.crops ?? SPLIT.crops;
+      panels.canvases.forEach((canvas, row) => fill(canvas, SPLIT.scale, crops[row].x, crops[row].y));
       return;
     }
     // The picking: the game drawn again for each row, with that row's
@@ -902,7 +914,7 @@
     return gameData().leagues.find((entry) => entry.region === 'hoenn');
   }
 
-  const SHOTS = [
+  const TRAILER = [
     {
       name: 'desktop',
       bars: 2,
@@ -1257,6 +1269,167 @@
     },
   ];
 
+  // ---------------------------------------------------------------- shorts
+
+  /*
+   * A short for the feed: the companion walking, a wild Pokémon met, the fight
+   * won, and the walk again. One take of the game playing itself — the road's
+   * own event, the engine's own turns — framed as the upright trailer frames
+   * them: the road close on the companion, the fight cut in two, a line over
+   * each. Unlike the trailer's fights this one is followed, so the game's own
+   * nameplates, health bars and message box are kept, lifted out of the
+   * battle screen and laid over the two halves. How it goes follows from the
+   * seed, so a take can be looked for ('--seed', with '--dry' to read the
+   * turns without filming).
+   */
+  /** How long the walk goes on after the fight. */
+  const ENCOUNTER_AFTER_S = 4;
+  /** How long into the game's way into a fight the screen is wholly dark (see `ENTRY_OPEN` in the battle scene). */
+  const ENCOUNTER_SHUT_S = 0.48;
+  /**
+   * Where each half of this fight looks: the wild one a little higher than the
+   * trailer has it, between its nameplate and the line across the seam, and
+   * the companion higher in its own half, between its nameplate and the
+   * message box.
+   */
+  const ENCOUNTER_CROPS = [{ x: 260, y: 38 }, { x: 34, y: 100 }];
+  /** How much larger than in the game's window its battle panels are drawn on the phone. */
+  const HUD_ZOOM = 2.2;
+  /** Where the companion's nameplate goes on the phone: under the line across the seam. */
+  const HUD_PLAYER_TOP = 505;
+  const encounter = { seed: 1, met: false, from: -1, to: -1, hud: /** @type {HTMLElement | null} */ (null), lifted: false };
+
+  /**
+   * The battle's own panels over the two halves: the wild one's nameplate at
+   * the top of its half, the companion's under the seam, the message box
+   * along the bottom. They are the battle scene's nodes, moved rather than
+   * copied, so the scene goes on writing to them.
+   */
+  function liftBattleHud() {
+    if (!encounter.hud) {
+      const hud = document.createElement('div');
+      hud.className = 'short-hud';
+      const look = getComputedStyle(stage());
+      Object.assign(hud.style, {
+        position: 'absolute', left: '0', top: '0', width: `${PHONE.width / HUD_ZOOM}px`, height: `${PHONE.height / HUD_ZOOM}px`,
+        zoom: String(HUD_ZOOM), zIndex: '3', pointerEvents: 'none', display: 'none',
+        fontFamily: look.fontFamily, fontSize: look.fontSize, color: look.color, lineHeight: look.lineHeight,
+      });
+      phone.append(hud);
+      encounter.hud = hud;
+      // The upright cut hides these wherever they are; here they are wanted.
+      const sheet = [...document.styleSheets].find((entry) => entry.href?.endsWith('styles.css')) ?? document.styleSheets[0];
+      sheet.insertRule('body.trailer-upright .short-hud :is(.battle-bar, .battle-message) { visibility: visible; }', sheet.cssRules.length);
+    }
+    const screen = document.querySelector('.battle-screen');
+    if (!screen || encounter.lifted) return;
+    const player = /** @type {HTMLElement | null} */ (screen.querySelector('.battle-bar.player'));
+    const parts = [screen.querySelector('.battle-bar.foe'), player, screen.querySelector('.battle-message')].filter(Boolean);
+    if (player) {
+      player.style.bottom = 'auto';
+      player.style.top = `${HUD_PLAYER_TOP / HUD_ZOOM}px`;
+    }
+    encounter.hud.replaceChildren(...parts);
+    encounter.lifted = true;
+  }
+
+  /** The panels gone with the fight they belonged to. */
+  function dropBattleHud() {
+    if (!encounter.hud) return;
+    encounter.hud.replaceChildren();
+    encounter.hud.style.display = 'none';
+    encounter.lifted = false;
+  }
+
+  const ENCOUNTER = [
+    {
+      name: 'encounter',
+      // The most it may run: it ends itself, a while after the fight does.
+      seconds: 90,
+      open: true,
+      async begin() {
+        closeAll();
+        session().rng.seed = encounter.seed >>> 0;
+        clock.hour = 12;
+        document.getElementById('dragframe').style.display = 'none';
+        stage().style.boxShadow = 'none';
+        stage().style.borderRadius = '0';
+        smooth(false);
+        placeStage(0, 0, frameWidth() / 480);
+        await preload(['items/poke-ball.png']);
+        // The road walks once its picture has come in, which takes real time
+        // rather than the film's: given a moment, and walked a little way on.
+        await settle(800);
+        await preroll(3000);
+        app().dismissToast();
+        // The road's music is already playing when the take opens.
+        audioLog.push({ t: 0, method: 'playMusic', args: [session().area?.music ?? null] });
+        turnLog = true;
+        // The wild one steps out beyond the right edge: about five seconds' walk away.
+        forceEvent('wild');
+      },
+      async before(frame) {
+        app().dismissToast();
+        fadeChrome(1);
+        // Whoever the road rolled, in its fighting art before the fight opens.
+        if (!encounter.met && session().lastWildSpecies) {
+          encounter.met = true;
+          console.log('met ' + session().lastWildSpecies + ' on frame ' + frame);
+          await pokemonArt([session().active.speciesId, session().lastWildSpecies], true);
+        }
+      },
+      // The road while the screen flashes, the fight cut in two once it has
+      // shut, and the road again on the very frame the fight hands back: this
+      // is asked once the game has drawn the frame, so it goes by what is on
+      // screen now.
+      panels(frame) {
+        const fighting = Boolean(document.querySelector('.battle-screen'));
+        if (fighting && encounter.from < 0) {
+          encounter.from = frame;
+          console.log('fight from frame ' + frame);
+        }
+        if (!fighting && encounter.from >= 0 && encounter.to < 0) {
+          encounter.to = frame;
+          console.log('fight to frame ' + frame);
+        }
+        // What the fight's end has to say is said in the game's own toasts,
+        // which nothing in this take leaves room for: gone before they are seen.
+        app().dismissToast();
+        // The halves come in over the dark the game has just shut the screen
+        // with, and once they have met the seam between them is the trailer's
+        // pale one again.
+        const into = (frame - encounter.from) / FPS - ENCOUNTER_SHUT_S;
+        if (panels.node) panels.node.style.background = into < 0.45 ? '#05070c' : '#f4f4f0';
+        if (fighting && into >= 0) {
+          // The game's panels with the halves: in as they meet.
+          liftBattleHud();
+          encounter.hud.style.display = 'block';
+          encounter.hud.style.opacity = String(Math.min(1, Math.max(0, (into - 0.25) / 0.2)));
+        } else if (!fighting) {
+          dropBattleHud();
+          // The line for this frame was chosen before the game ran it: on the
+          // frame the fight hands back, it is the road's again.
+          if (encounter.to === frame) drawCaption(captions ? say('onward') : null);
+        }
+        return fighting && into >= 0 ? 'split' : null;
+      },
+      crops: ENCOUNTER_CROPS,
+      // A line over the road, another across the seam of the fight, and one for the road after it.
+      says: () => (encounter.from < 0
+        ? say('walk')
+        : encounter.to >= 0
+          ? say('onward')
+          : panels.kind === 'split' ? say('battle', { at: BATTLE_AT, under: true }) : null),
+      pan: () => PICKING_FOCUS.x,
+      tilt: () => PICKING_FOCUS.y,
+      over: (frame) => encounter.to >= 0 && frame - encounter.to >= Math.round(ENCOUNTER_AFTER_S * FPS),
+    },
+  ];
+
+  /** The cuts by name; the trailer is the one filmed when none is asked for. */
+  const CUTS = { trailer: TRAILER, encounter: ENCOUNTER };
+  let SHOTS = TRAILER;
+
   function timeKey(hour) {
     const bands = [['night', 0], ['dawn', 5], ['day', 10], ['afternoon', 14], ['dusk', 18], ['night', 21]];
     let key = 'night';
@@ -1296,7 +1469,9 @@
     BAR,
 
     /** Boot a fresh run with Charmander on Route 101, and take the clock. */
-    async setup({ wallpaper, icon, upright: lying = false, captions: lines = true }) {
+    async setup({ wallpaper, icon, upright: lying = false, captions: lines = true, cut = 'trailer', seed = 1 }) {
+      SHOTS = CUTS[cut] ?? TRAILER;
+      encounter.seed = seed;
       wallpaperUrl = wallpaper;
       window.__trailerIcon = icon;
       upright = lying;
@@ -1331,6 +1506,7 @@
         name: shot.name,
         frames: counts[index],
         freeze: shot.into?.kind === 'fade',
+        open: Boolean(shot.open),
       }));
     },
 
@@ -1349,14 +1525,17 @@
       recording = true;
     },
 
-    /** Film one frame of a shot: what the shot does first, then a frame of game. */
+    /**
+     * Film one frame of a shot: what the shot does first, then a frame of game.
+     * Answers 'over' on the last frame of a shot that decides its own length.
+     */
     async frame(index, frame) {
       const shot = SHOTS[index];
       filmTime = frameNumber / FPS;
       // The berry tree is put in the road so that the companion reaches it as
       // the melody comes in with the montage. The walk to a new event takes
       // about five seconds, so it is spawned while the desktop is still on.
-      if (!berryStarted && frameNumber >= montageFrame() - Math.round(BERRY_WALK_S * FPS) - 1) {
+      if (SHOTS === TRAILER && !berryStarted && frameNumber >= montageFrame() - Math.round(BERRY_WALK_S * FPS) - 1) {
         berryStarted = true;
         forceEvent('berry');
       }
@@ -1375,8 +1554,10 @@
         console.log(`arrived at the tree on frame ${frameNumber}, the montage starts on ${montageFrame()}`);
       }
       frameNumber++;
-      if (frame === counts[index] - 1) shot.end?.call(shot);
-      return true;
+      // A shot that ends itself says so, and the film moves on from this frame.
+      const over = Boolean(shot.over?.call(shot, frame));
+      if (over || frame === counts[index] - 1) shot.end?.call(shot);
+      return over ? 'over' : true;
     },
 
     /** Wait for the frame to reach the screen: two real frames, or a moment if the window gets none. */

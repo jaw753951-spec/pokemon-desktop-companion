@@ -4,6 +4,7 @@
  *
  *   npx electron dev/tools/trailer/record.mjs --ffmpeg path/to/ffmpeg [--out trailer] [--lang en] [--only fight-1] [--stills 30]
  *     [--upright] [--no-captions] [--sound-only]
+ *     [--cut encounter [--seed 7] [--dry]]
  *
  * Boots the game's own main-process modules (as the screenshot harness does)
  * into a hidden 1920x1080 window, hands the page to `director.js`, and
@@ -12,7 +13,10 @@
  * for, and the two are put together at the end. With `--upright` the same
  * film is shot again in a 1080x1920 window for the phone-shaped feeds —
  * Shorts, Reels, TikTok — with the camera on each shot's subject and a line
- * about it above the picture. Nothing here ships.
+ * about it above the picture. `--cut` films one of the shorts instead of the
+ * trailer — a single upright take with the game's own sound
+ * (`reel-<cut>.mp4`); how it goes follows from `--seed`, and `--dry`
+ * runs it without filming, to read what happens in it. Nothing here ships.
  */
 import { app, BrowserWindow, screen } from 'electron';
 import { spawn } from 'node:child_process';
@@ -41,10 +45,16 @@ const ONLY = option('--only', null)?.split(',') ?? null;
 /** Mix the soundtrack again over the film already made, from its timeline. */
 const SOUND_ONLY = args.includes('--sound-only');
 /** Film the phone-shaped cut rather than the landscape one. */
-const UPRIGHT = args.includes('--upright');
+const UPRIGHT = args.includes('--upright') || args.includes('--cut');
 /** Keep a still every so many frames, for looking at without playing the film. */
 const STILLS = Number(option('--stills', '0'));
 /** Leave the upright cut's lines off the picture, for creators who put their own words over it. */
+/** One of the shorts rather than the trailer (see `director.js`): one upright take, with the game's own sound. */
+const SHORT = option('--cut', null);
+/** What the short's dice start from. */
+const SEED = Number(option('--seed', '1'));
+/** Run the shots without photographing them, to read what happens in them. */
+const DRY = args.includes('--dry');
 const BARE = args.includes('--no-captions');
 /**
  * The window is landscape either way. A window as tall as the phone's frame
@@ -54,8 +64,10 @@ const BARE = args.includes('--no-captions');
 const WIDTH = 1920;
 const HEIGHT = 1080;
 /** What this cut's files are called apart from the other's. */
-const CUT = UPRIGHT ? '-upright' : '';
-const FINAL = join(OUT_DIR, `trailer-${LANGUAGE}${UPRIGHT ? '-vertical' : ''}${BARE ? '-nocaption' : ''}.mp4`);
+const CUT = SHORT ? `-${SHORT}` : UPRIGHT ? '-upright' : '';
+const FINAL = SHORT
+  ? join(OUT_DIR, `reel-${SHORT}.mp4`)
+  : join(OUT_DIR, `trailer-${LANGUAGE}${UPRIGHT ? '-vertical' : ''}${BARE ? '-nocaption' : ''}.mp4`);
 /**
  * The page is laid out at half the film's size and drawn at twice the pixel
  * density: a window as big as the film is cut down to fit the screen on most
@@ -111,7 +123,7 @@ app.whenReady().then(async () => {
 
   const video = join(OUT_DIR, ONLY ? `video${CUT}-${ONLY.join('+')}.mp4` : `video${CUT}.mp4`);
   if (!SOUND_ONLY) await film(run, window, video);
-  if (!ONLY) await mix(run, video);
+  if (!ONLY && !DRY) await mix(run, video);
   app.quit();
 });
 
@@ -126,26 +138,42 @@ async function film(run, window, video) {
   await run(`${await readFile(join(HERE, 'director.js'), 'utf8')};true`);
   const wallpaper = `data:image/jpeg;base64,${(await readFile(option('--wallpaper', 'C:/Windows/Web/Wallpaper/Windows/img0.jpg'))).toString('base64')}`;
   const icon = `data:image/png;base64,${(await readFile(join(ROOT, 'dev', 'build', 'icon.png'))).toString('base64')}`;
-  const shots = await run(`window.__trailer.setup(${JSON.stringify({ wallpaper, icon, upright: UPRIGHT, captions: !BARE })})`);
+  const shots = await run(`window.__trailer.setup(${JSON.stringify({ wallpaper, icon, upright: UPRIGHT, captions: !BARE, cut: SHORT ?? 'trailer', seed: SEED })})`);
   console.log(shots.map((shot) => `${shot.name}:${shot.frames}`).join(' '));
 
-  const encoder = spawn(FFMPEG, [
+  const encoder = DRY ? null : spawn(FFMPEG, [
     '-y', '-loglevel', 'error',
     '-f', 'rawvideo', '-pix_fmt', 'bgra', '-s', `${WIDTH}x${HEIGHT}`, '-r', '60', '-i', '-',
     ...(UPRIGHT ? ['-vf', 'transpose=cclock'] : []),
     '-c:v', 'libx264', '-preset', 'medium', '-crf', '14', '-pix_fmt', 'yuv420p', '-movflags', '+faststart',
     video,
   ], { stdio: ['pipe', 'inherit', 'inherit'] });
-  const finished = new Promise((resolve) => encoder.on('close', resolve));
+  const finished = encoder ? new Promise((resolve) => encoder.on('close', resolve)) : Promise.resolve();
 
   let filmed = 0;
+  /** Every frame the game was run through, filmed or not: the film's length. */
+  let rolled = 0;
   const started = Date.now();
   for (const [index, shot] of shots.entries()) {
     const wanted = !ONLY || ONLY.includes(shot.name);
     await run(`window.__trailer.begin(${index})`);
+    // A hidden window is not drawn again until it is photographed, so the
+    // first photograph after the page has been laid out afresh is of how it
+    // stood before: one is taken and thrown away before the film starts.
+    if (index === 0 && encoder) {
+      for (let i = 0; i < 2; i++) {
+        await run('window.__trailer.painted()');
+        await window.webContents.capturePage();
+      }
+    }
     for (let frame = 0; frame < shot.frames; frame++) {
-      await run(`window.__trailer.frame(${index}, ${frame})`);
-      if (!wanted) continue;
+      // A shot that decides its own length says when it has had its last frame.
+      const over = (await run(`window.__trailer.frame(${index}, ${frame})`)) === 'over';
+      rolled++;
+      if (!wanted || !encoder) {
+        if (over) break;
+        continue;
+      }
       await run('window.__trailer.painted()');
       let image = await window.webContents.capturePage();
       const size = image.getSize();
@@ -160,15 +188,17 @@ async function film(run, window, video) {
         const still = 'data:image/png;base64,' + image.toPNG().toString('base64');
         await run('window.__trailer.freeze(' + JSON.stringify(still) + ')');
       }
+      if (over) break;
     }
     console.log(`filmed ${shot.name} (${filmed} frames, ${((Date.now() - started) / 1000).toFixed(0)}s)`);
   }
-  encoder.stdin.end();
+  encoder?.stdin.end();
   await finished;
+  if (DRY) return;
 
   const cuts = await run('window.__trailer.cuts()');
   const log = await run('window.__trailer.audioLog()');
-  const length = shots.reduce((sum, shot) => sum + shot.frames, 0) / 60;
+  const length = rolled / 60;
   await writeFile(join(OUT_DIR, `timeline${CUT}.json`), JSON.stringify({ length, shots, cuts, audio: log }, null, 1));
 }
 
@@ -180,6 +210,7 @@ async function mix(run, video) {
   const timeline = JSON.parse(await readFile(join(OUT_DIR, `timeline${CUT}.json`), 'utf8'));
   const { cuts, audio: log } = timeline;
   const length = timeline.length ?? timeline.shots.reduce((sum, shot) => sum + shot.frames, 0) / 60;
+  if (SHORT) return mixShort(run, video, { audio: log, length });
   await run(`${await readFile(join(HERE, 'soundtrack.js'), 'utf8')};true`);
   const wav = await run(`window.__soundtrack(${JSON.stringify({ cuts, audio: log, length })})`);
   const audio = join(OUT_DIR, `soundtrack${CUT}.wav`);
@@ -196,6 +227,22 @@ async function mix(run, video) {
     // Not cut to the shortest stream: the cover is one frame long. The
     // soundtrack is mixed to the film's own length.
     '-c:a', 'aac', '-b:a', '256k', FINAL,
+  ]);
+  console.log(`wrote ${FINAL}`);
+}
+
+/**
+ * A short's sound is the game's own — the road's music, the fight's, the cries
+ * and the hits, as the game asked for them — put under the film as it is.
+ */
+async function mixShort(run, video, { audio: log, length }) {
+  await run(`${await readFile(join(HERE, 'gamesound.js'), 'utf8')};true`);
+  const wav = await run(`window.__gameSound(${JSON.stringify({ audio: log, length })})`);
+  const audio = join(OUT_DIR, `soundtrack${CUT}.wav`);
+  await writeFile(audio, Buffer.from(wav, 'base64'));
+  await ffmpeg([
+    '-i', video, '-i', audio, '-map', '0:v', '-map', '1:a',
+    '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k', '-ar', '48000', '-shortest', '-movflags', '+faststart', FINAL,
   ]);
   console.log(`wrote ${FINAL}`);
 }
