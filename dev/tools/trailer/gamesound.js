@@ -36,7 +36,15 @@ window.__gameSound = async ({ audio, length }) => {
   engine.songGain = context.createGain();
   engine.effectGain = context.createGain();
   engine.cryGain = context.createGain();
-  engine.masterGain.connect(context.destination);
+  // In from silence and out to it, as the picture comes in from black and goes out to it.
+  const fade = context.createGain();
+  fade.gain.setValueAtTime(0, 0);
+  fade.gain.setValueAtTime(0, LEAD);
+  fade.gain.linearRampToValueAtTime(1, LEAD + 0.5);
+  fade.gain.setValueAtTime(1, Math.max(LEAD + 0.5, LEAD + length - 0.7));
+  fade.gain.linearRampToValueAtTime(0, LEAD + length);
+  fade.connect(context.destination);
+  engine.masterGain.connect(fade);
   connectMusic(context, engine.musicGain, engine.masterGain);
   engine.songGain.connect(engine.musicGain);
   engine.effectGain.connect(engine.masterGain);

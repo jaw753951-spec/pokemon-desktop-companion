@@ -172,6 +172,13 @@
   let turnTaken = false;
   /** Whether the turns the engine fights for itself are written to the console, for choosing a take. */
   let turnLog = false;
+  /** Told each turn the engine fights for itself, as it is taken and before it is played. */
+  let onTurn = /** @type {((entries: any[]) => void) | null} */ (null);
+  /** Frames of white still to come after a cut inside a shot. */
+  let flashLeft = 0;
+  const FLASH_FRAMES = 12;
+  /** How far a shot has closed the shutter itself, 0 open to 1 shut, over whatever the cuts ask for. */
+  let manualShut = 0;
   async function scriptTurns() {
     const { Battle } = await load('./engine/battle.mjs');
     if (Battle.prototype.__trailer) return;
@@ -185,6 +192,7 @@
       if (!scripted) {
         const entries = take.call(this);
         if (turnLog) console.log('turn: ' + entries.map((entry) => entry.kind + (entry.side ? ':' + entry.side : '') + (entry.data?.move ? '(' + entry.data.move + ')' : '')).join(' '));
+        onTurn?.(entries);
         return entries;
       }
       const script = scripted;
@@ -799,10 +807,13 @@
       kind = next.kind;
       amount = (next.out - left + 1) / next.out;
     }
-    const shut = kind === 'shutter' ? ease(amount) : 0;
+    const shut = Math.max(kind === 'shutter' ? ease(amount) : 0, manualShut);
     layers.top.style.height = (shut * 50.5) + '%';
     layers.bottom.style.height = (shut * 50.5) + '%';
-    layers.white.style.opacity = String(kind === 'white' ? amount : 0);
+    // A cut inside a shot — a fight picked up again at its last turn — is
+    // through a short flash of white as well.
+    const flash = flashLeft > 0 ? flashLeft-- / FLASH_FRAMES : 0;
+    layers.white.style.opacity = String(Math.max(kind === 'white' ? amount : 0, flash));
     layers.frozen.style.opacity = mine?.kind === 'fade' && frame < mine.frames ? String(1 - (frame + 1) / mine.frames) : '0';
   }
 
@@ -1295,8 +1306,12 @@
   const ENCOUNTER_CROPS = [{ x: 260, y: 38 }, { x: 34, y: 100 }];
   /** How much larger than in the game's window its battle panels are drawn on the phone. */
   const HUD_ZOOM = 2.2;
-  /** Where the companion's nameplate goes on the phone: under the line across the seam. */
-  const HUD_PLAYER_TOP = 505;
+  /**
+   * Where the companion's nameplate goes on the phone: under the line across
+   * the seam when there is one, and otherwise just above the seam, where the
+   * line would have been — clear of a companion taller than a Charmander.
+   */
+  const playerPlateTop = () => (captions ? 505 : 364);
   const encounter = { seed: 1, met: false, from: -1, to: -1, hud: /** @type {HTMLElement | null} */ (null), lifted: false };
 
   /**
@@ -1327,10 +1342,26 @@
     const parts = [screen.querySelector('.battle-bar.foe'), player, screen.querySelector('.battle-message')].filter(Boolean);
     if (player) {
       player.style.bottom = 'auto';
-      player.style.top = `${HUD_PLAYER_TOP / HUD_ZOOM}px`;
+      player.style.top = `${playerPlateTop() / HUD_ZOOM}px`;
     }
     encounter.hud.replaceChildren(...parts);
     encounter.lifted = true;
+  }
+
+  /**
+   * An evolution opens over the fight it follows. Its one panel is the line
+   * along the bottom, which is wider than the phone: lifted in the same way,
+   * in place of the fight's.
+   */
+  function liftEvolutionLine() {
+    const line = document.querySelector('.evolution-screen .battle-message');
+    if (!line || !encounter.hud) return;
+    if (line.parentElement !== encounter.hud) {
+      encounter.hud.replaceChildren(line);
+      encounter.lifted = false;
+    }
+    encounter.hud.style.display = 'block';
+    encounter.hud.style.opacity = '1';
   }
 
   /** The panels gone with the fight they belonged to. */
@@ -1426,6 +1457,775 @@
     },
   ];
 
+  /*
+   * The serial: one companion's journey, a day of it a reel. Each day picks
+   * the run up from the save the day before left, lets the road hand out its
+   * next few events one straight after another — the game's own roll, with
+   * the minute's wait between them taken out — and films them as one take
+   * until it has enough film; whatever is left of the day's events then
+   * happens off camera, as the game does while nobody is watching it. A
+   * journey to Champion is some 260 events, so four a day is two months.
+   *
+   * The first day opens on the choice of a first partner. No two things of a
+   * kind are shown one after the other — a fight is a fight, whoever it is
+   * against — so an event of the kind just shown is left to happen behind a
+   * closed shutter. A wild Pokémon worth having is thrown a ball when it has
+   * been beaten; a badge is held up when it is won; and once the companion is
+   * strong enough, the League is walked into.
+   *
+   * Nothing worth seeing happens off camera: the run is noted down before
+   * every event, and if one that was not being filmed turns out to hold an
+   * evolution, a badge or a rare Pokémon, the day ends at that note instead —
+   * the event is rolled again, the same, at the start of the next day's film.
+   */
+  /** The hour each day is lit for, in turn, so the days do not all look alike. */
+  const JOURNEY_HOURS = [11, 15, 18, 8, 13, 21];
+  /** What an event is to someone watching: a fight is a fight, whoever it is against. */
+  const kindOf = (kind) => (kind === 'wild' || kind === 'trainer' ? 'battle' : kind);
+  /** The level the companion walks into the League at, once it has the badges. */
+  const LEAGUE_LEVEL = 80;
+  /**
+   * The wild Pokémon a ball is thrown at, besides the rare ones: the ones
+   * people know by sight, and their families.
+   */
+  const FAVOURITES = new Set([
+    1, 2, 3, 4, 5, 6, 25, 26, 172, 37, 38, 39, 52, 54, 58, 59, 63, 77, 79, 92, 93, 94, 104, 123, 129, 130, 131,
+    133, 134, 135, 136, 196, 197, 470, 471, 700, 137, 143, 446, 147, 148, 149, 152, 155, 158, 175, 179, 215, 228,
+    246, 247, 248, 252, 255, 258, 280, 281, 282, 302, 303, 359, 371, 374, 387, 390, 393, 403, 443, 444, 445, 447, 448,
+    495, 498, 501, 570, 571, 607, 610, 633, 650, 653, 656, 722, 725, 728, 744, 745, 778, 810, 813, 816, 835, 885,
+    906, 909, 912,
+  ]);
+
+  const journey = {
+    day: 1, events: 4, budget: 30, resume: false, starter: 'Squirtle',
+    /** Species a ball is thrown at besides the usual ones, when a day is asked to catch something in particular. */
+    wanted: /** @type {number[]} */ ([]),
+    /** A stand-alone reel's script, in place of the road's own roll (see `momentPlan`). */
+    plan: /** @type {any[] | null} */ (null),
+    scene: /** @type {any} */ (null),
+    intro: false,
+    restore: /** @type {(() => void) | null} */ (null),
+    /** Events finished today, and whether one is under way and has taken hold of the road. */
+    done: 0, running: false, seen: false, since: 0,
+    /** Whether frames are being photographed, and the frame the walk out began on. */
+    filming: true, tail: -1, over: false,
+    /** The kind last shown, and the shutter an event of the same kind happens behind. */
+    lastKind: /** @type {string | null} */ (null),
+    away: false, dark: false, shutter: { way: 0, at: 0 },
+    checkpoint: /** @type {string | null} */ (null),
+    final: /** @type {string | null} */ (null),
+    current: /** @type {any} */ (null),
+    log: /** @type {any[]} */ ([]),
+    fight: -1,
+    /** The film's frame a fight opened on, and whether its middle is being left out. */
+    fightFilm: -1, cut: false,
+    capture: /** @type {any} */ (null),
+    league: /** @type {any} */ (null),
+    leagueTried: false,
+    badges: -1, card: /** @type {any} */ (null),
+    label: /** @type {HTMLElement | null} */ (null),
+    dock: /** @type {HTMLElement | null} */ (null),
+    veil: /** @type {HTMLElement | null} */ (null),
+  };
+
+  /**
+   * How much of a fight is filmed from its start before the rest is left out
+   * down to its last turn: a gym leader's three Pokémon take two minutes, and
+   * a reel is not that long. The cut falls between turns, and the last turn —
+   * the blow that ends it, the experience, the win — is filmed whole.
+   */
+  const FIGHT_OPENING_S = 10;
+  /**
+   * A stand-alone reel is some thirty seconds: its fights are cut sooner, its
+   * walk out is shorter, and the road between them — the walk, a berry
+   * picked, a ball found — goes at the pace the game's own hold-to-hurry gives it.
+   */
+  const fightOpening = () => (journey.plan ? 6 : FIGHT_OPENING_S);
+  const tailSeconds = () => (journey.plan ? 2.5 : ENCOUNTER_AFTER_S);
+  const MOMENT_ROAD_SPEED = 2.5;
+  /** The film's fade from black as it opens, and to black as it closes. */
+  const FADE_IN_S = 0.5;
+  const FADE_OUT_S = 0.6;
+
+  function journeyTurn(entries) {
+    if (!journey.filming || journey.dark || journey.fightFilm < 0) return;
+    const last = entries.some((entry) => entry.kind === 'end');
+    if (journey.cut && last) {
+      journey.cut = false;
+      flashLeft = FLASH_FRAMES;
+    } else if (!journey.cut && !last && (frameNumber - journey.fightFilm) / FPS >= fightOpening()) {
+      journey.cut = true;
+    }
+  }
+
+  const levelNow = async () => (await load('./engine/pokemon.mjs')).levelOf(session().active);
+  /** A line of the game's own, in the language it is being filmed in. */
+  const line = async (key, values) => (await load('./core/i18n.mjs')).t(key, values);
+
+  /** The road clear: no event on it, nothing opened over it. */
+  const roadClear = () => app().stack.length === 1 && !app().scene?.busy;
+
+  /** Whether a wild Pokémon is one to throw a ball at: rare, shiny, or one people know. */
+  async function worthCatching(pokemon) {
+    const { speciesOf } = await load('./core/data.mjs');
+    const { isRare } = await load('./engine/encounter.mjs');
+    if (session().caught.has(pokemon.speciesId)) return false;
+    return Boolean(pokemon.shiny) || isRare(speciesOf(pokemon.speciesId)) || FAVOURITES.has(pokemon.speciesId) || journey.wanted.includes(pokemon.speciesId);
+  }
+
+  async function startJourneyEvent(frame) {
+    const s = session();
+    journey.checkpoint = JSON.stringify(s.toSave());
+    journey.running = true;
+    journey.seen = false;
+    journey.since = frame;
+    journey.current = {
+      filmed: journey.filming && !journey.away, level: await levelNow(), badges: s.badges.length, species: s.active.speciesId,
+      evolved: false, fought: false, tray: new Set(s.tray),
+    };
+    if (journey.plan) {
+      const step = journey.plan[journey.done];
+      journey.current.step = step;
+      journey.current.kind = kindOf(step.kind === 'leader' ? 'trainer' : step.kind);
+      await prepareStep(step);
+      forceEvent(step.kind === 'leader' ? 'trainer' : step.kind);
+      return;
+    }
+    // The road's own roll, now rather than in a minute.
+    s.eventTimer = 0;
+  }
+
+  /**
+   * Have the road's next event come out as a reel's script asks: a wild
+   * Pokémon of one species (the area's table cut down to it for the roll, and
+   * the dice kept from straying), a shiny one, or a gym leader due.
+   */
+  async function prepareStep(step) {
+    const s = session();
+    if (step.kind === 'wild' && step.species) {
+      const { speciesOf } = await load('./core/data.mjs');
+      const area = s.area;
+      const chance = s.rng.chance;
+      s.area = { ...area, encounters: [{ species: speciesOf(step.species).slug, minLevel: 1, maxLevel: 100, weight: 1 }] };
+      // Nothing left to chance but what is certain; a shiny one is certain.
+      s.rng.chance = (odds) => odds >= 1;
+      if (step.shiny) Object.defineProperty(s, 'shinyOdds', { configurable: true, get: () => 1 });
+      journey.restore = () => {
+        s.area = area;
+        s.rng.chance = chance;
+        delete s.shinyOdds;
+      };
+    }
+    if (step.kind === 'leader') {
+      s.trainerWins = 99;
+      s.leaderRest = 0;
+    }
+  }
+
+  /**
+   * The event the road has just rolled is known for what it is. One of the
+   * kind just shown happens behind a closed shutter; the next that is not
+   * opens it again.
+   */
+  function eventTakesHold(frame) {
+    journey.restore?.();
+    journey.restore = null;
+    // A scripted event is what the script said, and is always filmed.
+    if (journey.plan) return;
+    const kind = kindOf(session().events.recent?.[0] ?? null);
+    journey.current.kind = kind;
+    if (!journey.filming) return;
+    if (!journey.away && kind === journey.lastKind) {
+      journey.away = true;
+      journey.shutter = { way: 1, at: frame };
+    } else if (journey.away && kind !== journey.lastKind) {
+      journey.away = false;
+      journey.dark = false;
+      journey.shutter = { way: -1, at: frame };
+    }
+    journey.current.filmed = !journey.away;
+  }
+
+  async function finishJourneyEvent(frame) {
+    const s = session();
+    const event = journey.current;
+    const beaten = s.tray.filter((pokemon) => !event.tray.has(pokemon));
+    const { speciesOf } = await load('./core/data.mjs');
+    const { isRare } = await load('./engine/encounter.mjs');
+    const entry = {
+      kind: event.step?.kind ?? s.events.recent?.[0] ?? null,
+      filmed: event.filmed,
+      fought: event.fought,
+      level: [event.level, await levelNow()],
+      badge: s.badges.length > event.badges ? s.badges[s.badges.length - 1] : null,
+      evolved: event.evolved ? [event.species, s.active.speciesId] : null,
+      beaten: beaten.map((pokemon) => pokemon.speciesId),
+      area: s.area?.id ?? null,
+    };
+    journey.running = false;
+    // Too good to have happened off camera: tomorrow opens on it instead.
+    const rare = beaten.some((pokemon) => pokemon.shiny || isRare(speciesOf(pokemon.speciesId)));
+    if (!journey.plan && !event.filmed && (entry.badge || entry.evolved || rare)) {
+      console.log('held for the next day: ' + JSON.stringify(entry));
+      journey.final = journey.checkpoint;
+      journey.over = true;
+      return;
+    }
+    journey.done++;
+    journey.log.push(entry);
+    console.log('event ' + journey.done + ': ' + JSON.stringify(entry));
+    if (event.filmed) {
+      journey.lastKind = event.kind;
+      // One of the beaten worth having, with a ball to throw at it.
+      for (const pokemon of beaten) {
+        if (s.balls().length && (event.step?.catch || (!journey.plan && (await worthCatching(pokemon))))) {
+          journey.capture = { target: pokemon, phase: 'open', at: frame, throws: 0, caught: false };
+          return;
+        }
+      }
+    }
+    afterJourneyEvent(frame);
+  }
+
+  /** Enough on film, or the day's events done: the walk out begins. */
+  function afterJourneyEvent(frame) {
+    if (journey.filming && !journey.away && (frameNumber / FPS >= journey.budget || journey.done >= journey.events)) journey.tail = frame;
+  }
+
+  // ------------------------------------------------------------------ catching
+
+  /** The capture screen's panels over the picture, as the fight's are. */
+  function liftCaptureHud() {
+    const screen = document.querySelector('.capture-screen');
+    if (!screen) return;
+    liftBattleHud();
+    const name = /** @type {HTMLElement | null} */ (screen.querySelector('.capture-name'));
+    const parts = [screen.querySelector('.capture-attempts'), name, screen.querySelector('.capture-tray'), screen.querySelector('.battle-message')].filter(Boolean);
+    if (!parts.length) return;
+    // Under the count of throws rather than beside it: the phone is narrow.
+    if (name) name.style.top = '44px';
+    encounter.hud.replaceChildren(...parts);
+    encounter.lifted = false;
+    encounter.hud.style.display = 'block';
+    encounter.hud.style.opacity = '1';
+  }
+
+  /**
+   * Throw at a Pokémon just beaten, as a player would: its place in the tray
+   * pressed, the ball likeliest to work thrown, and again if it breaks out.
+   */
+  async function driveCapture(frame) {
+    const capture = journey.capture;
+    const t = (frame - capture.at) / FPS;
+    const step = (phase) => {
+      capture.phase = phase;
+      capture.at = frame;
+    };
+    const screen = document.querySelector('.capture-screen');
+    if (capture.phase === 'open') {
+      // The menus this goes through are a player's own business, not the film's.
+      document.body.classList.add('short-quiet');
+      const index = session().tray.indexOf(capture.target);
+      const slot = /** @type {HTMLElement | undefined} */ (document.querySelectorAll('.tray-slot')[index]);
+      if (index < 0 || !slot) return endCapture(frame);
+      slot.click();
+      step('menu');
+    } else if (capture.phase === 'menu') {
+      if (clickText('.modal button', [await line('tray.capture')])) step('scene');
+      else if (t > 3) endCapture(frame);
+    } else if (capture.phase === 'scene') {
+      if (screen) step('aim');
+      else if (t > 3) endCapture(frame);
+    } else if (capture.phase === 'aim') {
+      if (!screen) return endCapture(frame);
+      if (t < (capture.throws ? 0.7 : 1.3)) return;
+      const balls = /** @type {HTMLButtonElement[]} */ ([...document.querySelectorAll('.capture-balls:not(.capture-berries) .capture-ball')]).filter((ball) => !ball.disabled);
+      if (!balls.length) return t > 4 ? endCapture(frame) : undefined;
+      const odds = (ball) => Number.parseFloat(ball.querySelector('.odds')?.textContent ?? '0') || 0;
+      balls.sort((a, b) => odds(b) - odds(a))[0].click();
+      capture.throws++;
+      step('thrown');
+    } else if (capture.phase === 'thrown') {
+      if (document.querySelector('.modal')) {
+        capture.caught = true;
+        step('caught');
+      } else if (!screen) endCapture(frame);
+      // Out of the ball again: another throw.
+      else if (t > 2.6) step('aim');
+    } else if (capture.phase === 'caught') {
+      // Held on the ball shut and the line that says so, then no nickname.
+      if (t >= 1.8 && clickText('.modal button', [await line('common.no')])) step('closing');
+    } else if (capture.phase === 'closing') {
+      if (!screen && roadClear()) endCapture(frame);
+      else if (t > 6) endCapture(frame);
+    }
+  }
+
+  function endCapture(frame) {
+    const capture = journey.capture;
+    journey.capture = null;
+    document.body.classList.remove('short-quiet');
+    for (const modal of document.querySelectorAll('.modal')) modal.remove();
+    const entry = { kind: 'capture', filmed: true, species: capture.target.speciesId, caught: capture.caught, throws: capture.throws };
+    journey.log.push(entry);
+    console.log('capture: ' + JSON.stringify(entry));
+    if (capture.throws) journey.lastKind = 'capture';
+    afterJourneyEvent(frame);
+  }
+
+  // -------------------------------------------------------------------- badges
+
+  /**
+   * A badge won is held up: the badge itself, large, over the road the
+   * companion walks back out onto, with the game's own line under it — for
+   * as long as its fanfare plays.
+   */
+  async function showBadge(type, frame) {
+    const { badgeIcon } = await load('./ui/badges.mjs');
+    const icon = badgeIcon(type);
+    // Its size is its own in the badge case, which lays it out; here it is given one.
+    icon.style.display = 'block';
+    const { gameData } = await load('./core/data.mjs');
+    const { name: localized } = await load('./core/i18n.mjs');
+    const card = document.createElement('div');
+    Object.assign(card.style, {
+      position: 'absolute', left: '0', right: '0', top: `${PHONE.height * 0.2}px`, zIndex: '140', display: 'flex', flexDirection: 'column',
+      alignItems: 'center', gap: '26px', pointerEvents: 'none',
+    });
+    const shine = document.createElement('div');
+    Object.assign(shine.style, {
+      width: '300px', height: '300px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: 'radial-gradient(circle, rgba(255,255,255,0.95) 0%, rgba(255,243,176,0.85) 42%, rgba(255,203,5,0) 70%)',
+    });
+    // The badge as the game's own badge case draws it, many times the size.
+    const holder = document.createElement('div');
+    Object.assign(holder.style, { zoom: '11', lineHeight: '0', imageRendering: 'pixelated' });
+    holder.append(icon);
+    shine.append(holder);
+    const words = document.createElement('div');
+    words.textContent = await line('badge.obtained', { name: localized(gameData().types[type]?.name, type) });
+    Object.assign(words.style, {
+      padding: '12px 26px', border: '4px solid #384a63', borderRadius: '14px', background: 'rgba(248, 248, 240, 0.96)',
+      boxShadow: 'inset 0 0 0 4px rgba(255, 255, 255, 0.7)', color: '#2f3542', fontSize: '30px', fontWeight: '700', maxWidth: '470px', textAlign: 'center', whiteSpace: 'nowrap',
+      fontFamily: getComputedStyle(stage()).fontFamily,
+    });
+    card.append(shine, words);
+    phone.append(card);
+    journey.card = { node: card, shine, at: frame };
+  }
+
+  function drawBadge(frame) {
+    const card = journey.card;
+    if (!card) return;
+    const t = (frame - card.at) / FPS;
+    const HOLD_S = 3.4;
+    if (t >= HOLD_S) {
+      card.node.remove();
+      journey.card = null;
+      return;
+    }
+    const land = Math.min(1, t / 0.3);
+    card.node.style.opacity = String(Math.min(1, t / 0.12, (HOLD_S - t) / 0.3));
+    card.shine.style.transform = `scale(${1.6 - 0.6 * overshoot(land)}) rotate(${(1 - land) * -12}deg)`;
+  }
+
+  // ---------------------------------------------------------------- the League
+
+  /**
+   * The League, walked into as a player would: its button on the road, then
+   * each round's as it comes up, and the ceremony pressed through.
+   */
+  async function driveLeague(frame) {
+    const league = journey.league;
+    const t = (frame - league.at) / FPS;
+    if (league.phase === 'enter') {
+      if (!clickText('.hud button', [await line('field.toLeague')])) return endLeague(frame);
+      league.phase = 'inside';
+      league.at = frame;
+      return;
+    }
+    const hall = document.querySelector('.league-screen');
+    const battling = Boolean(document.querySelector('.battle-screen'));
+    const ceremony = /** @type {HTMLElement | null} */ (document.querySelector('.fame-screen'));
+    if (hall || battling || ceremony) league.seen = true;
+    if (ceremony && frame - (league.pressed ?? 0) > 2.6 * FPS) {
+      ceremony.click();
+      league.pressed = frame;
+    } else if (hall && !battling && !ceremony) {
+      // The next round, once its challenger has been looked at.
+      const next = /** @type {HTMLButtonElement | null} */ (document.querySelector('.league-actions button.primary'));
+      if (next && !next.disabled && frame - (league.pressed ?? league.at) > 1.6 * FPS) {
+        next.click();
+        league.pressed = frame;
+      }
+    }
+    if ((league.seen && roadClear()) || (!league.seen && t > 6)) endLeague(frame);
+  }
+
+  function endLeague(frame) {
+    journey.league = null;
+    const entry = { kind: 'league', filmed: true, champion: Boolean(session().champion) };
+    journey.log.push(entry);
+    console.log('league: ' + JSON.stringify(entry));
+    journey.lastKind = 'league';
+    // A day with the League in it is that day's film, whatever else was to come.
+    journey.done = journey.events;
+    afterJourneyEvent(frame);
+  }
+
+  // ------------------------------------------------------------ what is put over
+
+  /**
+   * What a short puts over the picture: the black it fades in from and out
+   * to, and for a day of the serial "DAY 12 / OF BECOMING CHAMPION" across
+   * the top as it opens, in the trailer's lettering.
+   *
+   * @param {boolean} labelled
+   */
+  function layOver(labelled) {
+    const outline = (width, colour) => [...Array(16)].map((_, i) => {
+      const angle = (i / 16) * Math.PI * 2;
+      return `${(Math.cos(angle) * width).toFixed(1)}px ${(Math.sin(angle) * width).toFixed(1)}px 0 ${colour}`;
+    }).join(', ');
+    const node = document.createElement('div');
+    Object.assign(node.style, {
+      position: 'absolute', left: '0', right: '0', top: `${PHONE.height * 0.09}px`, zIndex: '150', display: 'flex', flexDirection: 'column',
+      alignItems: 'center', gap: '12px', fontFamily: "'Segoe UI Black', 'Malgun Gothic', sans-serif", fontWeight: '900', lineHeight: '1',
+      pointerEvents: 'none', whiteSpace: 'nowrap',
+    });
+    const big = document.createElement('div');
+    big.textContent = `DAY ${journey.day}`;
+    Object.assign(big.style, { fontSize: '92px', letterSpacing: '0.02em', color: LOGO.yellow, textShadow: `${outline(6.5, LOGO.blue)}, 0 9px 0 ${LOGO.navy}` });
+    const small = document.createElement('div');
+    small.textContent = 'OF BECOMING CHAMPION';
+    Object.assign(small.style, { fontSize: '30px', letterSpacing: '0.04em', color: '#fff', textShadow: outline(3.5, LOGO.blue) });
+    node.append(big, small);
+    if (labelled) {
+      phone.append(node);
+      journey.label = node;
+      // And for the rest of the day, small in the top right corner — clear of
+      // the wild one's nameplate, which runs along the top left in a fight.
+      const dock = document.createElement('div');
+      Object.assign(dock.style, {
+        position: 'absolute', right: '16px', top: '16px', zIndex: '150', display: 'flex', flexDirection: 'column', alignItems: 'flex-end',
+        gap: '5px', fontFamily: "'Segoe UI Black', 'Malgun Gothic', sans-serif", fontWeight: '900', lineHeight: '1', pointerEvents: 'none',
+        whiteSpace: 'nowrap', textAlign: 'right', opacity: '0',
+      });
+      const day = document.createElement('div');
+      day.textContent = `DAY ${journey.day}`;
+      Object.assign(day.style, { fontSize: '36px', color: LOGO.yellow, textShadow: `${outline(3.5, LOGO.blue)}, 0 4px 0 ${LOGO.navy}` });
+      const under = document.createElement('div');
+      under.innerHTML = 'OF BECOMING<br>CHAMPION';
+      Object.assign(under.style, { fontSize: '13px', letterSpacing: '0.04em', lineHeight: '1.15', color: '#fff', textShadow: outline(2, LOGO.blue) });
+      dock.append(day, under);
+      phone.append(dock);
+      journey.dock = dock;
+    }
+    const veil = document.createElement('div');
+    Object.assign(veil.style, { position: 'absolute', inset: '0', zIndex: '200', background: '#000', pointerEvents: 'none' });
+    phone.append(veil);
+    journey.veil = veil;
+    // The menus the film presses its way through are not part of it.
+    const sheet = [...document.styleSheets].find((entry) => entry.href?.endsWith('styles.css')) ?? document.styleSheets[0];
+    sheet.insertRule('body.short-quiet .modal { visibility: hidden; }', sheet.cssRules.length);
+  }
+
+  /** The day's number for its first moments, and the film's way in from black and out to it. */
+  function drawOver(frame) {
+    const t = frameNumber / FPS;
+    if (journey.label) journey.label.style.opacity = journey.filming ? String(Math.min(1, t / 0.15, Math.max(0, (3.4 - t) / 0.35))) : '0';
+    // The corner's as the large one goes, and up from then on.
+    if (journey.dock) journey.dock.style.opacity = journey.filming ? String(Math.min(1, Math.max(0, (t - 3.2) / 0.35))) : '0';
+    let dark = Math.max(0, 1 - t / FADE_IN_S);
+    if (journey.tail >= 0) dark = Math.max(dark, 1 - (tailSeconds() - (frame - journey.tail) / FPS) / FADE_OUT_S);
+    if (journey.veil) journey.veil.style.opacity = String(Math.min(1, Math.max(0, dark)));
+  }
+
+  /** The day opening on the choice of a first partner: the three balls, one looked at, and taken. */
+  const STARTER_SHOT = {
+    name: 'starter',
+    seconds: 5,
+    async begin() {
+      document.getElementById('dragframe').style.display = 'none';
+      stage().style.boxShadow = 'none';
+      stage().style.borderRadius = '0';
+      // The whole of the screen's middle rather than the road's close-up: the
+      // three balls are wider than that. What shows above and below it is
+      // the screen's own sky carried on.
+      placeStage(120, 105, 1.5);
+      // The line over the balls is as wide as the game's window, and the way
+      // back is not the film's: the one folded to the phone, the other left out.
+      const prompt = /** @type {HTMLElement | null} */ (document.querySelector('.starter-caption'));
+      if (prompt) Object.assign(prompt.style, { maxWidth: '168px', margin: '0 auto' });
+      const back = /** @type {HTMLElement | null} */ (document.querySelector('.starter-back'));
+      if (back) back.style.visibility = 'hidden';
+      film.style.background = 'linear-gradient(180deg, #2b3448 0%, #2b3448 14%, #151a26 86%, #151a26 100%)';
+      audioLog.push({ t: 0, method: 'playMusic', args: [app().audio.wanted ?? null] });
+      drawOver(0);
+    },
+    before(frame, frames) {
+      drawOver(frame);
+      const pick = /** @type {HTMLElement | undefined} */ ([...document.querySelectorAll('.starter-pick')].find((node) => {
+        const alt = node.querySelector('img')?.getAttribute('alt') ?? '';
+        return alt.toLowerCase() === journey.starter.toLowerCase() || alt === STARTER_NAMES[journey.starter.toLowerCase()];
+      }));
+      if (!pick) return;
+      // Looked at, taken, and said yes to as the shutter closes on it.
+      if (frame === Math.round(1.3 * FPS)) pick.dispatchEvent(new MouseEvent('mouseenter'));
+      if (frame === Math.round(3.3 * FPS)) pick.click();
+      if (frame === frames - 2) {
+        const yes = /** @type {HTMLElement | null} */ (document.querySelector('.modal .actions button'));
+        yes?.click();
+      }
+    },
+    pan: () => 0.5,
+    tilt: () => 0.5,
+  };
+  /** The starters by their Korean names, for a film shot in Korean. */
+  const STARTER_NAMES = { bulbasaur: '이상해씨', charmander: '파이리', squirtle: '꼬부기' };
+
+  const EPISODE_SHOT = {
+    name: 'episode',
+    // The most it may run, off camera included: it ends itself.
+    seconds: 1800,
+    open: true,
+    crops: ENCOUNTER_CROPS,
+    async begin() {
+      // A run just begun on the starter's screen takes a moment to be there.
+      for (let i = 0; i < 100 && !session(); i++) await settle(50);
+      await settle(300);
+      closeAll();
+      const s = session();
+      if (!journey.resume) {
+        s.rng.seed = encounter.seed >>> 0;
+        await pokemonArt([s.active.speciesId]);
+      }
+      // No event of the game's own choosing: the day asks for each.
+      s.eventTimer = 1e9;
+      clock.hour = journey.scene?.hour ?? JOURNEY_HOURS[(journey.day - 1) % JOURNEY_HOURS.length];
+      document.getElementById('dragframe').style.display = 'none';
+      stage().style.boxShadow = 'none';
+      stage().style.borderRadius = '0';
+      film.style.background = '';
+      smooth(false);
+      placeStage(0, 0, frameWidth() / 480);
+      await preload(['items/poke-ball.png']);
+      // The road walks once its picture has come in, which takes real time
+      // rather than the film's: given a moment, and walked a little way on —
+      // unless the film has been on it since the desktop.
+      if (!journey.intro) {
+        await settle(800);
+        await preroll(3000);
+      }
+      app().dismissToast();
+      if (!journey.intro) audioLog.push({ t: frameNumber / FPS, method: 'playMusic', args: [s.area?.music ?? null] });
+      turnLog = true;
+      onTurn = journeyTurn;
+      journey.badges = s.badges.length;
+    },
+    async before(frame) {
+      app().dismissToast();
+      fadeChrome(1);
+      drawOver(frame);
+      const s = session();
+      // On the road, everything at the pace the game's own hold-to-hurry gives it;
+      // whatever opens over the road — a fight, a catch, an evolution — as it plays.
+      if (journey.plan) clock.speed = app().stack.length === 1 ? MOMENT_ROAD_SPEED : 1;
+
+      // The shutter an event of the kind just shown happens behind.
+      const { way, at } = journey.shutter;
+      if (way > 0) {
+        manualShut = Math.min(1, (frame - at) / 12);
+        if (manualShut >= 1) journey.dark = true;
+      } else if (way < 0) {
+        manualShut = Math.max(0, 1 - (frame - at) / 14);
+        if (manualShut <= 0) journey.shutter = { way: 0, at: frame };
+      }
+
+      const battling = Boolean(document.querySelector('.battle-screen'));
+      if (battling && journey.current) journey.current.fought = true;
+      if (battling && journey.fightFilm < 0) journey.fightFilm = frameNumber;
+      if (!battling) {
+        journey.fightFilm = -1;
+        journey.cut = false;
+      }
+      if (document.querySelector('.evolution-screen') && journey.current) journey.current.evolved = true;
+      // A wild one's fighting art, before the fight opens on it.
+      if (journey.running && s.lastWildSpecies && journey.current.wild !== s.lastWildSpecies) {
+        journey.current.wild = s.lastWildSpecies;
+        if (journey.filming && !journey.dark) await pokemonArt([s.active.speciesId, s.lastWildSpecies], true);
+      }
+      // A badge just won, held up — if the camera is there to see it.
+      if (s.badges.length > journey.badges) {
+        journey.badges = s.badges.length;
+        if (journey.filming && !journey.dark) await showBadge(s.badges[s.badges.length - 1], frame);
+      }
+      drawBadge(frame);
+
+      if (journey.capture) return driveCapture(frame);
+      if (journey.league) return driveLeague(frame);
+
+      const clear = roadClear();
+      if (journey.running) {
+        if (!clear) {
+          if (!journey.seen) {
+            journey.seen = true;
+            eventTakesHold(frame);
+          }
+        } else if (journey.seen) await finishJourneyEvent(frame);
+        // Rolled and nothing came of it: asked for again.
+        else if (frame - journey.since > 20 * FPS) {
+          journey.since = frame;
+          s.eventTimer = 0;
+        }
+      }
+      if (journey.running || journey.over || journey.capture || !clear) return;
+      // The walk on after the last event filmed, and then the camera is off.
+      if (journey.tail >= 0) {
+        if (frame - journey.tail < Math.round(tailSeconds() * FPS)) return;
+        journey.tail = -1;
+        journey.filming = false;
+        // The camera is off for the rest of the day: nothing of the fights to come is laid out.
+        showPanels(null);
+        dropBattleHud();
+      }
+      if (journey.done >= journey.events) {
+        journey.final = JSON.stringify(s.toSave());
+        journey.over = true;
+        return;
+      }
+      // Strong enough, and the badges in hand: the League instead of the road's next event.
+      if (!journey.plan && journey.filming && !journey.away && !journey.leagueTried && !s.champion && s.badges.length >= 8 && (await levelNow()) >= LEAGUE_LEVEL) {
+        journey.leagueTried = true;
+        journey.league = { phase: 'enter', at: frame, seen: false };
+        return;
+      }
+      await startJourneyEvent(frame);
+    },
+    // As the encounter has it: the road while the screen flashes, the fight
+    // cut in two with the game's panels over it — and an evolution or a
+    // capture, which open over the road, as the whole picture again.
+    panels(frame) {
+      app().dismissToast();
+      const evolving = Boolean(document.querySelector('.evolution-screen'));
+      const catching = Boolean(document.querySelector('.capture-screen'));
+      const fighting = Boolean(document.querySelector('.battle-screen')) && !evolving;
+      if (fighting && journey.fight < 0) journey.fight = frame;
+      if (!fighting) journey.fight = -1;
+      const into = fighting ? (frame - journey.fight) / FPS - ENCOUNTER_SHUT_S : -1;
+      if (panels.node) panels.node.style.background = into < 0.45 ? '#05070c' : '#f4f4f0';
+      if (fighting && into >= 0) {
+        liftBattleHud();
+        encounter.hud.style.display = 'block';
+        encounter.hud.style.opacity = String(Math.min(1, Math.max(0, (into - 0.25) / 0.2)));
+      } else if (evolving) {
+        liftEvolutionLine();
+      } else if (catching) {
+        liftCaptureHud();
+      } else {
+        dropBattleHud();
+      }
+      return fighting && into >= 0 ? 'split' : null;
+    },
+    // On the companion on the road; on the middle of the picture for what opens over it.
+    pan: () => (document.querySelector('.evolution-screen, .capture-screen, .league-screen, .fame-screen') ? 0.5 : PICKING_FOCUS.x),
+    tilt: () => (document.querySelector('.evolution-screen') ? 0.62 : document.querySelector('.capture-screen') ? 0.47 : document.querySelector('.league-screen, .fame-screen') ? 0.5 : PICKING_FOCUS.y),
+    skip: () => !journey.filming || journey.cut || journey.dark,
+    over: () => journey.over,
+  };
+
+  /*
+   * Stand-alone reels, between the days of the serial: a moment or two of the
+   * game with a companion and a road of their own, scripted rather than
+   * rolled — a ball found and a Pokémon caught with it, a shiny one met, an
+   * evolution, a gym and its badge, a quiet stretch of road. Who and where
+   * follow from the seed, so each is a different reel every time. With
+   * `intro` it opens as the trailer does, on the companion's window in the
+   * corner of a desktop, and comes in on it.
+   */
+  /** Companions, from every generation: the first of a line, grown to the reel's level where it says so. */
+  const MOMENT_COMPANIONS = [
+    25, 133, 1, 4, 7, 152, 155, 158, 252, 255, 258, 387, 390, 393, 495, 498, 501, 650, 653, 656, 722, 725, 728, 810, 813, 816,
+    906, 909, 912, 447, 175, 280, 371, 443, 610, 633, 744, 778, 885, 92, 147, 246, 37, 58, 39, 52, 54, 63, 129, 143, 359, 403,
+  ];
+  /** Who evolves, and the level it is at the moment before. */
+  const MOMENT_EVOLVERS = [
+    [4, 15], [1, 15], [7, 15], [152, 15], [155, 13], [158, 17], [252, 15], [255, 15], [258, 15], [387, 17], [390, 13], [393, 15],
+    [495, 16], [498, 16], [501, 16], [650, 15], [653, 15], [656, 15], [722, 16], [725, 16], [728, 16], [810, 15], [813, 15],
+    [816, 15], [906, 15], [909, 15], [912, 15], [92, 24], [280, 19], [403, 14], [147, 29], [443, 23], [610, 37], [633, 49],
+    [246, 29], [371, 29], [744, 24], [129, 19], [63, 15], [374, 19], [436, 32], [602, 38],
+  ];
+
+  /** The everyday Pokémon of the first routes, for a fight the companion is to win. */
+  const ROUTE_REGULARS = [16, 19, 10, 13, 161, 163, 261, 263, 265, 396, 399, 506, 504, 519, 659, 661, 731, 734, 819, 821, 831, 915, 921];
+
+  /**
+   * A stand-alone reel's script. Its companion, its road and whoever it meets
+   * come from its own dice, so the reels made one after another (seeds a few
+   * apart) are not the same few Pokémon going round.
+   */
+  function momentPlan(name, seed) {
+    const dice = { s: (seed * 2654435761) >>> 0 };
+    const roll = (n) => {
+      dice.s = (dice.s + 0x6d2b79f5) >>> 0;
+      let t = dice.s;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return (((t ^ (t >>> 14)) >>> 0) / 4294967296) * n | 0;
+    };
+    const pick = (list) => list[roll(list.length)];
+    const [road, hour] = pick(ROADS);
+    const companion = pick(MOMENT_COMPANIONS);
+    // One worth the ball, and not the companion's own kind.
+    const catches = [...FAVOURITES].filter((id) => id !== companion);
+    const caught = pick(catches);
+    switch (name) {
+      case 'catch':
+        return { scene: { companion, level: 18, grown: true, road, hour }, steps: [{ kind: 'ball' }, { kind: 'wild', species: caught, catch: true }] };
+      case 'shiny':
+        return { scene: { companion, level: 20, grown: true, road, hour }, steps: [{ kind: 'berry' }, { kind: 'wild', species: caught, shiny: true, catch: true }] };
+      case 'evolve': {
+        const [species, level] = pick(MOMENT_EVOLVERS);
+        return { scene: { companion: species, level, almost: true, road, hour }, steps: [{ kind: 'ball' }, { kind: 'wild', species: pick(ROUTE_REGULARS) }] };
+      }
+      case 'gym':
+        return { scene: { companion, level: 30, grown: true, road, hour }, steps: [{ kind: 'berry' }, { kind: 'leader' }] };
+      case 'road':
+      default:
+        return { scene: { companion, level: 16, grown: true, road, hour }, steps: [{ kind: 'berry' }, { kind: 'wild', species: pick(catches) }, { kind: 'ball' }] };
+    }
+  }
+
+  /** Put a reel's companion on its road, at its level — one experience point short of the next, for an evolution. */
+  async function setTheScene() {
+    const { gameData } = await load('./core/data.mjs');
+    const { createPokemon } = await load('./engine/pokemon.mjs');
+    const scene = journey.scene;
+    const s = session();
+    // As far along its line as its level has it, for a companion met part way through its journey.
+    if (scene.grown) scene.companion = (await load('./engine/encounter.mjs')).evolveToLevel(scene.companion, scene.level);
+    const companion = await travelWith(scene.companion, scene.level);
+    if (scene.almost) companion.experience = createPokemon(s.rng, scene.companion, scene.level + 1, { ivFloor: 20 }).experience - 1;
+    // Only the evolution reel evolves: anyone else holds an Everstone, so a
+    // level gained in a fight does not turn a catch into an evolution.
+    else companion.heldItem = 'everstone';
+    // Balls good enough to be done in a throw or two.
+    s.bag['ultra-ball'] = Math.max(s.bag['ultra-ball'] ?? 0, 5);
+    s.seen.add(scene.companion);
+    s.caught.add(scene.companion);
+    s.area = gameData().areas.find((entry) => entry.id === scene.road) ?? s.area;
+    clock.hour = scene.hour;
+    await pokemonArt([scene.companion]);
+    await preload([`areas/${scene.road}/${timeKey(scene.hour)}.png`]);
+  }
+
+  const momentShots = () => (journey.intro
+    ? [TRAILER.find((shot) => shot.name === 'desktop'), TRAILER.find((shot) => shot.name === 'zoom'), EPISODE_SHOT]
+    : [EPISODE_SHOT]);
+
+  /** A day's shots: the first day opens on the choice of a partner, and every other on the road. */
+  const episodeShots = () => (journey.resume ? [EPISODE_SHOT] : [STARTER_SHOT, { ...EPISODE_SHOT, into: { kind: 'shutter', out: 12, in: 14 } }]);
+
   /** The cuts by name; the trailer is the one filmed when none is asked for. */
   const CUTS = { trailer: TRAILER, encounter: ENCOUNTER };
   let SHOTS = TRAILER;
@@ -1469,9 +2269,17 @@
     BAR,
 
     /** Boot a fresh run with Charmander on Route 101, and take the clock. */
-    async setup({ wallpaper, icon, upright: lying = false, captions: lines = true, cut = 'trailer', seed = 1 }) {
-      SHOTS = CUTS[cut] ?? TRAILER;
+    async setup({ wallpaper, icon, upright: lying = false, captions: lines = true, cut = 'trailer', seed = 1, day = 1, resume = false, events = 4, budget = 30, starter = 'Squirtle', wanted = [], plan = 'road', intro = false }) {
       encounter.seed = seed;
+      Object.assign(journey, { day, resume, events, budget, starter, wanted });
+      if (cut === 'moment') {
+        const script = momentPlan(plan, seed);
+        // All of it is filmed: a script is as long as it was written to be.
+        Object.assign(journey, { plan: script.steps, scene: script.scene, events: script.steps.length, budget: 1e9, intro });
+      }
+      SHOTS = cut === 'episode' ? episodeShots() : cut === 'moment' ? momentShots() : CUTS[cut] ?? TRAILER;
+      // The serial's first day is filmed from the choice of a partner on.
+      const fresh = cut === 'episode' && !resume;
       wallpaperUrl = wallpaper;
       window.__trailerIcon = icon;
       upright = lying;
@@ -1479,28 +2287,48 @@
       for (let i = 0; i < 200 && !app()?.scene; i++) await settle(50);
       document.getElementById('notice-screen')?.click();
       await settle(400);
-      clickText('button', ['새 게임', 'New Game']);
-      await settle(300);
-      clickText('button', ['1.']);
-      await settle(400);
-      clickImageAlt(['파이리', 'Charmander']);
-      await settle(300);
-      clickText('button', ['예', 'Yes']);
-      await settle(800);
+      if (resume) {
+        // The journey so far, which record.mjs has put in the first slot.
+        clickText('button', ['이어하기', 'Continue']);
+        await settle(400);
+        clickText('button', ['1.']);
+        await settle(1200);
+      } else {
+        clickText('button', ['새 게임', 'New Game']);
+        await settle(300);
+        clickText('button', ['1.']);
+        await settle(400);
+        if (!fresh) {
+          clickImageAlt(['파이리', 'Charmander']);
+          await settle(300);
+          clickText('button', ['예', 'Yes']);
+          await settle(800);
+        }
+      }
       muteAndLog();
       install();
       app().dismissToast();
       await scriptTurns();
-      const s = session();
-      s.area = (await load('./core/data.mjs')).gameData().areas.find((entry) => entry.id === 'route101');
-      // No event of the game's own choosing gets in the way of the script.
-      s.eventTimer = 1e9;
-      await pokemonArt([4]);
-      // Walk a few seconds in, so the road is moving and the windows have
-      // faded the way they do with nobody's pointer over them.
-      for (let i = 0; i < FPS * 6; i++) step();
-      await settle(200);
+      if (!fresh) {
+        const s = session();
+        // A run picked up is where it was left; a new one starts on Route 101.
+        if (!resume) s.area = (await load('./core/data.mjs')).gameData().areas.find((entry) => entry.id === 'route101');
+        // No event of the game's own choosing gets in the way of the script.
+        s.eventTimer = 1e9;
+        if (cut === 'moment') {
+          s.rng.seed = seed >>> 0;
+          await setTheScene();
+          // The new road's picture takes real time to come in.
+          await settle(800);
+        }
+        await pokemonArt([s.active.speciesId]);
+        // Walk a few seconds in, so the road is moving and the windows have
+        // faded the way they do with nobody's pointer over them.
+        for (let i = 0; i < FPS * 6; i++) step();
+        await settle(200);
+      }
       if (upright) uprightSetup();
+      if (cut === 'episode' || cut === 'moment') layOver(cut === 'episode');
       counts = frameCounts();
       return SHOTS.map((shot, index) => ({
         name: shot.name,
@@ -1527,7 +2355,9 @@
 
     /**
      * Film one frame of a shot: what the shot does first, then a frame of game.
-     * Answers 'over' on the last frame of a shot that decides its own length.
+     * Answers 'over' on the last frame of a shot that decides its own length,
+     * and 'skip' for a frame that was run but is not to be photographed
+     * ('over-skip' for both).
      */
     async frame(index, frame) {
       const shot = SHOTS[index];
@@ -1540,6 +2370,11 @@
         forceEvent('berry');
       }
       await shot.before?.call(shot, frame, counts[index]);
+      if (journey.veil) drawOver(frame);
+      // A shot may run a frame without its being photographed: nothing it
+      // sounds is written down, and the film's own clock stays where it is.
+      const skipped = Boolean(shot.skip?.call(shot, frame));
+      if (shot.skip) recording = !skipped;
       if (upright) {
         aim(shot.pan?.call(shot, frame, counts[index]) ?? 0.5, shot.tilt?.call(shot, frame, counts[index]) ?? 0.5);
         drawCaption(captions ? (shot.says?.call(shot, frame) ?? null) : null);
@@ -1548,16 +2383,18 @@
       const before = app().scene?.offset;
       step();
       // Panels are drawn from the frame the game has just painted.
-      if (upright) await compose(shot, frame);
+      // A frame not photographed is not laid out either; what was on the
+      // phone stays as it was, for a shot that comes back to it.
+      if (upright && !skipped) await compose(shot, frame);
       if (berryStarted && !window.__arrived && before !== undefined && app().scene?.offset === before) {
         window.__arrived = true;
         console.log(`arrived at the tree on frame ${frameNumber}, the montage starts on ${montageFrame()}`);
       }
-      frameNumber++;
+      if (!skipped) frameNumber++;
       // A shot that ends itself says so, and the film moves on from this frame.
       const over = Boolean(shot.over?.call(shot, frame));
       if (over || frame === counts[index] - 1) shot.end?.call(shot);
-      return over ? 'over' : true;
+      return over ? (skipped ? 'over-skip' : 'over') : skipped ? 'skip' : true;
     },
 
     /** Wait for the frame to reach the screen: two real frames, or a moment if the window gets none. */
@@ -1576,6 +2413,9 @@
     },
 
     audioLog: () => audioLog,
+
+    /** How a day of the journey came out: the run as it is to be picked up next, and what happened. */
+    journey: () => ({ day: journey.day, save: journey.plan ? null : journey.final, log: journey.log }),
 
     /** Where each shot starts on the film, in seconds. */
     cuts: () => {

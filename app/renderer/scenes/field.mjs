@@ -729,6 +729,15 @@ export function fieldScene(session) {
     get offset() {
       return offset;
     },
+
+    /**
+     * Whether something is playing out on the road: an event, or the walk
+     * into the next area. For the tools that film the road, which wait for it
+     * to be clear before they move on.
+     */
+    get busy() {
+      return Boolean(events?.busy) || crossing > 0 || pendingCrossing;
+    },
   };
 
   /**

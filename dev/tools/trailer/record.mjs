@@ -5,6 +5,8 @@
  *   npx electron dev/tools/trailer/record.mjs --ffmpeg path/to/ffmpeg [--out trailer] [--lang en] [--only fight-1] [--stills 30]
  *     [--upright] [--no-captions] [--sound-only]
  *     [--cut encounter [--seed 7] [--dry]]
+ *     [--cut moment --plan catch|shiny|evolve|gym|road [--seed 3] [--desktop] [--dry]]
+ *     [--cut episode [--journey trailer/journey] [--starter Squirtle] [--catch 263,25] [--events 4] [--budget 30] [--dry [--advance]]]
  *
  * Boots the game's own main-process modules (as the screenshot harness does)
  * into a hidden 1920x1080 window, hands the page to `director.js`, and
@@ -16,7 +18,12 @@
  * about it above the picture. `--cut` films one of the shorts instead of the
  * trailer — a single upright take with the game's own sound
  * (`reel-<cut>.mp4`); how it goes follows from `--seed`, and `--dry`
- * runs it without filming, to read what happens in it. Nothing here ships.
+ * runs it without filming, to read what happens in it. `--cut episode` is the
+ * next day of the serial: it picks the journey up from the save in `--journey`
+ * (a new run on the first day), films `--events` of the road's events until
+ * it has `--budget` seconds, and leaves the save and `day-NNN.mp4` there for
+ * the day after. A dry run of it changes nothing, unless it is told to
+ * `--advance` the journey a day without a film. Nothing here ships.
  */
 import { app, BrowserWindow, screen } from 'electron';
 import { spawn } from 'node:child_process';
@@ -56,6 +63,12 @@ const SEED = Number(option('--seed', '1'));
 /** Run the shots without photographing them, to read what happens in them. */
 const DRY = args.includes('--dry');
 const BARE = args.includes('--no-captions');
+/** The serial's folder: its save, what has happened so far, and each day's reel. */
+const JOURNEY_DIR = option('--journey', join(OUT_DIR, 'journey'));
+const JOURNEY = SHORT === 'episode' ? await openJourney() : null;
+/** A stand-alone reel's script (see `momentPlan` in director.js), and whether it opens on the desktop. */
+const PLAN = option('--plan', 'road');
+const DESKTOP = args.includes('--desktop');
 /**
  * The window is landscape either way. A window as tall as the phone's frame
  * fits on no ordinary display, so the upright cut is drawn lying on its side
@@ -65,7 +78,11 @@ const WIDTH = 1920;
 const HEIGHT = 1080;
 /** What this cut's files are called apart from the other's. */
 const CUT = SHORT ? `-${SHORT}` : UPRIGHT ? '-upright' : '';
-const FINAL = SHORT
+const FINAL = JOURNEY
+  ? join(JOURNEY_DIR, `day-${String(JOURNEY.day).padStart(3, '0')}.mp4`)
+  : SHORT === 'moment'
+  ? join(OUT_DIR, `reel-${PLAN}-${SEED}${DESKTOP ? '-desktop' : ''}.mp4`)
+  : SHORT
   ? join(OUT_DIR, `reel-${SHORT}.mp4`)
   : join(OUT_DIR, `trailer-${LANGUAGE}${UPRIGHT ? '-vertical' : ''}${BARE ? '-nocaption' : ''}.mp4`);
 /**
@@ -76,6 +93,11 @@ const FINAL = SHORT
 const DENSITY = 2;
 
 await writeFile(join(userData, 'settings.json'), JSON.stringify({ language: LANGUAGE }));
+// The journey so far goes in the first slot, for the title screen to continue from.
+if (JOURNEY?.save) {
+  await mkdir(join(userData, 'saves'), { recursive: true });
+  await writeFile(join(userData, 'saves', 'slot0.json'), JOURNEY.save);
+}
 
 app.commandLine.appendSwitch('force-device-scale-factor', String(DENSITY));
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
@@ -138,7 +160,7 @@ async function film(run, window, video) {
   await run(`${await readFile(join(HERE, 'director.js'), 'utf8')};true`);
   const wallpaper = `data:image/jpeg;base64,${(await readFile(option('--wallpaper', 'C:/Windows/Web/Wallpaper/Windows/img0.jpg'))).toString('base64')}`;
   const icon = `data:image/png;base64,${(await readFile(join(ROOT, 'dev', 'build', 'icon.png'))).toString('base64')}`;
-  const shots = await run(`window.__trailer.setup(${JSON.stringify({ wallpaper, icon, upright: UPRIGHT, captions: !BARE, cut: SHORT ?? 'trailer', seed: SEED })})`);
+  const shots = await run(`window.__trailer.setup(${JSON.stringify({ wallpaper, icon, upright: UPRIGHT, captions: !BARE, cut: SHORT ?? 'trailer', seed: SEED, plan: PLAN, intro: DESKTOP, ...(JOURNEY ? { day: JOURNEY.day, resume: Boolean(JOURNEY.save), events: Number(option('--events', '4')), budget: Number(option('--budget', '30')), starter: option('--starter', 'Squirtle'), wanted: option('--catch', '').split(',').filter(Boolean).map(Number) } : {}) })})`);
   console.log(shots.map((shot) => `${shot.name}:${shot.frames}`).join(' '));
 
   const encoder = DRY ? null : spawn(FFMPEG, [
@@ -168,9 +190,12 @@ async function film(run, window, video) {
     }
     for (let frame = 0; frame < shot.frames; frame++) {
       // A shot that decides its own length says when it has had its last frame.
-      const over = (await run(`window.__trailer.frame(${index}, ${frame})`)) === 'over';
+      const answer = await run(`window.__trailer.frame(${index}, ${frame})`);
+      const over = answer === 'over' || answer === 'over-skip';
+      // Run, but not for the film: what a short leaves to happen off camera.
+      const skipped = answer === 'skip' || answer === 'over-skip';
       rolled++;
-      if (!wanted || !encoder) {
+      if (!wanted || !encoder || skipped) {
         if (over) break;
         continue;
       }
@@ -194,11 +219,14 @@ async function film(run, window, video) {
   }
   encoder?.stdin.end();
   await finished;
+  if (JOURNEY) await closeJourney(run);
+  if (SHORT === 'moment') console.log(`${PLAN} ${SEED}: ${JSON.stringify((await run('window.__trailer.journey()')).log)}`);
   if (DRY) return;
 
   const cuts = await run('window.__trailer.cuts()');
   const log = await run('window.__trailer.audioLog()');
-  const length = rolled / 60;
+  // A short's film is the frames photographed; the rest of it happened off camera.
+  const length = (SHORT ? filmed : rolled) / 60;
   await writeFile(join(OUT_DIR, `timeline${CUT}.json`), JSON.stringify({ length, shots, cuts, audio: log }, null, 1));
 }
 
@@ -245,6 +273,29 @@ async function mixShort(run, video, { audio: log, length }) {
     '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k', '-ar', '48000', '-shortest', '-movflags', '+faststart', FINAL,
   ]);
   console.log(`wrote ${FINAL}`);
+}
+
+/** The serial so far: the day about to be filmed, and the run as the day before left it. */
+async function openJourney() {
+  await mkdir(JOURNEY_DIR, { recursive: true });
+  const state = JSON.parse(await readFile(join(JOURNEY_DIR, 'journey.json'), 'utf8').catch(() => '{"days":[]}'));
+  const save = await readFile(join(JOURNEY_DIR, 'save.json'), 'utf8').catch(() => null);
+  return { state, save, day: state.days.length + 1 };
+}
+
+/**
+ * Write the day down: what happened in it, and the run as the next day picks
+ * it up. A dry run reads the day without keeping it.
+ */
+async function closeJourney(run) {
+  const { day, save, log } = await run('window.__trailer.journey()');
+  console.log(`day ${day}: ${log.map((entry) => `${entry.kind}${entry.filmed ? '' : ' (off camera)'}`).join(', ')}`);
+  if ((DRY && !args.includes('--advance')) || !save) return;
+  await writeFile(join(JOURNEY_DIR, 'save.json'), save);
+  // The save each day opened on is kept, so a day can be filmed again.
+  if (JOURNEY.save) await writeFile(join(JOURNEY_DIR, `save-before-day-${String(day).padStart(3, '0')}.json`), JOURNEY.save);
+  JOURNEY.state.days.push({ day, filmed: new Date().toISOString(), events: log });
+  await writeFile(join(JOURNEY_DIR, 'journey.json'), JSON.stringify(JOURNEY.state, null, 1));
 }
 
 /** @param {string[]} parameters */

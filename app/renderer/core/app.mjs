@@ -32,6 +32,8 @@ import { setLanguage } from './i18n.mjs';
  *   while something else, such as a field event, plays out over it
  * @property {number} [offset] the field scene's world scroll, so events can
  *   spawn props just beyond the right edge of the view
+ * @property {boolean} [busy] whether something is playing out on the field
+ *   scene's road, for the tools that film it
  */
 
 export class App {
