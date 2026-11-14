@@ -237,6 +237,17 @@ export function battleScene({ session, foes, trainer = null, leader = false, pre
    */
   const leaderFigure = { image: /** @type {HTMLImageElement|null} */ (null), leaving: -1, pending: false };
   const leaderArt = presented && trainer?.portrait && gameData().actors?.portraits?.[trainer.portrait] ? trainer.portrait : null;
+  /** @type {HTMLElement|null} */
+  let foeBarNode = null;
+  /**
+   * The foe's nameplate is hidden for as long as the leader — or the League's
+   * challenger — is standing on the field, and shown once they have stepped
+   * off it for their Pokémon.
+   */
+  const showFoeBar = () => {
+    if (!foeBarNode) return;
+    foeBarNode.style.visibility = leaderArt && leaderFigure.leaving < LEADER_EXIT_MS ? 'hidden' : '';
+  };
   if (leaderArt) loadImage(`trainers/portraits/${leaderArt}.png`).then((image) => { leaderFigure.image = image; }).catch(() => {});
   /**
    * Balls in the air, and the light each opens in once it lands.
@@ -525,9 +536,13 @@ export function battleScene({ session, foes, trainer = null, leader = false, pre
       const screenNode = el('div.battle-clickcatch');
       screenNode.addEventListener('pointerdown', (event) => hurryBeat(app, event));
 
+      foeBarNode = el('div.battle-bar.foe', {}, [foePlate.root, foeBar.root]);
+      // Not while a leader is standing where their Pokémon will be: the
+      // nameplate is the Pokémon's, and it is not out yet.
+      showFoeBar();
       screenRoot = el('div.screen.battle-screen', {}, [
         screenNode,
-        el('div.battle-bar.foe', {}, [foePlate.root, foeBar.root]),
+        foeBarNode,
         el('div.battle-bar.player', {}, [playerPlate.root, playerBar.root]),
         el('div.battle-actions', {}, [
           foeBalls,
@@ -559,6 +574,7 @@ export function battleScene({ session, foes, trainer = null, leader = false, pre
       playerBar.update(deltaMs);
       foeBar.update(deltaMs);
       if (leaderFigure.leaving >= 0) leaderFigure.leaving += deltaMs;
+      showFoeBar();
 
       if (finished) return;
       beat -= deltaMs;

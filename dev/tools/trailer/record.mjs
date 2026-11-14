@@ -52,7 +52,8 @@ const ONLY = option('--only', null)?.split(',') ?? null;
 /** Mix the soundtrack again over the film already made, from its timeline. */
 const SOUND_ONLY = args.includes('--sound-only');
 /** Film the phone-shaped cut rather than the landscape one. */
-const UPRIGHT = args.includes('--upright') || args.includes('--cut');
+/** A short is upright unless asked for `--landscape`. */
+const UPRIGHT = args.includes('--upright') || (args.includes('--cut') && !args.includes('--landscape'));
 /** Keep a still every so many frames, for looking at without playing the film. */
 const STILLS = Number(option('--stills', '0'));
 /** Leave the upright cut's lines off the picture, for creators who put their own words over it. */
@@ -81,7 +82,7 @@ const CUT = SHORT ? `-${SHORT}` : UPRIGHT ? '-upright' : '';
 const FINAL = JOURNEY
   ? join(JOURNEY_DIR, `day-${String(JOURNEY.day).padStart(3, '0')}.mp4`)
   : SHORT === 'moment'
-  ? join(OUT_DIR, `reel-${PLAN}-${SEED}${DESKTOP ? '-desktop' : ''}.mp4`)
+  ? join(OUT_DIR, `reel-${PLAN}-${SEED}${DESKTOP ? '-desktop' : ''}${UPRIGHT ? '' : '-landscape'}.mp4`)
   : SHORT
   ? join(OUT_DIR, `reel-${SHORT}.mp4`)
   : join(OUT_DIR, `trailer-${LANGUAGE}${UPRIGHT ? '-vertical' : ''}${BARE ? '-nocaption' : ''}.mp4`);
@@ -158,7 +159,10 @@ app.on('window-all-closed', () => app.quit());
 async function film(run, window, video) {
   // Ended on a value that can be sent back: the script's own last value cannot.
   await run(`${await readFile(join(HERE, 'director.js'), 'utf8')};true`);
-  const wallpaper = `data:image/jpeg;base64,${(await readFile(option('--wallpaper', 'C:/Windows/Web/Wallpaper/Windows/img0.jpg'))).toString('base64')}`;
+  // Windows' own wallpaper when there is one; elsewhere — a Linux box filming
+  // headless — a plain desktop, as only the desktop shots show it.
+  const wallpaperFile = await readFile(option('--wallpaper', 'C:/Windows/Web/Wallpaper/Windows/img0.jpg')).catch(() => null);
+  const wallpaper = wallpaperFile ? `data:image/jpeg;base64,${wallpaperFile.toString('base64')}` : 'none';
   const icon = `data:image/png;base64,${(await readFile(join(ROOT, 'dev', 'build', 'icon.png'))).toString('base64')}`;
   const shots = await run(`window.__trailer.setup(${JSON.stringify({ wallpaper, icon, upright: UPRIGHT, captions: !BARE, cut: SHORT ?? 'trailer', seed: SEED, plan: PLAN, intro: DESKTOP, ...(JOURNEY ? { day: JOURNEY.day, resume: Boolean(JOURNEY.save), events: Number(option('--events', '4')), budget: Number(option('--budget', '30')), starter: option('--starter', 'Squirtle'), wanted: option('--catch', '').split(',').filter(Boolean).map(Number) } : {}) })})`);
   console.log(shots.map((shot) => `${shot.name}:${shot.frames}`).join(' '));
@@ -221,6 +225,8 @@ async function film(run, window, video) {
   await finished;
   if (JOURNEY) await closeJourney(run);
   if (SHORT === 'moment') console.log(`${PLAN} ${SEED}: ${JSON.stringify((await run('window.__trailer.journey()')).log)}`);
+  // Which moment of the film makes its cover, for whoever posts it.
+  if (SHORT === 'moment' || JOURNEY) console.log(`cover: ${(await run('window.__trailer.journey()')).cover}`);
   if (DRY) return;
 
   const cuts = await run('window.__trailer.cuts()');

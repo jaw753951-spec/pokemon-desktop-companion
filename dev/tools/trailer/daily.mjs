@@ -14,7 +14,8 @@
  * again on the same day answers with the reel already made rather than
  * filming the journey a day further; `--again` films it over (the serial from
  * the save that day opened on). `--posted` marks the date's reel as uploaded.
- * The last line printed is the day's entry as JSON, for whoever runs this.
+ * The last line printed is the day's entry as JSON, for whoever runs this;
+ * its `cover` is the second of the film to use as the reel's cover.
  *
  * Nothing here uploads anything: that is done by hand, or by the assistant
  * once the reel has been looked at and agreed to.
@@ -135,7 +136,7 @@ function film(withFlags) {
   });
   const output = `${run.stdout ?? ''}${run.stderr ?? ''}`;
   // What happened in it, in the recorder's own words.
-  const told = output.split(/\r?\n/).filter((line) => /^(day \d+:|\w+ \d+: \[)|^\[page\] (capture|league|held)/.test(line));
+  const told = output.split(/\r?\n/).filter((line) => /^(day \d+:|\w+ \d+: \[|cover: )|^\[page\] (capture|league|held)/.test(line));
   for (const line of told) console.log(line.slice(0, 400));
   if (run.status !== 0) {
     console.error(output.split(/\r?\n/).slice(-15).join('\n'));
@@ -159,6 +160,9 @@ if (DRY) {
 }
 if (!existsSync(join(ROOT, entry.file))) throw new Error(`the recorder left no ${entry.file}`);
 entry.summary = told.find((line) => /^day \d+:/.test(line)) ?? `${entry.plan} reel`;
+// The moment the reel's cover is taken from, in seconds (see `coverAt` in director.js).
+const cover = Number.parseFloat(told.find((line) => line.startsWith('cover: '))?.slice(7) ?? '');
+entry.cover = Number.isFinite(cover) ? Math.round(cover * 10) / 10 : 2;
 entry.posted = false;
 log.reels = [...log.reels.filter((made) => made.date !== DATE), entry].sort((a, b) => a.date.localeCompare(b.date));
 save();
