@@ -56,6 +56,9 @@ import { pokedexScene } from '../ui/pokedex.mjs';
 import { chooseAction, confirm } from '../ui/dialog.mjs';
 import { saveAndExit, saveAndQuit, settingsScene } from '../ui/settings.mjs';
 
+/** How long the road is back after a fight before the walk to the next area shuts the screen. */
+const CROSSING_AFTER_BATTLE_MS = 1000;
+
 /** Field pixels to a step: one tile of the map. */
 const STEP_PX = 16;
 
@@ -130,6 +133,12 @@ export function fieldScene(session) {
   let crossed = false;
   /** An area change waiting for the road to be clear of an event. */
   let pendingCrossing = false;
+  /**
+   * How long, in milliseconds, an area change still holds off after a fight:
+   * the road is back for a moment before the screen shuts on it, rather than
+   * the fight closing straight into the dark.
+   */
+  let crossingWait = 0;
   /**
    * Cleared while a battle or the capture screen is up: those draw their own
    * version of the companion, and two of it at once reads as a bug.
@@ -316,6 +325,7 @@ export function fieldScene(session) {
    * @param {{outcome: 'won'|'lost'|'fled', defeated: any[]}} result
    */
   function finishBattle(app, setup, result) {
+    crossingWait = CROSSING_AFTER_BATTLE_MS;
     // Sent away, or gone: nothing was won and nothing lost.
     if (result.outcome === 'fled') {
       patchUp(app);
@@ -397,8 +407,10 @@ export function fieldScene(session) {
    * @param {import('../core/app.mjs').App} app
    */
   function tickCrossing(deltaMs, app) {
-    // One starts as soon as the road is clear of whatever was happening on it.
-    if (pendingCrossing && crossing === 0 && !events?.busy && !menuOpen) {
+    if (crossingWait > 0) crossingWait = Math.max(0, crossingWait - deltaMs);
+    // One starts as soon as the road is clear of whatever was happening on it,
+    // and a moment after a fight.
+    if (pendingCrossing && crossing === 0 && crossingWait === 0 && !events?.busy && !menuOpen) {
       pendingCrossing = false;
       crossing = 1;
       crossed = false;
@@ -737,6 +749,14 @@ export function fieldScene(session) {
      */
     get busy() {
       return Boolean(events?.busy) || crossing > 0 || pendingCrossing;
+    },
+
+    /**
+     * The event standing on the road — its kind, where it stands, the beat it
+     * is on — or null. For the tools that film the road.
+     */
+    get standing() {
+      return events?.standing ?? null;
     },
   };
 
