@@ -6,7 +6,7 @@
  *     [--upright] [--no-captions] [--sound-only]
  *     [--cut encounter [--seed 7] [--dry]]
  *     [--cut moment --plan catch|shiny|evolve|gym|road [--seed 3] [--desktop] [--dry]]
- *     [--cut episode [--journey trailer/journey] [--starter Squirtle] [--catch 263,25] [--events 4] [--budget 30] [--dry [--advance]]]
+ *     [--cut episode [--journey trailer/journey] [--starter Squirtle] [--catch 263,25] [--events 6] [--budget 42] [--dry [--advance]]]
  *
  * Boots the game's own main-process modules (as the screenshot harness does)
  * into a hidden 1920x1080 window, hands the page to `director.js`, and
@@ -164,7 +164,7 @@ async function film(run, window, video) {
   const wallpaperFile = await readFile(option('--wallpaper', 'C:/Windows/Web/Wallpaper/Windows/img0.jpg')).catch(() => null);
   const wallpaper = wallpaperFile ? `data:image/jpeg;base64,${wallpaperFile.toString('base64')}` : 'none';
   const icon = `data:image/png;base64,${(await readFile(join(ROOT, 'dev', 'build', 'icon.png'))).toString('base64')}`;
-  const shots = await run(`window.__trailer.setup(${JSON.stringify({ wallpaper, icon, upright: UPRIGHT, captions: !BARE, cut: SHORT ?? 'trailer', seed: SEED, plan: PLAN, intro: DESKTOP, ...(JOURNEY ? { day: JOURNEY.day, resume: Boolean(JOURNEY.save), events: Number(option('--events', '4')), budget: Number(option('--budget', '30')), starter: option('--starter', 'Squirtle'), wanted: option('--catch', '').split(',').filter(Boolean).map(Number) } : {}) })})`);
+  const shots = await run(`window.__trailer.setup(${JSON.stringify({ wallpaper, icon, upright: UPRIGHT, captions: !BARE, cut: SHORT ?? 'trailer', seed: SEED, plan: PLAN, intro: DESKTOP, ...(JOURNEY ? { day: JOURNEY.day, resume: Boolean(JOURNEY.save), events: Number(option('--events', '6')), budget: Number(option('--budget', '42')), starter: option('--starter', 'Squirtle'), wanted: option('--catch', '').split(',').filter(Boolean).map(Number) } : {}) })})`);
   console.log(shots.map((shot) => `${shot.name}:${shot.frames}`).join(' '));
 
   const encoder = DRY ? null : spawn(FFMPEG, [

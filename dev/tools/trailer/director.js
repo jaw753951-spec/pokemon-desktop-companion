@@ -101,11 +101,15 @@
   let hushed = false;
   let filmTime = 0;
 
+  /** Told whatever the game asks the speakers for, as it asks: a short's cue for what is happening. */
+  let onSound = /** @type {((method: string, args: any[]) => void) | null} */ (null);
+
   function muteAndLog() {
     const audio = app().audio;
     for (const method of ['playCry', 'blip', 'playJingle', 'playMusic', 'playSample', 'stopMusic']) {
       audio[method] = (...args) => {
         if (method === 'playMusic') audio.wanted = args[0] ?? null;
+        try { onSound?.(method, args); } catch (error) { console.error(error); }
         if (recording && !(hushed && method === 'playCry')) audioLog.push({ t: filmTime, method, args });
         return Promise.resolve();
       };
@@ -463,6 +467,13 @@
     ...PICKERS,
     1, 7, 39, 52, 54, 79, 92, 104, 129, 143, 155, 158, 179, 183, 216, 252, 255, 280, 300, 328, 387, 390, 427, 447,
     501, 570, 607, 650, 653, 661, 700, 725, 728, 810, 816, 835, 848, 877, 909, 912, 921, 926, 957, 446, 113,
+  ];
+
+  /** The game's toast, larger: in the window, and over the phone's picture (narrower, so it wraps sooner). */
+  const TOAST_RULES = [
+    `#toast { font-size: 14px; padding: 6px 14px; border-radius: 12px; max-width: 380px; }`,
+    // Its width is its words', up to the cap: left at half the width, it would otherwise shrink to the half left over.
+    `.short-hud #toast { width: max-content; max-width: 232px; bottom: 14px; }`,
   ];
 
   // Added to the game's own sheet: its policy turns away a style element.
@@ -1340,6 +1351,8 @@
     }
     const screen = document.querySelector('.battle-screen');
     if (!screen || encounter.lifted) return;
+    // A toast lifted over the road goes home first, or the panels put in its place would take it with them.
+    restoreToast();
     const player = /** @type {HTMLElement | null} */ (screen.querySelector('.battle-bar.player'));
     const parts = [screen.querySelector('.battle-bar.foe'), player, screen.querySelector('.battle-message')].filter(Boolean);
     if (player && captions) {
@@ -1378,6 +1391,7 @@
     const line = document.querySelector('.evolution-screen .battle-message');
     if (!line || !encounter.hud) return;
     if (line.parentElement !== encounter.hud) {
+      restoreToast();
       encounter.hud.replaceChildren(line);
       encounter.lifted = false;
     }
@@ -1514,7 +1528,7 @@
    * the minute's wait between them taken out — and films them as one take
    * until it has enough film; whatever is left of the day's events then
    * happens off camera, as the game does while nobody is watching it. A
-   * journey to Champion is some 260 events, so four a day is two months.
+   * journey to Champion is some 260 events, so six a day is some forty days.
    *
    * The first day opens on the choice of a first partner. No two things of a
    * kind are shown one after the other — a fight is a fight, whoever it is
@@ -1547,7 +1561,7 @@
   ]);
 
   const journey = {
-    day: 1, events: 4, budget: 30, resume: false, starter: 'Squirtle',
+    day: 1, events: 6, budget: 42, resume: false, starter: 'Squirtle',
     /** Species a ball is thrown at besides the usual ones, when a day is asked to catch something in particular. */
     wanted: /** @type {number[]} */ ([]),
     /** A stand-alone reel's script, in place of the road's own roll (see `momentPlan`). */
@@ -1591,16 +1605,42 @@
    * a reel is not that long. The cut falls between turns, and the last turn —
    * the blow that ends it, the experience, the win — is filmed whole.
    */
-  const FIGHT_OPENING_S = 10;
+  const FIGHT_OPENING_S = 7;
   /**
    * A stand-alone reel plays at the game's own pace — hurried, it was too
    * much to follow — and is kept short by being about one moment; its walk
    * out is a little shorter than a day's.
    */
-  const fightOpening = () => (journey.plan ? 16 : FIGHT_OPENING_S);
-  const tailSeconds = () => (journey.plan ? 3 : ENCOUNTER_AFTER_S);
+  // A scripted step may ask for more of its fight (the gym reel, so blows are traded on film).
+  const fightOpening = () => (journey.plan ? journey.plan[journey.done]?.opening ?? 16 : FIGHT_OPENING_S);
+  const tailSeconds = () => (journey.plan ? 3 : 2.5);
   /** The film's fade from black as it opens, and to black as it closes. */
   const FADE_IN_S = 0.5;
+  /** How long the day's label takes to step aside, and to come back. */
+  const LABEL_FADE_S = 0.4;
+  /**
+   * How long a day walks before its first event is asked for, on top of the
+   * walk up to it: time to read the day's number and see who is walking.
+   */
+  const FIRST_EVENT_AFTER_S = 0.5;
+  /**
+   * How much of a berry tree being picked is filmed before the rest is left
+   * out down to what the game says it came to: ten seconds of picking is a
+   * long time on a phone. A find on the road is filmed whole.
+   */
+  const ROAD_OPENING_S = 3.5;
+  /**
+   * How long the film stays on a Pokémon Center's shut door while the
+   * companion is inside, the game's word on what it was given up, before the
+   * rest of the stay is left out down to the door opening again.
+   */
+  const CENTER_INSIDE_S = 2.2;
+  /**
+   * How far ahead of the companion, in the road's pixels, a ball found on the
+   * road is put down: at the right edge of the phone's close-up, rather than
+   * past the edge of the whole window, so it is walked up to in a moment.
+   */
+  const BALL_EDGE_AHEAD = 44;
   const FADE_OUT_S = 0.6;
 
   function journeyTurn(entries) {
@@ -1637,6 +1677,7 @@
     journey.checkpoint = JSON.stringify(s.toSave());
     journey.running = true;
     journey.seen = false;
+    journey.roadCutDone = false;
     journey.since = frame;
     journey.current = {
       filmed: journey.filming && !journey.away, level: await levelNow(), badges: s.badges.length, species: s.active.speciesId,
@@ -1660,6 +1701,19 @@
       await prepareStep(step);
       forceEvent(step.kind === 'leader' ? 'trainer' : step.kind);
       return;
+    }
+    // Of another kind than the one just shown, decided before it is rolled —
+    // a fight is a fight, whoever it is against — so nothing has to happen
+    // behind a curtain: the game's own way of calling an event it has
+    // settled on. Once the camera is off the road rolls as it likes.
+    if (journey.filming && journey.afterCenter) {
+      // Out of the Center and walking: a ball on the road straight away.
+      journey.afterCenter = false;
+      s.events.forced = 'ball';
+    } else if (journey.filming && journey.lastKind) {
+      const kinds = ['berry', 'ball', 'battle', 'battle'].filter((kind) => kind !== journey.lastKind);
+      const kind = s.rng.pick(kinds);
+      s.events.forced = kind === 'battle' ? s.rng.pick(['wild', 'trainer']) : kind;
     }
     // The road's own roll, now rather than in a minute.
     s.eventTimer = 0;
@@ -1795,6 +1849,7 @@
     console.log('event ' + journey.done + ': ' + JSON.stringify(entry));
     if (event.filmed) {
       journey.lastKind = event.kind;
+      journey.afterCenter = Boolean(event.center);
       // One of the beaten worth having, with a ball to throw at it.
       for (const pokemon of beaten) {
         if (s.balls().length && (event.step?.catch || (!journey.plan && (await worthCatching(pokemon))))) {
@@ -1808,7 +1863,10 @@
 
   /** Enough on film, or the day's events done: the walk out begins. */
   function afterJourneyEvent(frame) {
-    if (journey.filming && !journey.away && (frameNumber / FPS >= journey.budget || journey.done >= journey.events)) journey.tail = frame;
+    if (journey.filming && !journey.away && (frameNumber / FPS >= journey.budget || journey.done >= journey.events)) {
+      journey.tail = frame;
+      if (!journey.plan && SERIAL_EXTRAS) void closingCard();
+    }
   }
 
   // ------------------------------------------------------------------ catching
@@ -1825,6 +1883,7 @@
     if (!parts.length) return;
     // Under the count of throws rather than beside it: the phone is narrow.
     if (name) name.style.top = '44px';
+    restoreToast();
     encounter.hud.replaceChildren(...parts);
     encounter.lifted = false;
     encounter.hud.style.display = 'block';
@@ -2112,6 +2171,137 @@
     afterJourneyEvent(frame);
   }
 
+  /*
+   * What makes a day of the serial more than a road: a word or two that pops
+   * up as something happens — who it is up against, the win, a level, an
+   * evolution, a catch, a find — a line under the day's number saying where
+   * the companion is and at what level, and a card as the day walks out
+   * saying how it went and that the next one comes tomorrow.
+   */
+  /**
+   * Off: the owner wants the serial to be the game and nothing said over it
+   * (2026-11-18) — no callouts, no status line, no closing card. Kept for a
+   * cut that may want them.
+   */
+  const SERIAL_EXTRAS = false;
+  const callouts = { queue: /** @type {any[]} */ ([]), shown: /** @type {any} */ (null), node: /** @type {HTMLElement | null} */ (null), big: null, small: null };
+  /** The game's music cues by what they are for, for `onSound`. */
+  let cueKind = /** @type {Record<string, string>} */ ({});
+
+  const outline = (width, colour) => [...Array(16)].map((_, i) => {
+    const angle = (i / 16) * Math.PI * 2;
+    return `${(Math.cos(angle) * width).toFixed(1)}px ${(Math.sin(angle) * width).toFixed(1)}px 0 ${colour}`;
+  }).join(', ');
+
+  /** Queue a callout: a big line and a small one, centred at a share of the phone's height. */
+  function callout(big, small = '', at = 0.5) {
+    if (!journey.filming || journey.plan || !callouts.node) return;
+    callouts.queue.push({ big, small, at });
+  }
+
+  function makeCallouts() {
+    const node = document.createElement('div');
+    Object.assign(node.style, {
+      position: 'absolute', left: '0', right: '0', zIndex: '145', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px',
+      fontFamily: "'Segoe UI Black', 'Malgun Gothic', sans-serif", fontWeight: '900', lineHeight: '1', whiteSpace: 'nowrap', pointerEvents: 'none', opacity: '0',
+    });
+    const big = document.createElement('div');
+    Object.assign(big.style, { fontSize: '64px', color: LOGO.yellow, textShadow: `${outline(5, LOGO.blue)}, 0 7px 0 ${LOGO.navy}` });
+    const small = document.createElement('div');
+    Object.assign(small.style, { fontSize: '24px', color: '#fff', letterSpacing: '0.03em', textShadow: outline(3, LOGO.blue) });
+    node.append(big, small);
+    phone.append(node);
+    Object.assign(callouts, { node, big, small });
+  }
+
+  /** The callout on screen, popping in and out; the next in the queue once it has gone. */
+  function drawCallouts(frame) {
+    if (!callouts.node) return;
+    const HOLD_S = 1.5;
+    if (!callouts.shown && callouts.queue.length) {
+      callouts.shown = { ...callouts.queue.shift(), from: frame };
+      callouts.big.textContent = callouts.shown.big;
+      callouts.small.textContent = callouts.shown.small;
+      callouts.small.style.display = callouts.shown.small ? 'block' : 'none';
+      // As large as fits across.
+      let size = 64;
+      callouts.big.style.fontSize = `${size}px`;
+      while (callouts.big.offsetWidth > PHONE.width - 40 && size > 28) callouts.big.style.fontSize = `${(size -= 4)}px`;
+    }
+    const shown = callouts.shown;
+    if (!shown) return;
+    const t = (frame - shown.from) / FPS;
+    if (t >= HOLD_S) {
+      callouts.shown = null;
+      callouts.node.style.opacity = '0';
+      return;
+    }
+    callouts.node.style.top = `${shown.at * PHONE.height - callouts.node.offsetHeight / 2}px`;
+    const land = Math.min(1, t / 0.2);
+    callouts.node.style.opacity = String(Math.min(1, t / 0.06, (HOLD_S - t) / 0.2));
+    callouts.big.style.transform = `scale(${1.45 - 0.45 * overshoot(land)}) rotate(${-3 * (1 - land) - 1}deg)`;
+  }
+
+  /** Callouts for what the game plays: the win, a level, an evolution, a catch, a find. */
+  function soundCallout(method, args) {
+    if (method !== 'playJingle' || !callouts.node) return;
+    const kind = cueKind[args[0]];
+    const s = session();
+    const pokemonModule = imports['./engine/pokemon.mjs'];
+    if (kind === 'victoryWild' || kind === 'victoryTrainer') callout('VICTORY!', '', 0.25);
+    else if (kind === 'levelUp' && pokemonModule) callout(`LEVEL ${pokemonModule.levelOf(s.active)}!`, '', 0.25);
+    else if (kind === 'evolved') callout('EVOLVED!', '', 0.18);
+    else if (kind === 'caught') callout('GOTCHA!', '', 0.2);
+    else if (kind === 'obtainBerry') callout('BERRIES!', '', 0.36);
+    else if (kind === 'obtainItem' || kind === 'obtainTm') callout('ITEM GET!', '', 0.36);
+  }
+
+  /** A line under the day's number: who is walking, at what level, and where. */
+  async function statusLine() {
+    if (!journey.status) return;
+    const { speciesOf } = await load('./core/data.mjs');
+    const { name: localized } = await load('./core/i18n.mjs');
+    const s = session();
+    const species = speciesOf(s.active.speciesId);
+    const text = `${localized(species?.name, '')} Lv.${(await load('./engine/pokemon.mjs')).levelOf(s.active)} · ${localized(s.area?.name, s.area?.id ?? '')}`.toUpperCase();
+    if (journey.status.textContent !== text) journey.status.textContent = text;
+  }
+
+  /** The card the day walks out under: how far it came, and that the next day comes tomorrow. */
+  async function closingCard() {
+    if (journey.card2 || !phone) return;
+    const { levelOf } = await load('./engine/pokemon.mjs');
+    const s = session();
+    const card = document.createElement('div');
+    Object.assign(card.style, {
+      position: 'absolute', left: '0', right: '0', top: `${PHONE.height * 0.66}px`, zIndex: '146', display: 'flex', flexDirection: 'column', alignItems: 'center',
+      gap: '10px', fontFamily: "'Segoe UI Black', 'Malgun Gothic', sans-serif", fontWeight: '900', lineHeight: '1', whiteSpace: 'nowrap', pointerEvents: 'none', opacity: '0',
+    });
+    const title = document.createElement('div');
+    title.textContent = `DAY ${journey.day} CLEAR`;
+    Object.assign(title.style, { fontSize: '50px', color: LOGO.yellow, textShadow: `${outline(4.5, LOGO.blue)}, 0 6px 0 ${LOGO.navy}` });
+    const line = document.createElement('div');
+    const from = journey.startLevel ?? levelOf(s.active);
+    const badges = s.badges.length;
+    line.textContent = `LV ${from} → ${levelOf(s.active)}  ·  BADGES ${badges}/8`;
+    Object.assign(line.style, { fontSize: '26px', color: '#fff', textShadow: outline(3, LOGO.blue) });
+    const next = document.createElement('div');
+    next.textContent = `DAY ${journey.day + 1} TOMORROW ▶`;
+    Object.assign(next.style, { fontSize: '22px', color: LOGO.yellow, textShadow: outline(3, LOGO.navy) });
+    card.append(title, line, next);
+    phone.append(card);
+    journey.card2 = { node: card, title };
+  }
+
+  function drawClosingCard(frame) {
+    const card = journey.card2;
+    if (!card || journey.tail < 0) return;
+    const t = (frame - journey.tail) / FPS;
+    const land = Math.min(1, t / 0.25);
+    card.node.style.opacity = String(Math.min(1, t / 0.15));
+    card.title.style.transform = `scale(${1.4 - 0.4 * overshoot(land)})`;
+  }
+
   // ------------------------------------------------------------ what is put over
 
   /**
@@ -2142,6 +2332,14 @@
     small.textContent = 'OF BECOMING CHAMPION';
     Object.assign(small.style, { fontSize: '30px', letterSpacing: '0.04em', color: '#fff', textShadow: outline(3.5, LOGO.blue) });
     node.append(big, small);
+    if (labelled && SERIAL_EXTRAS) {
+      // Who is walking, at what level, and where — kept up to date as it changes.
+      const status = document.createElement('div');
+      Object.assign(status.style, { fontSize: '20px', letterSpacing: '0.03em', color: '#fff', marginTop: '4px', textShadow: outline(2.5, LOGO.navy) });
+      node.append(status);
+      journey.status = status;
+      makeCallouts();
+    }
     if (labelled) {
       phone.append(node);
       journey.label = node;
@@ -2160,8 +2358,8 @@
       under.innerHTML = 'OF BECOMING<br>CHAMPION';
       Object.assign(under.style, { fontSize: '13px', letterSpacing: '0.04em', lineHeight: '1.15', color: '#fff', textShadow: outline(2, LOGO.blue) });
       dock.append(day, under);
-      phone.append(dock);
-      journey.dock = dock;
+      // Not used: the large label stays up instead (see `drawOver`).
+      void dock;
     }
     // The League's buttons are seen in a short, as the challenge goes on.
     {
@@ -2180,9 +2378,18 @@
   /** The day's number for its first moments, and the film's way in from black and out to it. */
   function drawOver(frame) {
     const t = frameNumber / FPS;
-    if (journey.label) journey.label.style.opacity = journey.filming ? String(Math.min(1, t / 0.15, Math.max(0, (3.4 - t) / 0.35))) : '0';
-    // The corner's as the large one goes, and up from then on.
-    if (journey.dock) journey.dock.style.opacity = journey.filming ? String(Math.min(1, Math.max(0, (t - 3.2) / 0.35))) : '0';
+    // The day's number, large, for as long as the road is what is seen: it
+    // goes as a fight, an evolution, a catch or the League opens over the
+    // road, so as not to sit on them, and comes back once the road is back.
+    if (journey.label) {
+      const covered = Boolean(document.querySelector('.battle-screen, .evolution-screen, .capture-screen, .league-screen, .fame-screen'));
+      const wanted = journey.filming && !covered ? 1 : 0;
+      const step = 1 / (LABEL_FADE_S * FPS);
+      journey.labelLevel = wanted > (journey.labelLevel ?? 0)
+        ? Math.min(wanted, (journey.labelLevel ?? 0) + step)
+        : Math.max(wanted, (journey.labelLevel ?? 0) - step);
+      journey.label.style.opacity = String(Math.min(journey.labelLevel, t / 0.15));
+    }
     let dark = Math.max(0, 1 - t / FADE_IN_S, journey.sceneDark ?? 0);
     if (journey.tail >= 0) dark = Math.max(dark, 1 - (tailSeconds() - (frame - journey.tail) / FPS) / FADE_OUT_S);
     if (journey.veil) journey.veil.style.opacity = String(Math.min(1, Math.max(0, dark)));
@@ -2191,7 +2398,7 @@
   /** The day opening on the choice of a first partner: the three balls, one looked at, and taken. */
   const STARTER_SHOT = {
     name: 'starter',
-    seconds: 5,
+    seconds: 3,
     async begin() {
       document.getElementById('dragframe').style.display = 'none';
       stage().style.boxShadow = 'none';
@@ -2218,8 +2425,8 @@
       }));
       if (!pick) return;
       // Looked at, taken, and said yes to as the shutter closes on it.
-      if (frame === Math.round(1.3 * FPS)) pick.dispatchEvent(new MouseEvent('mouseenter'));
-      if (frame === Math.round(3.3 * FPS)) pick.click();
+      if (frame === Math.round(0.5 * FPS)) pick.dispatchEvent(new MouseEvent('mouseenter'));
+      if (frame === Math.round(1.6 * FPS)) pick.click();
       if (frame === frames - 2) {
         const yes = /** @type {HTMLElement | null} */ (document.querySelector('.modal .actions button'));
         yes?.click();
@@ -2240,15 +2447,8 @@
     async begin() {
       // A run just begun on the starter's screen takes a moment to be there.
       for (let i = 0; i < 100 && !session(); i++) await settle(50);
-      // The game's toasts are kept off the film, but for the line a catch ends on.
-      if (!app().__shortToasts) {
-        app().__shortToasts = true;
-        const dismiss = app().dismissToast.bind(app());
-        app().dismissToast = () => {
-          if (journey.capture?.phase === 'closing') return;
-          dismiss();
-        };
-      }
+      // The game's toasts are its own words for what happens on camera, and
+      // stay: only those of what happened off it are taken down (see `before`).
       await settle(300);
       closeAll();
       const s = session();
@@ -2277,10 +2477,18 @@
       if (!journey.intro) audioLog.push({ t: frameNumber / FPS, method: 'playMusic', args: [s.area?.music ?? null] });
       turnLog = true;
       onTurn = journeyTurn;
+      if (!journey.plan) {
+        const { gameData } = await load('./core/data.mjs');
+        await load('./engine/pokemon.mjs');
+        cueKind = Object.fromEntries(Object.entries(gameData().bgm?.cues ?? {}).map(([key, name]) => [name, key]));
+        if (SERIAL_EXTRAS) onSound = soundCallout;
+        journey.startLevel = (await load('./engine/pokemon.mjs')).levelOf(s.active);
+      }
       journey.badges = s.badges.length;
     },
     async before(frame) {
-      app().dismissToast();
+      // What the game says of a stretch off camera is not left for the film to pick up.
+      if (!journey.filming || (journey.cut && !journey.roadCut) || journey.dark) app().dismissToast();
       // The road's panels away, but for the moment the League's button is pressed.
       if (journey.league?.phase !== 'show') fadeChrome(1);
       drawOver(frame);
@@ -2303,6 +2511,44 @@
         journey.fightFilm = -1;
         journey.cut = false;
       }
+      // A long event on the road: its start, and then — with the same flash
+      // a fight's cut has — what it came to, the game's word on it.
+      if (!journey.plan) {
+        const opened = Boolean(document.querySelector('.evolution-screen, .capture-screen, .league-screen'));
+        const told = !document.getElementById('toast')?.hidden;
+        const standing = app().scene?.standing ?? null;
+        const filmedHere = journey.filming && !journey.away && journey.running;
+        // The stay inside a Center: the shut door, and then the door opening.
+        const inside = standing?.kind === 'heal' && Boolean(standing.beat?.heal);
+        if (standing?.kind === 'heal' && journey.current) journey.current.center = true;
+        if (!inside) journey.insideAt = null;
+        else if (journey.insideAt == null) journey.insideAt = frame;
+        if (filmedHere && standing) {
+          // A ball on the road put down at the edge of the picture.
+          if (standing.kind === 'ball' && standing.phase === 'approach' && !standing.edged) {
+            standing.edged = true;
+            standing.worldX = Math.min(standing.worldX, app().scene.offset + BALL_EDGE_AHEAD);
+          }
+          // Out of the Center and the building gone past the picture's left
+          // edge: the walk past it is over, and the road free for what is next.
+          const width = standing.prop?.sprite?.meta?.width ?? 64;
+          if (standing.kind === 'heal' && standing.phase === 'passing' && standing.timer > 0 && standing.worldX + width < app().scene.offset - 30) standing.timer = 0;
+        }
+        const over = journey.roadCut === 'center' ? !inside : told || battling || opened || !journey.running || roadClear();
+        if (journey.roadCut && over) {
+          journey.roadCut = false;
+          journey.roadCutDone = true;
+          // Whatever comes next is filmed from its start: a fight's own cut is its own business.
+          journey.cut = false;
+          flashLeft = FLASH_FRAMES;
+        } else if (!journey.roadCut && !journey.roadCutDone && filmedHere && !battling && !opened) {
+          // A berry tree is cut to the berries found; a find on the road is
+          // filmed whole, walked up to from the edge of the picture.
+          if (inside && (frame - journey.insideAt) / FPS >= CENTER_INSIDE_S) journey.roadCut = 'center';
+          else if (standing?.kind === 'berry' && journey.seen && !told && (frame - journey.heldAt) / FPS >= ROAD_OPENING_S) journey.roadCut = 'berry';
+        }
+        if (journey.roadCut) journey.cut = true;
+      }
       if (document.querySelector('.evolution-screen') && journey.current) journey.current.evolved = true;
       // A wild one's fighting art, before the fight opens on it.
       if (journey.running && s.lastWildSpecies && journey.current.wild !== s.lastWildSpecies) {
@@ -2316,6 +2562,9 @@
       }
       drawBadge(frame);
       drawRipple(frame);
+      drawCallouts(frame);
+      if (!journey.plan) await statusLine();
+      drawClosingCard(frame);
 
       if (journey.transition) return driveTransition(frame);
       if (journey.capture) return driveCapture(frame);
@@ -2326,6 +2575,7 @@
         if (!clear) {
           if (!journey.seen) {
             journey.seen = true;
+            journey.heldAt = frame;
             eventTakesHold(frame);
           }
         } else if (journey.seen) await finishJourneyEvent(frame);
@@ -2350,6 +2600,8 @@
         journey.over = true;
         return;
       }
+      // A day of the serial walks a while before anything happens.
+      if (!journey.plan && journey.done === 0 && frame < Math.round(FIRST_EVENT_AFTER_S * FPS)) return;
       // Strong enough, and the badges in hand: the League instead of the road's next event.
       if (!journey.plan && journey.filming && !journey.away && !journey.leagueTried && !s.champion && s.badges.length >= 8 && (await levelNow()) >= LEAGUE_LEVEL) {
         journey.leagueTried = true;
@@ -2362,12 +2614,14 @@
     // cut in two with the game's panels over it — and an evolution or a
     // capture, which open over the road, as the whole picture again.
     panels(frame) {
-      app().dismissToast();
       const evolving = Boolean(document.querySelector('.evolution-screen'));
       const catching = Boolean(document.querySelector('.capture-screen'));
       const fighting = Boolean(document.querySelector('.battle-screen')) && !evolving;
       if (fighting && journey.fight < 0) journey.fight = frame;
-      if (!fighting) journey.fight = -1;
+      if (!fighting) {
+        journey.fight = -1;
+        journey.calledFight = false;
+      }
       const into = fighting ? (frame - journey.fight) / FPS - ENCOUNTER_SHUT_S : -1;
       if (panels.node) panels.node.style.background = into < 0.45 ? '#05070c' : '#f4f4f0';
       if (fighting && into >= 0) {
@@ -2378,6 +2632,15 @@
           encounter.hud.style.display = 'block';
           encounter.hud.style.opacity = String(Math.min(1, Math.max(0, (into - 0.25) / 0.2)));
         }
+        // Who it is against, in the lower half while it is still empty.
+        if (SERIAL_EXTRAS && !journey.calledFight && into >= 0.3) {
+          journey.calledFight = true;
+          const s = session();
+          const opening = document.querySelector('.battle-message')?.textContent ?? '';
+          const wild = s.events.recent?.[0] === 'wild';
+          const name = (opening.match(/^A wild (.+) appeared!$/) ?? [])[1];
+          callout(wild && name ? `WILD ${name.toUpperCase()}!` : /^Gym Leader/.test(opening) ? 'GYM BATTLE!' : 'TRAINER BATTLE!', '', 0.74);
+        }
       } else if (evolving) {
         liftEvolutionLine();
         // The new shape, once the flash it comes out of has faded (see the evolution scene's timings).
@@ -2387,7 +2650,8 @@
         }
       } else if (catching) {
         liftCaptureHud();
-      } else if (journey.capture?.phase === 'closing' && !document.getElementById('toast')?.hidden) {
+      } else if (!document.getElementById('toast')?.hidden) {
+        // The game's word on what has just happened, where the phone's picture shows it.
         liftToast();
       } else {
         dropBattleHud();
@@ -2457,7 +2721,9 @@
         return { scene: { companion: species, level, almost: true, road, hour }, steps: [{ kind: 'wild', species: pick(ROUTE_REGULARS) }] };
       }
       case 'gym':
-        return { scene: { companion, level: 30, grown: true, road, hour }, steps: [{ kind: 'leader' }] };
+        // Two badges held, so the leader's team stands at 26-30 against a level 33
+        // companion: a fight with blows traded, not one-hit knockouts of a level 10 team.
+        return { scene: { companion, level: 33, grown: true, road, hour, badges: ['rock', 'normal'] }, steps: [{ kind: 'leader', opening: 26 }] };
       case 'showcase': {
         // Charmander, Charmeleon and Charizard each at a gym of its own; the
         // League walked into and won, to the Hall of Fame; and three catches —
@@ -2584,7 +2850,7 @@
     BAR,
 
     /** Boot a fresh run with Charmander on Route 101, and take the clock. */
-    async setup({ wallpaper, icon, upright: lying = false, captions: lines = true, cut = 'trailer', seed = 1, day = 1, resume = false, events = 4, budget = 30, starter = 'Squirtle', wanted = [], plan = 'road', intro = false }) {
+    async setup({ wallpaper, icon, upright: lying = false, captions: lines = true, cut = 'trailer', seed = 1, day = 1, resume = false, events = 6, budget = 42, starter = 'Squirtle', wanted = [], plan = 'road', intro = false }) {
       encounter.seed = seed;
       Object.assign(journey, { day, resume, events, budget, starter, wanted });
       if (cut === 'moment') {
@@ -2599,6 +2865,10 @@
       window.__trailerIcon = icon;
       upright = lying;
       captions = lines;
+      // The game's messages along the bottom, larger on film than on a desk:
+      // a phone is held further off than a window is, and seen for a moment.
+      const sheet = [...document.styleSheets].find((entry) => entry.href?.endsWith('styles.css')) ?? document.styleSheets[0];
+      for (const rule of TOAST_RULES) sheet.insertRule(rule, sheet.cssRules.length);
       for (let i = 0; i < 200 && !app()?.scene; i++) await settle(50);
       document.getElementById('notice-screen')?.click();
       await settle(400);

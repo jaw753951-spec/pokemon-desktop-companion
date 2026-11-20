@@ -69,6 +69,7 @@ function journeyDone() {
 function rewindJourney(day) {
   const state = read(join(JOURNEY, 'journey.json'), { days: [] });
   state.days = state.days.filter((entry) => entry.day < day);
+  mkdirSync(JOURNEY, { recursive: true });
   writeFileSync(join(JOURNEY, 'journey.json'), JSON.stringify(state, null, 1));
   const before = join(JOURNEY, `save-before-day-${pad(day, 3)}.json`);
   // The first day opened on no save at all.
@@ -77,7 +78,13 @@ function rewindJourney(day) {
 }
 
 let reel = today();
-if (reel && existsSync(join(ROOT, reel.file)) && !args.includes('--again')) {
+// Already up — wherever it was filmed, here or in the cloud: nothing more to do today.
+if (reel?.posted && !args.includes('--again')) {
+  console.log(`already posted for ${DATE}`);
+  console.log(JSON.stringify(reel));
+  process.exit(0);
+}
+if (reel && reel.file && existsSync(join(ROOT, reel.file)) && !args.includes('--again')) {
   console.log(`already filmed for ${DATE}`);
   console.log(JSON.stringify(reel));
   process.exit(0);
