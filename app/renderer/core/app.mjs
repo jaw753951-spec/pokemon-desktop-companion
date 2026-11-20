@@ -34,6 +34,8 @@ import { setLanguage } from './i18n.mjs';
  *   spawn props just beyond the right edge of the view
  * @property {boolean} [busy] whether something is playing out on the field
  *   scene's road, for the tools that film it
+ * @property {any} [standing] the event standing on the field scene's road,
+ *   read-only, for the tools that film it
  */
 
 export class App {
