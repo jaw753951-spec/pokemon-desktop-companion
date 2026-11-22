@@ -6,7 +6,7 @@
  *     [--upright] [--no-captions] [--sound-only]
  *     [--cut encounter [--seed 7] [--dry]]
  *     [--cut moment --plan catch|shiny|evolve|gym|road [--seed 3] [--desktop] [--dry]]
- *     [--cut episode [--journey trailer/journey] [--starter Squirtle] [--catch 263,25] [--events 6] [--budget 42] [--dry [--advance]]]
+ *     [--cut episode [--journey trailer/journey] [--starter Squirtle] [--catch 263,25] [--order berry,ball,battle,berry] [--events 6] [--budget 42] [--dry [--advance]]]
  *
  * Boots the game's own main-process modules (as the screenshot harness does)
  * into a hidden 1920x1080 window, hands the page to `director.js`, and
@@ -164,7 +164,7 @@ async function film(run, window, video) {
   const wallpaperFile = await readFile(option('--wallpaper', 'C:/Windows/Web/Wallpaper/Windows/img0.jpg')).catch(() => null);
   const wallpaper = wallpaperFile ? `data:image/jpeg;base64,${wallpaperFile.toString('base64')}` : 'none';
   const icon = `data:image/png;base64,${(await readFile(join(ROOT, 'dev', 'build', 'icon.png'))).toString('base64')}`;
-  const shots = await run(`window.__trailer.setup(${JSON.stringify({ wallpaper, icon, upright: UPRIGHT, captions: !BARE, cut: SHORT ?? 'trailer', seed: SEED, plan: PLAN, intro: DESKTOP, ...(JOURNEY ? { day: JOURNEY.day, resume: Boolean(JOURNEY.save), events: Number(option('--events', '6')), budget: Number(option('--budget', '42')), starter: option('--starter', 'Squirtle'), wanted: option('--catch', '').split(',').filter(Boolean).map(Number) } : {}) })})`);
+  const shots = await run(`window.__trailer.setup(${JSON.stringify({ wallpaper, icon, upright: UPRIGHT, captions: !BARE, cut: SHORT ?? 'trailer', seed: SEED, plan: PLAN, intro: DESKTOP, ...(JOURNEY ? { day: JOURNEY.day, resume: Boolean(JOURNEY.save), events: Number(option('--events', '6')), budget: Number(option('--budget', '42')), starter: option('--starter', 'Squirtle'), wanted: option('--catch', '').split(',').filter(Boolean).map(Number), order: option('--order', '').split(',').filter(Boolean) } : {}) })})`);
   console.log(shots.map((shot) => `${shot.name}:${shot.frames}`).join(' '));
 
   const encoder = DRY ? null : spawn(FFMPEG, [
@@ -233,7 +233,9 @@ async function film(run, window, video) {
   const log = await run('window.__trailer.audioLog()');
   // A short's film is the frames photographed; the rest of it happened off camera.
   const length = (SHORT ? filmed : rolled) / 60;
-  await writeFile(join(OUT_DIR, `timeline${CUT}.json`), JSON.stringify({ length, shots, cuts, audio: log }, null, 1));
+  // How long the sound takes to go out with the picture, when the cut says.
+  const fadeOut = SHORT ? (await run('window.__trailer.journey()')).fadeOut : undefined;
+  await writeFile(join(OUT_DIR, `timeline${CUT}.json`), JSON.stringify({ length, fadeOut, shots, cuts, audio: log }, null, 1));
 }
 
 /**
@@ -244,7 +246,7 @@ async function mix(run, video) {
   const timeline = JSON.parse(await readFile(join(OUT_DIR, `timeline${CUT}.json`), 'utf8'));
   const { cuts, audio: log } = timeline;
   const length = timeline.length ?? timeline.shots.reduce((sum, shot) => sum + shot.frames, 0) / 60;
-  if (SHORT) return mixShort(run, video, { audio: log, length });
+  if (SHORT) return mixShort(run, video, { audio: log, length, fadeOut: timeline.fadeOut });
   await run(`${await readFile(join(HERE, 'soundtrack.js'), 'utf8')};true`);
   const wav = await run(`window.__soundtrack(${JSON.stringify({ cuts, audio: log, length })})`);
   const audio = join(OUT_DIR, `soundtrack${CUT}.wav`);
@@ -269,9 +271,9 @@ async function mix(run, video) {
  * A short's sound is the game's own — the road's music, the fight's, the cries
  * and the hits, as the game asked for them — put under the film as it is.
  */
-async function mixShort(run, video, { audio: log, length }) {
+async function mixShort(run, video, { audio: log, length, fadeOut }) {
   await run(`${await readFile(join(HERE, 'gamesound.js'), 'utf8')};true`);
-  const wav = await run(`window.__gameSound(${JSON.stringify({ audio: log, length })})`);
+  const wav = await run(`window.__gameSound(${JSON.stringify({ audio: log, length, fadeOut })})`);
   const audio = join(OUT_DIR, `soundtrack${CUT}.wav`);
   await writeFile(audio, Buffer.from(wav, 'base64'));
   await ffmpeg([

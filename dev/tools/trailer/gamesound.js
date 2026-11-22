@@ -12,7 +12,7 @@
  *
  * Not part of the shipped app.
  */
-window.__gameSound = async ({ audio, length }) => {
+window.__gameSound = async ({ audio, length, fadeOut = 0.7 }) => {
   const { AudioEngine, connectMusic, loadSamples, loopOf, openingRun, recordSong } = await import('./core/audio.mjs');
   const { loadAudioBuffer } = await import('./core/assets.mjs');
 
@@ -41,7 +41,7 @@ window.__gameSound = async ({ audio, length }) => {
   fade.gain.setValueAtTime(0, 0);
   fade.gain.setValueAtTime(0, LEAD);
   fade.gain.linearRampToValueAtTime(1, LEAD + 0.5);
-  fade.gain.setValueAtTime(1, Math.max(LEAD + 0.5, LEAD + length - 0.7));
+  fade.gain.setValueAtTime(1, Math.max(LEAD + 0.5, LEAD + length - fadeOut));
   fade.gain.linearRampToValueAtTime(0, LEAD + length);
   fade.connect(context.destination);
   engine.masterGain.connect(fade);

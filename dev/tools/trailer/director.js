@@ -1309,12 +1309,12 @@
   /** How long into the game's way into a fight the screen is wholly dark (see `ENTRY_OPEN` in the battle scene). */
   const ENCOUNTER_SHUT_S = 0.48;
   /**
-   * Where each half of this fight looks: the foe with the top of its half
-   * clear above it, so a tall one — or a leader standing there — is seen
-   * whole, and its nameplate under its feet; the companion higher in its own
-   * half, its nameplate over the message box.
+   * Where each half of this fight looks: the foe raised in its half so its
+   * feet stand clear above its nameplate (user, 2026-11-21: the plate hid a
+   * foe's lower body), with room above still for a tall one or a leader; the
+   * companion higher in its own half, its nameplate over the message box.
    */
-  const ENCOUNTER_CROPS = [{ x: 260, y: 4 }, { x: 34, y: 100 }];
+  const ENCOUNTER_CROPS = [{ x: 260, y: 32 }, { x: 34, y: 100 }];
   /** How much larger than in the game's window its battle panels are drawn on the phone. */
   const HUD_ZOOM = 2.2;
   /**
@@ -1562,6 +1562,10 @@
 
   const journey = {
     day: 1, events: 6, budget: 42, resume: false, starter: 'Squirtle',
+    /** The kinds a day's filmed events come in, in turn, when the day is asked for them (`--order berry,ball,battle,berry`). */
+    order: /** @type {string[] | null} */ (null),
+    /** The frame the last filmed event let go of the road on, for the walk before the next. */
+    endedAt: -1,
     /** Species a ball is thrown at besides the usual ones, when a day is asked to catch something in particular. */
     wanted: /** @type {number[]} */ ([]),
     /** A stand-alone reel's script, in place of the road's own roll (see `momentPlan`). */
@@ -1613,7 +1617,12 @@
    */
   // A scripted step may ask for more of its fight (the gym reel, so blows are traded on film).
   const fightOpening = () => (journey.plan ? journey.plan[journey.done]?.opening ?? 16 : FIGHT_OPENING_S);
-  const tailSeconds = () => (journey.plan ? 3 : 2.5);
+  // A day that ends on a fight walks on a while and fades out slowly (user, 2026-11-22: 1.5 s, then 2.5 s of fade).
+  const endsOnFight = () => !journey.plan && journey.lastKind === 'battle';
+  const fadeOutSeconds = () => (endsOnFight() ? 2.5 : FADE_OUT_S);
+  const tailSeconds = () => (endsOnFight() ? 1.5 + fadeOutSeconds() : (journey.plan ? 3 : 2.5) - (journey.lastKind === 'capture' ? CATCH_TAIL_CUT_S : 0));
+  /** How much shorter the walk out is after a catch (user, 2026-11-21: a second). */
+  const CATCH_TAIL_CUT_S = 1;
   /** The film's fade from black as it opens, and to black as it closes. */
   const FADE_IN_S = 0.5;
   /** How long the day's label takes to step aside, and to come back. */
@@ -1622,13 +1631,20 @@
    * How long a day walks before its first event is asked for, on top of the
    * walk up to it: time to read the day's number and see who is walking.
    */
-  const FIRST_EVENT_AFTER_S = 0.5;
+  const FIRST_EVENT_AFTER_S = 1.5;
   /**
-   * How much of a berry tree being picked is filmed before the rest is left
-   * out down to what the game says it came to: ten seconds of picking is a
-   * long time on a phone. A find on the road is filmed whole.
+   * How long a day walks between one filmed event and the next asked for, by
+   * the kind just shown (user, 2026-11-22: wider gaps; then a longer one after
+   * a berry tree, a shorter one after a ball; then each a second longer).
    */
-  const ROAD_OPENING_S = 3.5;
+  const EVENT_GAP_S = { berry: 4, ball: 1 };
+  const eventGap = () => EVENT_GAP_S[journey.lastKind] ?? 1.5;
+  /**
+   * How long a berry tree is picked, and a ball on the road opened, on film:
+   * shorter than the game takes (10 s and 5 s) and filmed whole rather than
+   * cut (user, 2026-11-22). Only the filmed event is hurried; the game is not changed.
+   */
+  const GATHER_FILMED_MS = { berry: 4000, ball: 3500 };
   /**
    * How long the film stays on a Pokémon Center's shut door while the
    * companion is inside, the game's word on what it was given up, before the
@@ -1710,6 +1726,10 @@
       // Out of the Center and walking: a ball on the road straight away.
       journey.afterCenter = false;
       s.events.forced = 'ball';
+    } else if (journey.filming && journey.order?.[journey.done]) {
+      // The day's order, as it was asked for.
+      const kind = journey.order[journey.done];
+      s.events.forced = kind === 'battle' ? s.rng.pick(['wild', 'trainer']) : kind;
     } else if (journey.filming && journey.lastKind) {
       const kinds = ['berry', 'ball', 'battle', 'battle'].filter((kind) => kind !== journey.lastKind);
       const kind = s.rng.pick(kinds);
@@ -1863,13 +1883,19 @@
 
   /** Enough on film, or the day's events done: the walk out begins. */
   function afterJourneyEvent(frame) {
-    if (journey.filming && !journey.away && (frameNumber / FPS >= journey.budget || journey.done >= journey.events)) {
+    journey.endedAt = frame;
+    // A day asked for an order is filmed for exactly that many events, however long they take.
+    const enough = journey.order && !journey.plan ? journey.done >= journey.order.length : frameNumber / FPS >= journey.budget;
+    if (journey.filming && !journey.away && (enough || journey.done >= journey.events)) {
       journey.tail = frame;
       if (!journey.plan && SERIAL_EXTRAS) void closingCard();
     }
   }
 
   // ------------------------------------------------------------------ catching
+
+  /** How long the road is seen between a fight's end and the ball thrown at the one beaten. */
+  const CATCH_AFTER_FIGHT_S = 1.5;
 
   /** The capture screen's panels over the picture, as the fight's are. */
   function liftCaptureHud() {
@@ -1884,6 +1910,9 @@
     // Under the count of throws rather than beside it: the phone is narrow.
     if (name) name.style.top = '44px';
     restoreToast();
+    // A toast of the road still up would show under the capture screen's own line, at the game's size.
+    const toast = document.getElementById('toast');
+    if (toast) toast.hidden = true;
     encounter.hud.replaceChildren(...parts);
     encounter.lifted = false;
     encounter.hud.style.display = 'block';
@@ -1903,6 +1932,10 @@
     };
     const screen = document.querySelector('.capture-screen');
     if (capture.phase === 'open') {
+      // A breath on the road between the fight and the ball (user, 2026-11-21: 1.5 s).
+      // And the game's word over the road (a potion used after the fight) read out first, for a while at most.
+      const told = !document.getElementById('toast')?.hidden;
+      if (t < CATCH_AFTER_FIGHT_S || (told && t < CATCH_AFTER_FIGHT_S + 2)) return;
       // The menus this goes through are a player's own business, not the film's.
       document.body.classList.add('short-quiet');
       const index = session().tray.indexOf(capture.target);
@@ -1923,7 +1956,8 @@
       else if (t > 3) endCapture(frame);
     } else if (capture.phase === 'aim') {
       if (!screen) return endCapture(frame);
-      if (t < (capture.throws ? 0.7 : 1.3)) return;
+      // The next ball follows a breakout quicker than the first comes (user, 2026-11-21: a little quicker).
+      if (t < (capture.throws ? 0.2 : 1.3)) return;
       const balls = /** @type {HTMLButtonElement[]} */ ([...document.querySelectorAll('.capture-balls:not(.capture-berries) .capture-ball')]).filter((ball) => !ball.disabled);
       if (!balls.length) return t > 4 ? endCapture(frame) : undefined;
       const odds = (ball) => Number.parseFloat(ball.querySelector('.odds')?.textContent ?? '0') || 0;
@@ -1963,7 +1997,8 @@
         step('caught');
       } else if (!screen) endCapture(frame);
       // Out of the ball again: another throw.
-      else if (t > 2.6) step('aim');
+      // (2.3 s: the ball breaks open about 1.75 s after it is thrown.)
+      else if (t > 2.3) step('aim');
     } else if (capture.phase === 'caught') {
       // Held on the ball shut, the line that says so and the window asking
       // for a name; then no name, pressed where it can be seen.
@@ -2391,7 +2426,7 @@
       journey.label.style.opacity = String(Math.min(journey.labelLevel, t / 0.15));
     }
     let dark = Math.max(0, 1 - t / FADE_IN_S, journey.sceneDark ?? 0);
-    if (journey.tail >= 0) dark = Math.max(dark, 1 - (tailSeconds() - (frame - journey.tail) / FPS) / FADE_OUT_S);
+    if (journey.tail >= 0) dark = Math.max(dark, 1 - (tailSeconds() - (frame - journey.tail) / FPS) / fadeOutSeconds());
     if (journey.veil) journey.veil.style.opacity = String(Math.min(1, Math.max(0, dark)));
   }
 
@@ -2524,10 +2559,14 @@
         if (!inside) journey.insideAt = null;
         else if (journey.insideAt == null) journey.insideAt = frame;
         if (filmedHere && standing) {
-          // A ball on the road put down at the edge of the picture.
-          if (standing.kind === 'ball' && standing.phase === 'approach' && !standing.edged) {
+          // A ball on the road put down at the edge of the picture; a berry
+          // tree just past it, so it is seen coming in rather than flashed to
+          // (user, 2026-11-22).
+          if ((standing.kind === 'ball' || standing.kind === 'berry') && standing.phase === 'approach' && !standing.edged) {
             standing.edged = true;
-            standing.worldX = Math.min(standing.worldX, app().scene.offset + BALL_EDGE_AHEAD);
+            const past = standing.kind === 'berry' ? Math.ceil((standing.prop?.sprite?.meta?.width ?? 32) / 2) : 0;
+            standing.worldX = Math.min(standing.worldX, app().scene.offset + BALL_EDGE_AHEAD + past);
+            standing.phaseDuration = Math.min(standing.phaseDuration ?? Infinity, GATHER_FILMED_MS[standing.kind]);
           }
           // Out of the Center and the building gone past the picture's left
           // edge: the walk past it is over, and the road free for what is next.
@@ -2542,10 +2581,9 @@
           journey.cut = false;
           flashLeft = FLASH_FRAMES;
         } else if (!journey.roadCut && !journey.roadCutDone && filmedHere && !battling && !opened) {
-          // A berry tree is cut to the berries found; a find on the road is
-          // filmed whole, walked up to from the edge of the picture.
+          // A Center's stay is cut to the door opening; a berry tree and a find
+          // on the road are filmed whole, walked up to from the edge of the picture.
           if (inside && (frame - journey.insideAt) / FPS >= CENTER_INSIDE_S) journey.roadCut = 'center';
-          else if (standing?.kind === 'berry' && journey.seen && !told && (frame - journey.heldAt) / FPS >= ROAD_OPENING_S) journey.roadCut = 'berry';
         }
         if (journey.roadCut) journey.cut = true;
       }
@@ -2602,6 +2640,8 @@
       }
       // A day of the serial walks a while before anything happens.
       if (!journey.plan && journey.done === 0 && frame < Math.round(FIRST_EVENT_AFTER_S * FPS)) return;
+      // And a while between one event and the next, while the camera is on.
+      if (!journey.plan && journey.filming && journey.done > 0 && journey.endedAt >= 0 && frame - journey.endedAt < Math.round(eventGap() * FPS)) return;
       // Strong enough, and the badges in hand: the League instead of the road's next event.
       if (!journey.plan && journey.filming && !journey.away && !journey.leagueTried && !s.champion && s.badges.length >= 8 && (await levelNow()) >= LEAGUE_LEVEL) {
         journey.leagueTried = true;
@@ -2850,9 +2890,9 @@
     BAR,
 
     /** Boot a fresh run with Charmander on Route 101, and take the clock. */
-    async setup({ wallpaper, icon, upright: lying = false, captions: lines = true, cut = 'trailer', seed = 1, day = 1, resume = false, events = 6, budget = 42, starter = 'Squirtle', wanted = [], plan = 'road', intro = false }) {
+    async setup({ wallpaper, icon, upright: lying = false, captions: lines = true, cut = 'trailer', seed = 1, day = 1, resume = false, events = 6, budget = 42, starter = 'Squirtle', wanted = [], order = null, plan = 'road', intro = false }) {
       encounter.seed = seed;
-      Object.assign(journey, { day, resume, events, budget, starter, wanted });
+      Object.assign(journey, { day, resume, events: Math.max(events, order?.length ?? 0), budget, starter, wanted, order: order?.length ? order : null });
       if (cut === 'moment') {
         const script = momentPlan(plan, seed);
         // All of it is filmed: a script is as long as it was written to be.
@@ -3004,7 +3044,7 @@
     audioLog: () => audioLog,
 
     /** How a day of the journey came out: the run as it is to be picked up next, and what happened. */
-    journey: () => ({ day: journey.day, save: journey.plan ? null : journey.final, log: journey.log, cover: journey.coverAt }),
+    journey: () => ({ day: journey.day, save: journey.plan ? null : journey.final, log: journey.log, cover: journey.coverAt, fadeOut: fadeOutSeconds() }),
 
     /** Where each shot starts on the film, in seconds. */
     cuts: () => {

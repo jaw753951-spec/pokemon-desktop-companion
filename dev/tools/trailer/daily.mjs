@@ -100,7 +100,7 @@ let entry;
 if (kind === 'episode') {
   if (reel?.day) rewindJourney(reel.day);
   const next = read(join(JOURNEY, 'journey.json'), { days: [] }).days.length + 1;
-  flags = ['--cut', 'episode', '--seed', '11'];
+  flags = ['--cut', 'episode', '--seed', '11', ...(option('--order') ? ['--order', option('--order')] : [])];
   entry = { date: DATE, kind, day: next, file: `trailer/journey/day-${pad(next, 3)}.mp4` };
 } else {
   // Counted over the reels of this kind made so far, so the scripts come round in turn.
