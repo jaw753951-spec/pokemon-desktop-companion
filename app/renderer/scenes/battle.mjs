@@ -509,6 +509,9 @@ export function battleScene({ session, foes, trainer = null, leader = false, pre
     app.clickRipple(event);
   }
 
+  /** What was playing before the fight, for an evolution after it to go back to. */
+  let musicBefore = /** @type {string|null} */ (null);
+
   return {
     keepBelow: true,
 
@@ -517,6 +520,7 @@ export function battleScene({ session, foes, trainer = null, leader = false, pre
       loadFoeSprite();
       if (backdrop) loadBackdrop(backdrop).then((image) => { backdropImage = image; });
 
+      musicBefore = app.audio.wanted ?? null;
       app.audio.playMusic(music ?? gameData().bgm.cues[trainer ? 'battleTrainer' : 'battleWild']);
       // A wild Pokémon is standing there from the start and calls now; a
       // trainer's calls when its ball opens (see `updateTosses`).
@@ -1389,6 +1393,9 @@ export function battleScene({ session, foes, trainer = null, leader = false, pre
         pokemon: session.active,
         to: evolution.to,
         stoppable: true,
+        // The games evolve once the battle is over, so the music after it is
+        // the road's (or whatever played before the fight), not the battle's.
+        after: musicBefore,
         onFinish: () => {
           app.pop();
           handBack();

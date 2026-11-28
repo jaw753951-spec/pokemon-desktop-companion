@@ -68,11 +68,13 @@ const MORPH_SPEED_UP = 0.8;
  *   to: number,
  *   stoppable: boolean,
  *   lead?: string[],
+ *   after?: string|null,
  *   onFinish: (result: {evolved: boolean}) => void,
  * }} options `lead` is said before it begins — a Rare Candy's level, say
+ *   `after` is the music to play once it is over (default: what was playing as it began)
  * @returns {import('../core/app.mjs').Scene}
  */
-export function evolutionScene({ session, pokemon, to, stoppable, lead = [], onFinish }) {
+export function evolutionScene({ session, pokemon, to, stoppable, lead = [], after, onFinish }) {
   /** @typedef {'lead'|'intro'|'morph'|'reveal'|'lines'|'stopped'|'done'} Phase */
   /** @type {Phase} */
   let phase = lead.length ? 'lead' : 'intro';
@@ -130,7 +132,7 @@ export function evolutionScene({ session, pokemon, to, stoppable, lead = [], onF
     enter('intro');
     say(t('evolution.start', { name: fromName }));
     app.audio.playCry(pokemon.speciesId);
-    before = app.audio.wanted ?? null;
+    before = after !== undefined ? after : app.audio.wanted ?? null;
     void app.audio.playMusic(gameData().bgm?.cues?.evolution ?? null);
   }
 
