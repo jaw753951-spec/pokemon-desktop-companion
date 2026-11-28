@@ -193,6 +193,12 @@
       // the turn after it would open with whatever the engine has queued up,
       // an Intimidate or the like, before the cut.
       if (this.__scripted) return [];
+      // On film only (`--no-foe-berries`): the other side's berries are taken off before they can be eaten.
+      if (journey.noFoeBerries) {
+        for (const foe of [this.foe, ...(this.foeQueue ?? [])]) {
+          if (foe?.pokemon.heldItem?.endsWith('-berry')) foe.pokemon.heldItem = null;
+        }
+      }
       if (!scripted) {
         const entries = take.call(this);
         if (turnLog) console.log('turn: ' + entries.map((entry) => entry.kind + (entry.side ? ':' + entry.side : '') + (entry.data?.move ? '(' + entry.data.move + ')' : '')).join(' '));
@@ -1564,6 +1570,19 @@
     day: 1, events: 6, budget: 42, resume: false, starter: 'Squirtle',
     /** The kinds a day's filmed events come in, in turn, when the day is asked for them (`--order berry,ball,battle,berry`). */
     order: /** @type {string[] | null} */ (null),
+    /** Whether a day's fights are filmed whole rather than cut after their opening (`--whole-fights`). */
+    wholeFights: false,
+    /** Whether the other side's held berries are taken off before a fight's first turn (`--no-foe-berries`). */
+    noFoeBerries: false,
+    /**
+     * Filmed events (counted from 1) that happen as usual but are left off the
+     * film (`--leave-out 3`), from the moment the event is asked for until the
+     * road crosses into another area or the next event is asked for, so the
+     * rest of the day rolls out as it would have (user, 2026-11-27).
+     */
+    leaveOut: /** @type {number[]} */ ([]),
+    /** The area a left-out event began in, while it is being left off the film. */
+    leaving: /** @type {string | null | undefined} */ (undefined),
     /** The frame the last filmed event let go of the road on, for the walk before the next. */
     endedAt: -1,
     /** Species a ball is thrown at besides the usual ones, when a day is asked to catch something in particular. */
@@ -1616,7 +1635,7 @@
    * out is a little shorter than a day's.
    */
   // A scripted step may ask for more of its fight (the gym reel, so blows are traded on film).
-  const fightOpening = () => (journey.plan ? journey.plan[journey.done]?.opening ?? 16 : FIGHT_OPENING_S);
+  const fightOpening = () => (journey.plan ? journey.plan[journey.done]?.opening ?? 16 : journey.wholeFights ? Infinity : FIGHT_OPENING_S);
   // A day that ends on a fight walks on a while and fades out slowly (user, 2026-11-22: 1.5 s, then 2.5 s of fade).
   const endsOnFight = () => !journey.plan && journey.lastKind === 'battle';
   const fadeOutSeconds = () => (endsOnFight() ? 2.5 : FADE_OUT_S);
@@ -1635,10 +1654,11 @@
   /**
    * How long a day walks between one filmed event and the next asked for, by
    * the kind just shown (user, 2026-11-22: wider gaps; then a longer one after
-   * a berry tree, a shorter one after a ball; then each a second longer).
+   * a berry tree, a shorter one after a ball; then each a second longer;
+   * 2026-11-27: each half a second longer again).
    */
-  const EVENT_GAP_S = { berry: 4, ball: 1 };
-  const eventGap = () => EVENT_GAP_S[journey.lastKind] ?? 1.5;
+  const EVENT_GAP_S = { berry: 4.5, ball: 1.5 };
+  const eventGap = () => EVENT_GAP_S[journey.lastKind] ?? 2;
   /**
    * How long a berry tree is picked, and a ball on the road opened, on film:
    * shorter than the game takes (10 s and 5 s) and filmed whole rather than
@@ -1690,6 +1710,8 @@
 
   async function startJourneyEvent(frame) {
     const s = session();
+    // An event asked to be left out: off the film until the road crosses or the next is asked for.
+    journey.leaving = journey.filming && !journey.plan && journey.leaveOut.includes(journey.done + 1) ? s.area?.id ?? null : undefined;
     journey.checkpoint = JSON.stringify(s.toSave());
     journey.running = true;
     journey.seen = false;
@@ -2410,6 +2432,20 @@
     sheet.insertRule('body.short-quiet .modal { visibility: hidden; }', sheet.cssRules.length);
   }
 
+  /** Whether the road has begun to shut for a crossing into another area. */
+  const crossingShut = () => [...document.querySelectorAll('.field-shut')].some((band) => band.offsetHeight > 0);
+
+  /**
+   * Whether what the companion found is being, or is about to be, held up
+   * over its head, where the day's number would cover it: from just before
+   * the picking ends until it is put away (user, 2026-11-27).
+   */
+  function holdingUp() {
+    const standing = app().scene?.standing ?? null;
+    if (!standing || (standing.kind !== 'ball' && standing.kind !== 'berry')) return false;
+    return standing.phase === 'show' || (standing.phase === 'gather' && standing.timer <= LABEL_FADE_S * 1000);
+  }
+
   /** The day's number for its first moments, and the film's way in from black and out to it. */
   function drawOver(frame) {
     const t = frameNumber / FPS;
@@ -2418,9 +2454,11 @@
     // road, so as not to sit on them, and comes back once the road is back.
     if (journey.label) {
       const covered = Boolean(document.querySelector('.battle-screen, .evolution-screen, .capture-screen, .league-screen, .fame-screen'));
-      const wanted = journey.filming && !covered ? 1 : 0;
+      const wanted = journey.filming && !covered && !holdingUp() ? 1 : 0;
       const step = 1 / (LABEL_FADE_S * FPS);
-      journey.labelLevel = wanted > (journey.labelLevel ?? 0)
+      // Up and waiting while a left-out event is off the film, so the film comes back to it whole.
+      if (journey.leaving !== undefined) journey.labelLevel = 1;
+      else journey.labelLevel = wanted > (journey.labelLevel ?? 0)
         ? Math.min(wanted, (journey.labelLevel ?? 0) + step)
         : Math.max(wanted, (journey.labelLevel ?? 0) - step);
       journey.label.style.opacity = String(Math.min(journey.labelLevel, t / 0.15));
@@ -2509,7 +2547,9 @@
         await preroll(3000);
       }
       app().dismissToast();
-      if (!journey.intro) audioLog.push({ t: frameNumber / FPS, method: 'playMusic', args: [s.area?.music ?? null] });
+      // The road's music, from the first frame when the film opens on the
+      // desktop: the companion's window is already walking that road there.
+      audioLog.push({ t: journey.intro ? 0 : frameNumber / FPS, method: 'playMusic', args: [s.area?.music ?? null] });
       turnLog = true;
       onTurn = journeyTurn;
       if (!journey.plan) {
@@ -2522,8 +2562,11 @@
       journey.badges = s.badges.length;
     },
     async before(frame) {
+      // A left-out event comes back on the film as the road starts to cross
+      // into the next area, so the crossing is seen whole, shutting and opening.
+      if (journey.leaving !== undefined && (crossingShut() > 0 || session().area?.id !== journey.leaving)) journey.leaving = undefined;
       // What the game says of a stretch off camera is not left for the film to pick up.
-      if (!journey.filming || (journey.cut && !journey.roadCut) || journey.dark) app().dismissToast();
+      if (!journey.filming || (journey.cut && !journey.roadCut) || journey.dark || journey.leaving !== undefined) app().dismissToast();
       // The road's panels away, but for the moment the League's button is pressed.
       if (journey.league?.phase !== 'show') fadeChrome(1);
       drawOver(frame);
@@ -2548,6 +2591,14 @@
       }
       // A long event on the road: its start, and then — with the same flash
       // a fight's cut has — what it came to, the game's word on it.
+      // A script's berry tree or ball hurried on film to its step's `gatherMs`; the game is not changed.
+      if (journey.plan && journey.current?.step?.gatherMs && journey.running) {
+        const standing = app().scene?.standing ?? null;
+        if (standing?.kind === journey.current.step.kind && standing.phase === 'approach' && !standing.hurried) {
+          standing.hurried = true;
+          standing.phaseDuration = Math.min(standing.phaseDuration ?? Infinity, journey.current.step.gatherMs);
+        }
+      }
       if (!journey.plan) {
         const opened = Boolean(document.querySelector('.evolution-screen, .capture-screen, .league-screen'));
         const told = !document.getElementById('toast')?.hidden;
@@ -2642,6 +2693,8 @@
       if (!journey.plan && journey.done === 0 && frame < Math.round(FIRST_EVENT_AFTER_S * FPS)) return;
       // And a while between one event and the next, while the camera is on.
       if (!journey.plan && journey.filming && journey.done > 0 && journey.endedAt >= 0 && frame - journey.endedAt < Math.round(eventGap() * FPS)) return;
+      // A script's step may ask for a walk before it.
+      if (journey.plan && journey.done > 0 && journey.endedAt >= 0 && frame - journey.endedAt < Math.round((journey.plan[journey.done]?.walkBefore ?? 0) * FPS)) return;
       // Strong enough, and the badges in hand: the League instead of the road's next event.
       if (!journey.plan && journey.filming && !journey.away && !journey.leagueTried && !s.champion && s.badges.length >= 8 && (await levelNow()) >= LEAGUE_LEVEL) {
         journey.leagueTried = true;
@@ -2701,7 +2754,7 @@
     // On the companion on the road; on the middle of the picture for what opens over it.
     pan: () => (journey.league?.target ? journey.league.target.x : document.querySelector('.evolution-screen, .capture-screen, .league-screen, .fame-screen') ? 0.5 : PICKING_FOCUS.x),
     tilt: () => (journey.league?.target ? journey.league.target.y : document.querySelector('.evolution-screen') ? 0.62 : document.querySelector('.capture-screen') ? 0.47 : document.querySelector('.league-screen, .fame-screen') ? 0.5 : PICKING_FOCUS.y),
-    skip: () => !journey.filming || journey.cut || journey.dark,
+    skip: () => !journey.filming || journey.cut || journey.dark || journey.leaving !== undefined,
     over: () => journey.over,
   };
 
@@ -2793,7 +2846,9 @@
       case 'road':
       default:
         // The quiet one: no fight, a berry tree and a ball on the way.
-        return { scene: { companion, level: 16, grown: true, road, hour }, steps: [{ kind: 'berry' }, { kind: 'ball' }] };
+        // The berry tree picked for half the game's 10 s on film, and a 2 s walk
+        // before the ball (user, 2026-11-24).
+        return { scene: { companion, level: 16, grown: true, road, hour }, steps: [{ kind: 'berry', gatherMs: 5000 }, { kind: 'ball', walkBefore: 2 }] };
     }
   }
 
@@ -2890,11 +2945,13 @@
     BAR,
 
     /** Boot a fresh run with Charmander on Route 101, and take the clock. */
-    async setup({ wallpaper, icon, upright: lying = false, captions: lines = true, cut = 'trailer', seed = 1, day = 1, resume = false, events = 6, budget = 42, starter = 'Squirtle', wanted = [], order = null, plan = 'road', intro = false }) {
+    async setup({ wallpaper, icon, upright: lying = false, captions: lines = true, cut = 'trailer', seed = 1, day = 1, resume = false, events = 6, budget = 42, starter = 'Squirtle', wanted = [], order = null, wholeFights = false, noFoeBerries = false, leaveOut = [], plan = 'road', intro = false, companion = null }) {
       encounter.seed = seed;
-      Object.assign(journey, { day, resume, events: Math.max(events, order?.length ?? 0), budget, starter, wanted, order: order?.length ? order : null });
+      Object.assign(journey, { day, resume, events: Math.max(events, order?.length ?? 0), budget, starter, wanted, order: order?.length ? order : null, wholeFights, noFoeBerries, leaveOut });
       if (cut === 'moment') {
         const script = momentPlan(plan, seed);
+        // A companion asked for by name (`--companion 390`) walks as itself, not grown along its line.
+        if (companion && plan !== 'showcase') Object.assign(script.scene, { companion, grown: false });
         // All of it is filmed: a script is as long as it was written to be.
         Object.assign(journey, { plan: script.steps, scene: script.scene, events: script.steps.length, budget: 1e9, intro });
       }

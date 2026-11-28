@@ -3,10 +3,10 @@
  * Film the trailer: the real game, driven shot by shot, a frame at a time.
  *
  *   npx electron dev/tools/trailer/record.mjs --ffmpeg path/to/ffmpeg [--out trailer] [--lang en] [--only fight-1] [--stills 30]
- *     [--upright] [--no-captions] [--sound-only]
+ *     [--upright] [--no-captions] [--sound-only] [--music mus_route119]
  *     [--cut encounter [--seed 7] [--dry]]
- *     [--cut moment --plan catch|shiny|evolve|gym|road [--seed 3] [--desktop] [--dry]]
- *     [--cut episode [--journey trailer/journey] [--starter Squirtle] [--catch 263,25] [--order berry,ball,battle,berry] [--events 6] [--budget 42] [--dry [--advance]]]
+ *     [--cut moment --plan catch|shiny|evolve|gym|road [--seed 3] [--desktop] [--companion 390] [--dry]]
+ *     [--cut episode [--journey trailer/journey] [--starter Squirtle] [--catch 263,25] [--order berry,ball,battle,berry] [--whole-fights] [--no-foe-berries] [--leave-out 3] [--events 6] [--budget 42] [--dry [--advance]]]
  *
  * Boots the game's own main-process modules (as the screenshot harness does)
  * into a hidden 1920x1080 window, hands the page to `director.js`, and
@@ -164,7 +164,7 @@ async function film(run, window, video) {
   const wallpaperFile = await readFile(option('--wallpaper', 'C:/Windows/Web/Wallpaper/Windows/img0.jpg')).catch(() => null);
   const wallpaper = wallpaperFile ? `data:image/jpeg;base64,${wallpaperFile.toString('base64')}` : 'none';
   const icon = `data:image/png;base64,${(await readFile(join(ROOT, 'dev', 'build', 'icon.png'))).toString('base64')}`;
-  const shots = await run(`window.__trailer.setup(${JSON.stringify({ wallpaper, icon, upright: UPRIGHT, captions: !BARE, cut: SHORT ?? 'trailer', seed: SEED, plan: PLAN, intro: DESKTOP, ...(JOURNEY ? { day: JOURNEY.day, resume: Boolean(JOURNEY.save), events: Number(option('--events', '6')), budget: Number(option('--budget', '42')), starter: option('--starter', 'Squirtle'), wanted: option('--catch', '').split(',').filter(Boolean).map(Number), order: option('--order', '').split(',').filter(Boolean) } : {}) })})`);
+  const shots = await run(`window.__trailer.setup(${JSON.stringify({ wallpaper, icon, upright: UPRIGHT, captions: !BARE, cut: SHORT ?? 'trailer', seed: SEED, plan: PLAN, intro: DESKTOP, companion: Number(option('--companion', '0')) || null, ...(JOURNEY ? { day: JOURNEY.day, resume: Boolean(JOURNEY.save), events: Number(option('--events', '6')), budget: Number(option('--budget', '42')), starter: option('--starter', 'Squirtle'), wanted: option('--catch', '').split(',').filter(Boolean).map(Number), order: option('--order', '').split(',').filter(Boolean), wholeFights: args.includes('--whole-fights'), noFoeBerries: args.includes('--no-foe-berries'), leaveOut: option('--leave-out', '').split(',').filter(Boolean).map(Number) } : {}) })})`);
   console.log(shots.map((shot) => `${shot.name}:${shot.frames}`).join(' '));
 
   const encoder = DRY ? null : spawn(FFMPEG, [
@@ -271,7 +271,15 @@ async function mix(run, video) {
  * A short's sound is the game's own — the road's music, the fight's, the cries
  * and the hits, as the game asked for them — put under the film as it is.
  */
-async function mixShort(run, video, { audio: log, length, fadeOut }) {
+async function mixShort(run, video, { audio: game, length, fadeOut }) {
+  // `--music <song>` puts another of the game's songs under the road, on film
+  // only: the road's own (the first song asked for) is swapped wherever it
+  // plays; the fight's, the cues and the cries stay the game's.
+  const music = option('--music', '');
+  const road = game.find((entry) => entry.method === 'playMusic')?.args[0];
+  const log = music && road
+    ? game.map((entry) => (entry.method === 'playMusic' && entry.args[0] === road ? { ...entry, args: [music] } : entry))
+    : game;
   await run(`${await readFile(join(HERE, 'gamesound.js'), 'utf8')};true`);
   const wav = await run(`window.__gameSound(${JSON.stringify({ audio: log, length, fadeOut })})`);
   const audio = join(OUT_DIR, `soundtrack${CUT}.wav`);

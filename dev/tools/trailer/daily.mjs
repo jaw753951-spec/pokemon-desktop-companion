@@ -2,7 +2,7 @@
 /**
  * Film today's reel for the feed, whichever kind today's is.
  *
- *   node dev/tools/trailer/daily.mjs [--date 2026-11-14] [--again] [--dry]
+ *   node dev/tools/trailer/daily.mjs [--date 2026-11-14] [--again] [--dry] [--music mus_route119]
  *   node dev/tools/trailer/daily.mjs --posted [--date 2026-11-14]
  *
  * Four days of the week are the serial — the next day of the journey
@@ -100,7 +100,7 @@ let entry;
 if (kind === 'episode') {
   if (reel?.day) rewindJourney(reel.day);
   const next = read(join(JOURNEY, 'journey.json'), { days: [] }).days.length + 1;
-  flags = ['--cut', 'episode', '--seed', '11', ...(option('--order') ? ['--order', option('--order')] : [])];
+  flags = ['--cut', 'episode', '--seed', '11', ...(option('--order') ? ['--order', option('--order')] : []), ...(option('--leave-out') ? ['--leave-out', option('--leave-out')] : []), ...['--whole-fights', '--no-foe-berries'].filter((flag) => args.includes(flag))];
   entry = { date: DATE, kind, day: next, file: `trailer/journey/day-${pad(next, 3)}.mp4` };
 } else {
   // Counted over the reels of this kind made so far, so the scripts come round in turn.
@@ -109,8 +109,8 @@ if (kind === 'episode') {
   const seed = 3 + count * 7;
   // The desktop opening now and then: one stand-alone reel in six, about once a fortnight.
   const desktop = count % 6 === 5;
-  flags = ['--cut', 'moment', '--plan', plan, '--seed', String(seed), ...(desktop ? ['--desktop'] : [])];
-  entry = { date: DATE, kind, count, plan, seed, desktop, file: momentFile(plan, seed, desktop) };
+  flags = ['--cut', 'moment', '--plan', plan, '--seed', String(seed), ...(desktop ? ['--desktop'] : []), ...(option('--companion') ? ['--companion', option('--companion')] : [])];
+  entry = { date: DATE, kind, count, plan, seed, desktop, ...(option('--companion') ? { companion: Number(option('--companion')) } : {}), file: momentFile(plan, seed, desktop) };
 }
 
 /** Where the recorder leaves a stand-alone reel. */
@@ -150,6 +150,13 @@ function film(withFlags) {
     throw new Error(`the recorder exited with ${run.status}`);
   }
   return told;
+}
+
+// Another of the game's songs under the road (`--music`), kept for a film over.
+const music = option('--music', reel?.music);
+if (music) {
+  flags.push('--music', music);
+  entry.music = music;
 }
 
 let told = film(flags);
